@@ -54,9 +54,10 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
 
 **她明确说过：记忆是最高优先级——"其他功能不完善没关系，记忆用不了晤就是空白的"。**
 
-1. **给 wu-home 挂 Zeabur Volume**（1GB，挂 `/app/data`）——一切云端数据的前提。
-   ⚠️ 先在 Zeabur 服务页的 Volumes 标签确认是否真挂载成功：容器内直接写文件不挂
-   Volume 的话**重启就丢**（她的旧 ob 可能一直如此而未察觉）
+1. **给 wu-home 挂 Zeabur Volume**：名字 `wu-data`，挂载目录 **`/app/data`**（server.js
+   按此路径读写）。她可能已自行挂好——开工前先确认 Volumes 标签里有它。
+   （已核实：旧 ob 的盘叫 my-data，挂 /app/buckets，仅用 43KB，费用可忽略，
+   证明小容量 Volume 几乎不产生账单）
 2. **server.js 加 `/api/memories` CRUD**：记忆卡片 = {日期, 类型, 内容, 标签}，JSON 文件存
    `/app/data`；顺势把日记/清单/倒数日也搬上服务器（解决跨设备同步）
 3. **Memory 页**读写记忆卡（UI 已留占位）；聊天时服务器把相关记忆卡拼进 system prompt
