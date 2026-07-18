@@ -44,13 +44,26 @@
 - 她的偏好：**不爱规整的框框**，喜欢自由排版 + 少量有机形状卡片；小票（锯齿票据）和日记本（线圈横线）是她点名要的签名元素，别删
 - PhotoStack 来自 github.com/Wren036/PhotoStack（PolyForm Noncommercial，保留文件头署名）
 
-## 路线图（按优先级）
+## 路线图（按优先级 · 2026.07.19 与她商定：记忆改为原生自建，不再桥接旧 ob）
+
+旧 OmbreBrain 几乎没有存量记忆，决定只借鉴其思路（对话蒸馏成记忆卡、记忆反哺聊天），
+在本项目内原生实现。旧 ob 服务后续可停掉省钱。
 
 1. 修上面两个 iOS bug
-2. **Memory 页接 wu-memory**：她的 OmbreBrain（fork 名 OmbreBrain-folio，部署在 wu-memory.zeabur.app，挂载 /app/buckets）是晤的记忆大脑，走 MCP。方案：在 server.js 加 `/api/memory` 桥接 MCP → Memory 页渲染；聊天时把相关记忆注入上下文
-3. 信箱「笔友往来」接 Gmail MCP（同样走后端桥）
-4. 日记/清单的新增编辑 + 云端同步（优先复用 wu-memory 已购的存储，别让她多花钱）
-5. OmbreBrain-folio 合并原作者更新：clone → `git remote add upstream 原作者地址` → fetch → **新分支** merge → Zeabur 切分支试跑 → 再合 main。**绝对不要直接改它的 main**，那是她线上跑着的记忆服务
+2. **给 wu-home 挂 Zeabur Volume**（1GB，挂 `/app/data`）——一切云端数据的前提
+3. **server.js 加 `/api/memories` CRUD**：记忆卡片 = {日期, 类型, 内容, 标签}，JSON 文件存
+   `/app/data`；顺势把日记/清单/倒数日也搬上服务器（解决跨设备同步）
+4. **Memory 页**读写记忆卡（UI 已留占位）；聊天时服务器把相关记忆卡拼进 system prompt
+5. **八维驱动引擎原生化**：照她发过的原理图实现纯函数状态机（八维随时间衰减、随事件
+   涨落、fatigue 是闸不参与排序、最高维=「此刻最想」），存服务器，状态页/Home 状态卡/
+   Chat 副标题改读真数据，当前最强驱动写进 system prompt 影响晤的语气。无需 LLM 参与计算
+6. **自动记忆蒸馏**：定时把近期对话发 DeepSeek 提炼「值得长期记住的事」→ 存记忆卡
+7. **`/admin` 桌面管理台**：同一服务器加密码保护的宽屏页面，表格化管理记忆/日记/信件/
+   人设 prompt（不必新开项目，现有网页在桌面浏览器本就可用）
+8. 信箱「笔友往来」接 Gmail MCP（后端桥）
+9. OmbreBrain-folio 合并原作者更新（若她还想维护）：clone → `git remote add upstream
+   原作者地址` → fetch → **新分支** merge → Zeabur 切分支试跑 → 再合 main。
+   **绝对不要直接改它的 main**，那是她线上跑着的服务
 
 ## 纪律（务必遵守）
 
