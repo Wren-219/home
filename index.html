@@ -126,17 +126,15 @@
   .days-num small { font-size: 17px; color: var(--ink-soft); margin-left: 5px; font-family: var(--serif); }
   .days-since { font-size: 10.5px; color: var(--ink-faint); margin-top: 7px; letter-spacing: .05em; }
 
-  /* 主要状态（柔和渐变 · 不规则圆角 · 紧凑） */
+  /* 主要状态（无边框“雾气”块 · 融入空白排版） */
   .mood-card {
     display: flex; flex-direction: column; cursor: pointer; transition: transform .15s;
-    padding: 14px 15px 11px;
-    border-radius: 26px 40px 30px 44px / 40px 26px 42px 28px;
+    padding: 16px 16px 12px;
+    border-radius: 40px 54px 44px 58px / 54px 40px 56px 42px;
     background:
-      radial-gradient(120% 90% at 18% 8%, rgba(255,255,255,.92), rgba(255,255,255,.3) 62%),
-      linear-gradient(140deg, rgba(178,199,227,.6), rgba(213,202,233,.45) 52%, rgba(241,216,199,.4));
-    border: 1px solid rgba(255,255,255,.85);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    box-shadow: var(--shadow);
+      radial-gradient(85% 75% at 25% 18%, rgba(178,199,227,.5), transparent 72%),
+      radial-gradient(80% 70% at 78% 80%, rgba(241,216,199,.42), transparent 70%),
+      radial-gradient(70% 65% at 78% 25%, rgba(213,202,233,.4), transparent 70%);
   }
   .mood-card:active { transform: scale(.97); }
   .mood-label { font-size: 9.5px; color: var(--ink-soft); letter-spacing: .18em; }
@@ -168,7 +166,7 @@
   .cd-empty { font-size: 11px; color: var(--ink-faint); }
 
   /* 本周日历条（无底框 · 加深） */
-  .week-card { margin-top: 26px; padding: 0 4px; cursor: pointer; }
+  .week-card { margin-top: 10px; padding: 0 4px; cursor: pointer; }
   .week-head { display: flex; font-size: 11px; color: var(--ink-soft); letter-spacing: .12em; margin-bottom: 10px; }
   .week-head .arr { margin-left: auto; }
   .week { display: flex; justify-content: space-between; }
@@ -184,12 +182,11 @@
   .wd .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--coral); margin: 4px auto 0; opacity: 0; }
   .wd.marked .dot { opacity: 1; }
 
-  /* ── 票据 To-do 🧾 ── */
+  /* ── 折叠小票（Home 摘要）🧾 ── */
   .receipt-wrap { filter: drop-shadow(0 6px 16px rgba(90,110,140,.16)); }
-  .receipt {
+  .receipt-mini {
     background: var(--paper); color: var(--paper-ink); font-family: var(--mono);
-    padding: 14px 12px 12px; position: relative;
-    /* 上下锯齿 */
+    padding: 14px 12px 12px; position: relative; cursor: pointer; transition: transform .15s;
     clip-path: polygon(
       0 6px, 4.16% 0, 8.33% 6px, 12.5% 0, 16.66% 6px, 20.83% 0, 25% 6px, 29.16% 0,
       33.33% 6px, 37.5% 0, 41.66% 6px, 45.83% 0, 50% 6px, 54.16% 0, 58.33% 6px,
@@ -201,8 +198,46 @@
       50% calc(100% - 6px), 45.83% 100%, 41.66% calc(100% - 6px), 37.5% 100%,
       33.33% calc(100% - 6px), 29.16% 100%, 25% calc(100% - 6px), 20.83% 100%,
       16.66% calc(100% - 6px), 12.5% 100%, 8.33% calc(100% - 6px), 4.16% 100%, 0 calc(100% - 6px));
-    background-image: repeating-linear-gradient(0deg, transparent 0 23px, rgba(75,85,103,.025) 23px 24px);
+    background-image:
+      linear-gradient(118deg, transparent 40%, rgba(75,85,103,.07) 47%, transparent 55%),
+      linear-gradient(62deg, transparent 68%, rgba(75,85,103,.05) 74%, transparent 82%),
+      repeating-linear-gradient(0deg, transparent 0 23px, rgba(75,85,103,.025) 23px 24px);
   }
+  .receipt-mini:active { transform: scale(.97); }
+  .rm-more { text-align: center; font-size: 9px; color: rgba(75,85,103,.55); margin-top: 8px; letter-spacing: .1em; }
+
+  /* ── 小票抽屉（点击展开 · 底部 3/5 屏，可上拉至 5/6）── */
+  #todoScrim {
+    position: absolute; inset: 0; z-index: 45; background: rgba(60,69,87,.28);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    opacity: 0; pointer-events: none; transition: opacity .3s;
+  }
+  #todoScrim.open { opacity: 1; pointer-events: auto; }
+  #todoSheet {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 60%; z-index: 46;
+    background: var(--paper); color: var(--paper-ink); font-family: var(--mono);
+    transform: translateY(105%); transition: transform .38s cubic-bezier(.32,.72,.35,1), height .25s ease;
+    clip-path: polygon(
+      0 8px, 3.33% 0, 6.66% 8px, 10% 0, 13.33% 8px, 16.66% 0, 20% 8px, 23.33% 0,
+      26.66% 8px, 30% 0, 33.33% 8px, 36.66% 0, 40% 8px, 43.33% 0, 46.66% 8px, 50% 0,
+      53.33% 8px, 56.66% 0, 60% 8px, 63.33% 0, 66.66% 8px, 70% 0, 73.33% 8px,
+      76.66% 0, 80% 8px, 83.33% 0, 86.66% 8px, 90% 0, 93.33% 8px, 96.66% 0, 100% 8px,
+      100% 100%, 0 100%);
+    background-image: repeating-linear-gradient(0deg, transparent 0 27px, rgba(75,85,103,.022) 27px 28px);
+    display: flex; flex-direction: column;
+  }
+  #todoSheet.open { transform: translateY(0); }
+  #todoSheet.dragging { transition: none; }
+  .sheet-handle { padding: 16px 0 8px; display: flex; justify-content: center; cursor: grab; touch-action: none; flex-shrink: 0; }
+  .sheet-handle::before { content: ""; width: 44px; height: 5px; border-radius: 99px; background: rgba(75,85,103,.25); }
+  .sheet-scroll { flex: 1; overflow-y: auto; padding: 0 24px calc(var(--sab) + 24px); }
+  .paid-stamp {
+    display: inline-block; margin-top: 10px; transform: rotate(-10deg);
+    border: 2.5px solid rgba(168,54,45,.45); color: rgba(168,54,45,.55);
+    font-family: var(--serif); font-size: 12px; letter-spacing: .18em;
+    padding: 4px 12px; border-radius: 6px;
+  }
+  .rc-add { font-size: 11px; color: var(--blue-deep); padding: 8px 2px 2px; cursor: pointer; }
   .rc-head { text-align: center; }
   .rc-head .t { font-size: 13px; letter-spacing: .35em; margin-left: .35em; }
   .rc-head .m { font-size: 8.5px; color: rgba(75,85,103,.55); margin-top: 5px; line-height: 1.7; letter-spacing: .03em; }
@@ -214,7 +249,12 @@
   .rc-item.done .tx { text-decoration: line-through; color: rgba(75,85,103,.4); }
   .rc-item.done .bx { color: #6F8F6F; }
   .rc-item .by { font-size: 8px; color: var(--blue-deep); border: 1px solid rgba(126,150,184,.4); border-radius: 3px; padding: 0 3px; }
-  .rc-prog { font-size: 9.5px; letter-spacing: .04em; color: rgba(75,85,103,.65); }
+  .rc-prog { font-size: 9.5px; letter-spacing: .04em; color: rgba(75,85,103,.65); white-space: pre-line; line-height: 1.9; }
+  #todoSheet .rc-item { font-size: 13px; padding: 8px 0; }
+  #todoSheet .rc-item .tm { font-size: 10px; }
+  #todoSheet .rc-prog { font-size: 11px; }
+  #todoSheet .rc-head .t { font-size: 15px; }
+  #todoSheet .rc-head .m { font-size: 10px; }
   .rc-foot { text-align: center; margin-top: 8px; }
   .rc-foot .th { font-family: var(--serif); font-style: italic; font-size: 10px; color: rgba(75,85,103,.55); }
   .rc-barcode {
@@ -249,7 +289,9 @@
   .nb-line.empty { color: var(--ink-faint); font-size: 10px; justify-content: flex-end; border-bottom: none; }
 
   /* ── 重叠照片 ── */
-  .stack-block { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 4px 22px 0 0; }
+  /* 照片区（独立成块 + 小标题落位） */
+  .photos-block { margin-top: 24px; padding: 0 4px; cursor: pointer; }
+  .stack-block { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 0 0; }
   .stack-cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .08em; }
 
   /* 信箱入口（细长胶囊） */
@@ -302,26 +344,35 @@
       radial-gradient(80% 40% at 85% 92%, rgba(196,211,229,.5) 0%, transparent 60%),
       linear-gradient(180deg, #EFF3F8 0%, #E7EDF4 100%);
   }
+  /* 顶部两块独立悬浮玻璃：窗口名胶囊 + 功能圆钮 */
   .chat-head {
-    flex-shrink: 0; padding: calc(var(--sat) + 10px) 14px 10px; position: relative; z-index: 6;
-    display: flex; align-items: center;
-    background: rgba(244,246,249,.55);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    position: absolute; top: 0; left: 0; right: 0; z-index: 6;
+    padding: calc(var(--sat) + 10px) 14px 0;
+    display: flex; align-items: flex-start; justify-content: center;
+    pointer-events: none; background: none;
   }
-  .ch-side { width: 40px; flex-shrink: 0; }
-  .chat-name-btn { flex: 1; border: none; background: none; cursor: pointer; font-family: var(--serif); text-align: center; }
-  .chat-name { font-size: 20px; letter-spacing: .4em; margin-left: .4em; color: var(--ink); }
-  .chat-status { margin-top: 2px; font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .chat-name-btn {
+    pointer-events: auto; border: none; cursor: pointer; font-family: var(--serif); text-align: center;
+    padding: 8px 28px; border-radius: 999px;
+    background: rgba(250,251,253,.78); border: 1px solid rgba(255,255,255,.8);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
+  }
+  .chat-name { font-size: 18px; letter-spacing: .4em; margin-left: .4em; color: var(--ink); }
+  .chat-status { margin-top: 2px; font-size: 10.5px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 4px; }
   .chat-status .chev { color: var(--ink-faint); }
   .win-btn {
-    width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--glass-border);
-    background: var(--glass); backdrop-filter: blur(10px); cursor: pointer;
+    pointer-events: auto; position: absolute; right: 16px; top: calc(var(--sat) + 12px);
+    width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,.8);
+    background: rgba(250,251,253,.78); cursor: pointer;
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
     display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
   }
-  .win-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; }
+  .win-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; }
   /* 窗口切换面板 */
   #winMenu {
-    position: absolute; right: 14px; top: calc(var(--sat) + 56px); z-index: 50;
+    position: absolute; right: 16px; top: calc(var(--sat) + 64px); z-index: 50;
     width: 190px; border-radius: 18px; overflow: hidden;
     background: rgba(252,253,255,.8);
     backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
@@ -337,7 +388,7 @@
   .win-item.active .ck { opacity: 1; }
   .win-item.new { color: var(--blue-deep); }
 
-  .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 16px calc(var(--navspace) + 62px); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: calc(var(--sat) + 78px) 16px calc(var(--navspace) + 62px); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
   .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; }
   .bub {
     max-width: 78%; padding: 11px 15px; font-size: 15px; line-height: 1.65;
@@ -681,37 +732,35 @@
         </div>
 
         <div class="grid2">
-          <!-- 票据 To-do -->
+          <!-- 折叠小票（点击展开抽屉） -->
           <div>
             <div class="receipt-wrap">
-              <div class="receipt">
+              <div class="receipt-mini" onclick="openTodoSheet()">
                 <div class="rc-head">
                   <div class="t">今日清单</div>
-                  <div class="m">TODAY'S LIST · <span id="rcDate"></span><br>店员 CLERK：你 &amp; 晤</div>
+                  <div class="m">TODAY'S LIST · <span id="rmDate"></span><br>店员 CLERK：你 &amp; 晤</div>
                 </div>
                 <hr class="rc-dash">
-                <div id="todoList"></div>
+                <div id="rmItems"></div>
                 <hr class="rc-dash">
-                <div class="rc-prog" id="todoProg"></div>
-                <div class="rc-foot">
-                  <div class="th">— 谢谢惠顾 · 明天见 —</div>
-                  <div class="rc-barcode"></div>
-                  <div class="rc-no">NO.0527</div>
-                </div>
+                <div class="rc-prog" id="rmProg"></div>
+                <div class="rm-more">· 点击展开小票 ·</div>
               </div>
             </div>
           </div>
-          <div class="rcol">
-            <!-- 日记本 -->
-            <div class="notebook" onclick="openSub('diary')">
-              <div class="nb-title">日记<span class="en">DIARY</span></div>
-              <div class="nb-lines" id="nbLines"></div>
-            </div>
-            <!-- 重叠照片 -->
-            <div class="stack-block">
-              <div id="homeStack"></div>
-              <div class="stack-cap">滑动翻看 · 点击查看全部</div>
-            </div>
+          <!-- 日记本 -->
+          <div class="notebook" onclick="openSub('diary')">
+            <div class="nb-title">日记<span class="en">DIARY</span></div>
+            <div class="nb-lines" id="nbLines"></div>
+          </div>
+        </div>
+
+        <!-- 重叠照片 -->
+        <div class="photos-block" onclick="event.target.closest('.pstack-stage') || openSub('photos')">
+          <div class="week-head">照片 PHOTOS<span class="arr">›</span></div>
+          <div class="stack-block">
+            <div id="homeStack"></div>
+            <div class="stack-cap">滑动翻看 · 点击查看全部</div>
           </div>
         </div>
 
@@ -722,16 +771,13 @@
     <!-- ===== CHAT ===== -->
     <section class="page" id="page-chat">
       <div class="chat-head">
-        <div class="ch-side"></div>
         <button class="chat-name-btn" onclick="openSub('status')">
           <div class="chat-name">晤</div>
           <div class="chat-status"><span id="chatStName"></span><span class="chev">›</span></div>
         </button>
-        <div class="ch-side">
-          <button class="win-btn" id="winBtn" title="切换窗口">
-            <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="5.5" rx="2"/><rect x="4" y="13.5" width="16" height="5.5" rx="2"/></svg>
-          </button>
-        </div>
+        <button class="win-btn" id="winBtn" title="切换窗口">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="5.5" rx="2"/><rect x="4" y="13.5" width="16" height="5.5" rx="2"/></svg>
+        </button>
       </div>
       <div id="winMenu">
         <div class="win-item active">日常 · 与晤<span class="ck">✓</span></div>
@@ -923,6 +969,30 @@
         </div>
       </div>
     </section>
+
+    <!-- ===== 小票抽屉 ===== -->
+    <div id="todoScrim" onclick="closeTodoSheet()"></div>
+    <div id="todoSheet">
+      <div class="sheet-handle" id="sheetHandle"></div>
+      <div class="sheet-scroll">
+        <div class="rc-head">
+          <div class="t">今日清单</div>
+          <div class="m">TODAY'S RECEIPT · <span id="rcDate"></span> · <span id="rcWeek"></span><br>店员 CLERK：你 &amp; 晤 &nbsp;|&nbsp; 单据号 #<span id="rcNo"></span></div>
+        </div>
+        <hr class="rc-dash">
+        <div id="todoList"></div>
+        <div class="rc-add" onclick="toast('新增一项 · 敬请期待')">＋ 新增一项</div>
+        <hr class="rc-dash">
+        <div class="rc-prog" id="todoProg"></div>
+        <hr class="rc-dash">
+        <div class="rc-foot">
+          <div class="th">— 今天也辛苦了 · 零点后未结清的会自动清零 —</div>
+          <div><span class="paid-stamp">PAID · 谢谢</span></div>
+          <div class="rc-barcode"></div>
+          <div class="rc-no">NO.0527</div>
+        </div>
+      </div>
+    </div>
 
     <!-- ===== 悬浮导航 ===== -->
     <nav id="tabbar">
@@ -1443,6 +1513,7 @@ const todos = [
   { text: "读完最后一章", time: "2:00P", done: true },
 ];
 function renderTodos() {
+  /* 抽屉里的完整小票 */
   document.getElementById("todoList").innerHTML = todos.map((t, i) => `
     <div class="rc-item ${t.done ? "done" : ""}" data-i="${i}">
       <span class="bx">[${t.done ? "✓" : "&nbsp;"}]</span>
@@ -1451,8 +1522,17 @@ function renderTodos() {
     </div>`).join("");
   const doneN = todos.filter(t => t.done).length, total = todos.length;
   const filled = Math.round(doneN / total * 10);
+  const prog = "█".repeat(filled) + "░".repeat(10 - filled) + " " + doneN + "/" + total;
   document.getElementById("todoProg").textContent =
-    "█".repeat(filled) + "░".repeat(10 - filled) + " " + doneN + "/" + total;
+    "小计 " + total + " 项 · 已结清 " + doneN + " · 未结清 " + (total - doneN) + "\n" + prog;
+  /* Home 折叠小票摘要：只露前两条未完成 */
+  const pending = todos.filter(t => !t.done).slice(0, 2);
+  document.getElementById("rmItems").innerHTML = pending.length
+    ? pending.map(t => `
+      <div class="rc-item"><span class="bx">[&nbsp;]</span>
+        <span class="tx">${t.text}</span></div>`).join("")
+    : '<div class="rc-item"><span class="tx">全部结清，干得漂亮 ✓</span></div>';
+  document.getElementById("rmProg").textContent = prog;
 }
 document.getElementById("todoList").addEventListener("click", e => {
   const item = e.target.closest(".rc-item");
@@ -1463,7 +1543,55 @@ document.getElementById("todoList").addEventListener("click", e => {
 renderTodos();
 (function(){
   const n = new Date();
-  document.getElementById("rcDate").textContent = n.getFullYear() + "." + pad(n.getMonth()+1) + "." + pad(n.getDate());
+  const ds = n.getFullYear() + "." + pad(n.getMonth()+1) + "." + pad(n.getDate());
+  document.getElementById("rmDate").textContent = ds;
+  document.getElementById("rcDate").textContent = ds;
+  document.getElementById("rcWeek").textContent = "周" + "日一二三四五六"[n.getDay()];
+  document.getElementById("rcNo").textContent =
+    String(n.getFullYear()).slice(2) + "-" + pad(n.getMonth()+1) + "-" + pad(n.getDate()) + "-052";
+})();
+
+/* ── 小票抽屉：开合 + 上拉扩展 ── */
+const todoSheet = document.getElementById("todoSheet");
+const todoScrim = document.getElementById("todoScrim");
+function openTodoSheet() {
+  todoSheet.style.height = "60%";
+  todoSheet.classList.add("open");
+  todoScrim.classList.add("open");
+}
+function closeTodoSheet() {
+  todoSheet.classList.remove("open");
+  todoScrim.classList.remove("open");
+}
+(function bindSheetDrag() {
+  const handle = document.getElementById("sheetHandle");
+  const frame = document.getElementById("frame");
+  let startY = null, startH = 0;
+  handle.addEventListener("pointerdown", e => {
+    startY = e.clientY;
+    startH = todoSheet.offsetHeight;
+    todoSheet.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener("pointermove", e => {
+    if (startY === null) return;
+    const fh = frame.clientHeight;
+    let h = startH + (startY - e.clientY);
+    h = Math.max(fh * 0.3, Math.min(fh * 0.84, h));
+    todoSheet.style.height = h + "px";
+  });
+  const up = () => {
+    if (startY === null) return;
+    startY = null;
+    todoSheet.classList.remove("dragging");
+    const fh = frame.clientHeight;
+    const h = todoSheet.offsetHeight / fh;
+    if (h < 0.45) { closeTodoSheet(); todoSheet.style.height = "60%"; }
+    else if (h < 0.72) todoSheet.style.height = "60%";
+    else todoSheet.style.height = "84%";
+  };
+  handle.addEventListener("pointerup", up);
+  handle.addEventListener("pointercancel", up);
 })();
 
 /* ================= 八维驱动 ================= */
