@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>与你 · AI 伙伴</title>
+<style>
+  :root {
+    --paper: #F5F1E6;
+    --paper-deep: #EFE9DA;
+    --card: #FBF8F0;
+    --ink: #2A2620;
+    --ink-soft: #6B6459;
+    --ink-faint: #A39B8B;
+    --line: #DDD5C4;
+    --stamp: #A8362D;
+    --accent: #C4652F;
+    --green: #5F7A5A;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, "Cascadia Mono", monospace;
+    --serif: "Source Han Serif SC", "Songti SC", "Noto Serif SC", serif;
+    --sans: "PingFang SC", "Noto Sans SC", "Helvetica Neue", sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(196,101,47,.06), transparent 60%),
+      radial-gradient(900px 500px at 110% 10%, rgba(168,54,45,.05), transparent 55%),
+      var(--paper);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============ 密码锁屏 ============ */
+  #lockScreen {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(800px 500px at 50% 30%, rgba(196,101,47,.08), transparent 60%),
+      var(--paper);
+    transition: opacity .5s ease, visibility .5s;
+  }
+  #lockScreen.unlocked { opacity: 0; visibility: hidden; }
+  .lock-card { text-align: center; padding: 24px; }
+  .lock-logo {
+    width: 64px; height: 64px; margin: 0 auto 18px;
+    border: 1.5px solid var(--ink); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: 26px;
+  }
+  .lock-title { font-family: var(--serif); font-size: 22px; letter-spacing: .2em; margin-bottom: 6px; }
+  .lock-sub { color: var(--ink-faint); font-size: 12px; letter-spacing: .35em; margin-bottom: 30px; font-family: var(--mono); }
+  .pin-dots { display: flex; gap: 18px; justify-content: center; margin-bottom: 34px; }
+  .pin-dots.shake { animation: shake .4s; }
+  @keyframes shake { 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
+  .pin-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1.5px solid var(--ink-soft); transition: all .15s;
+  }
+  .pin-dot.filled { background: var(--ink); border-color: var(--ink); }
+  .pin-dots.error .pin-dot { border-color: var(--stamp); background: transparent; }
+  .keypad { display: grid; grid-template-columns: repeat(3, 72px); gap: 14px; justify-content: center; }
+  .key {
+    height: 72px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--card);
+    font-size: 24px; font-family: var(--mono); color: var(--ink);
+    cursor: pointer; transition: all .12s; user-select: none;
+    box-shadow: 0 1px 2px rgba(42,38,32,.05);
+  }
+  .key:active { background: var(--paper-deep); transform: scale(.94); }
+  .key.ghost { border: none; background: transparent; box-shadow: none; font-size: 18px; color: var(--ink-soft); }
+  .lock-hint { margin-top: 26px; font-size: 12px; color: var(--ink-faint); height: 16px; }
+
+  /* ============ 应用外壳 ============ */
+  #app { display: none; height: 100%; flex-direction: column; }
+  #app.ready { display: flex; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 26px; border-bottom: 1px solid var(--line);
+    background: rgba(251,248,240,.8); backdrop-filter: blur(8px);
+    flex-shrink: 0;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 17px; letter-spacing: .1em; }
+  .brand-mark {
+    width: 28px; height: 28px; border: 1.2px solid var(--ink); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  .nav { display: flex; gap: 6px; }
+  .nav-btn {
+    border: none; background: transparent; cursor: pointer;
+    padding: 8px 18px; border-radius: 999px;
+    font-size: 14px; color: var(--ink-soft); font-family: var(--sans);
+    letter-spacing: .05em; transition: all .15s;
+  }
+  .nav-btn:hover { color: var(--ink); background: var(--paper-deep); }
+  .nav-btn.active { background: var(--ink); color: var(--paper); }
+  .nav-btn .en { font-family: var(--mono); font-size: 11px; opacity: .65; margin-left: 4px; }
+  .topbar-right { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+
+  .page { display: none; flex: 1; overflow-y: auto; }
+  .page.active { display: block; }
+  .page-inner { max-width: 1080px; margin: 0 auto; padding: 30px 26px 60px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px; box-shadow: 0 1px 3px rgba(42,38,32,.04);
+  }
+  .card-title {
+    font-family: var(--serif); font-size: 15px; letter-spacing: .12em;
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px;
+  }
+  .card-title .en { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); letter-spacing: .15em; }
+
+  /* ============ HOME ============ */
+  .home-grid {
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(12, 1fr);
+  }
+  .col-4 { grid-column: span 4; }
+  .col-5 { grid-column: span 5; }
+  .col-7 { grid-column: span 7; }
+  .col-8 { grid-column: span 8; }
+  .col-12 { grid-column: span 12; }
+  @media (max-width: 860px) {
+    .col-4, .col-5, .col-7, .col-8, .col-12 { grid-column: span 12; }
+    .nav-btn { padding: 8px 12px; }
+    .nav-btn .en { display: none; }
+    .topbar-right { display: none; }
+  }
+
+  /* 时钟卡 */
+  .clock-card { text-align: center; padding: 26px 20px; display: flex; flex-direction: column; justify-content: center; }
+  .clock-time { font-family: var(--mono); font-size: 44px; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  .clock-date { margin-top: 6px; color: var(--ink-soft); font-size: 14px; letter-spacing: .1em; }
+  .clock-week { font-family: var(--serif); color: var(--accent); }
+
+  /* 在一起天数 */
+  .days-card { text-align: center; padding: 26px 20px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .days-num { font-family: var(--serif); font-size: 56px; color: var(--stamp); line-height: 1.1; }
+  .days-label { font-size: 13px; color: var(--ink-soft); letter-spacing: .2em; margin-top: 4px; }
+  .days-since { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-top: 10px; }
+  .days-stamp {
+    position: absolute; right: -6px; top: 10px; transform: rotate(12deg);
+    border: 2px solid rgba(168,54,45,.35); color: rgba(168,54,45,.45);
+    border-radius: 6px; padding: 3px 8px; font-family: var(--serif); font-size: 11px; letter-spacing: .2em;
+  }
+
+  /* 日记 */
+  .diary-item { padding: 11px 2px; border-bottom: 1px dashed var(--line); cursor: pointer; }
+  .diary-item:last-child { border-bottom: none; }
+  .diary-item:hover .diary-title { color: var(--accent); }
+  .diary-date { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); }
+  .diary-title { font-size: 14px; margin-top: 3px; transition: color .15s; }
+  .diary-excerpt { font-size: 12px; color: var(--ink-soft); margin-top: 3px; line-height: 1.6;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* 日历 */
+  .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .cal-month { font-family: var(--mono); font-size: 13px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-grid .wd { font-size: 10px; color: var(--ink-faint); font-family: var(--mono); padding: 4px 0; }
+  .cal-day { font-family: var(--mono); font-size: 12px; padding: 6px 0; border-radius: 8px; color: var(--ink-soft); }
+  .cal-day.today { background: var(--ink); color: var(--paper); }
+  .cal-day.marked { position: relative; }
+  .cal-day.marked::after {
+    content: ""; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+  }
+
+  /* ============ 收据风 To-do ============ */
+  .receipt {
+    background: #F7F2E4; border: 1px solid var(--line);
+    border-radius: 4px 4px 12px 12px;
+    font-family: var(--mono); color: var(--ink);
+    padding: 0 0 18px; overflow: hidden; position: relative;
+    background-image: repeating-linear-gradient(0deg, transparent 0 27px, rgba(42,38,32,.018) 27px 28px);
+    box-shadow: 0 2px 6px rgba(42,38,32,.06);
+  }
+  .receipt-tear {
+    height: 10px; background: var(--paper);
+    clip-path: polygon(0 0, 100% 0, 100% 100%,
+      96.6% 20%, 93.3% 100%, 90% 20%, 86.6% 100%, 83.3% 20%, 80% 100%,
+      76.6% 20%, 73.3% 100%, 70% 20%, 66.6% 100%, 63.3% 20%, 60% 100%,
+      56.6% 20%, 53.3% 100%, 50% 20%, 46.6% 100%, 43.3% 20%, 40% 100%,
+      36.6% 20%, 33.3% 100%, 30% 20%, 26.6% 100%, 23.3% 20%, 20% 100%,
+      16.6% 20%, 13.3% 100%, 10% 20%, 6.6% 100%, 3.3% 20%, 0 100%);
+  }
+  .receipt-head { text-align: center; padding: 16px 18px 4px; }
+  .receipt-head .shop { font-size: 15px; letter-spacing: .3em; }
+  .receipt-head .meta { font-size: 10px; color: var(--ink-soft); margin-top: 6px; line-height: 1.8; }
+  .dashed { color: var(--ink-faint); font-size: 10px; white-space: nowrap; overflow: hidden; padding: 6px 18px; user-select: none; }
+  .todo-list { padding: 2px 14px; }
+  .todo-item { display: flex; align-items: baseline; gap: 8px; padding: 7px 4px; font-size: 13px; cursor: pointer; }
+  .todo-item:hover { background: rgba(42,38,32,.03); border-radius: 6px; }
+  .todo-box { flex-shrink: 0; }
+  .todo-time { flex-shrink: 0; font-size: 10px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+  .todo-text { flex: 1; line-height: 1.5; }
+  .todo-item.done .todo-text { text-decoration: line-through; color: var(--ink-faint); }
+  .todo-item.done .todo-box { color: var(--green); }
+  .todo-item .bang { color: var(--stamp); font-weight: bold; }
+  .todo-tag { font-size: 9px; color: var(--accent); border: 1px solid rgba(196,101,47,.4); border-radius: 3px; padding: 0 4px; }
+  .todo-progress { padding: 8px 18px 2px; font-size: 11px; color: var(--ink-soft); letter-spacing: .05em; }
+  .receipt-foot { text-align: center; padding: 10px 18px 0; position: relative; }
+  .receipt-foot .thanks { font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--ink-soft); }
+  .barcode { margin: 12px auto 0; height: 30px; width: 72%;
+    background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 4px, var(--ink) 4px 7px, transparent 7px 8px, var(--ink) 8px 9px, transparent 9px 13px);
+    opacity: .8; }
+  .paid-stamp {
+    position: absolute; right: 22px; bottom: 34px; transform: rotate(-14deg);
+    border: 2.5px solid rgba(168,54,45,.5); color: rgba(168,54,45,.6);
+    font-family: var(--serif); font-size: 13px; letter-spacing: .15em;
+    padding: 4px 10px; border-radius: 6px; pointer-events: none;
+  }
+
+  /* 照片预览 */
+  .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .photo {
+    aspect-ratio: 1; border-radius: 10px; overflow: hidden; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    border: 1px solid var(--line); transition: transform .15s;
+  }
+  .photo:hover { transform: scale(1.03); }
+  .photo small { display: none; }
+  .photo-more { background: var(--paper-deep); color: var(--ink-soft); font-size: 13px; font-family: var(--mono); }
+
+  /* 信件 */
+  .letter-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 4px; border-bottom: 1px dashed var(--line); cursor: pointer;
+  }
+  .letter-item:last-child { border-bottom: none; }
+  .letter-item:hover .letter-title { color: var(--accent); }
+  .envelope {
+    width: 38px; height: 28px; flex-shrink: 0; border: 1.2px solid var(--ink-soft); border-radius: 4px;
+    position: relative; background: var(--card);
+  }
+  .envelope::before {
+    content: ""; position: absolute; inset: 0;
+    clip-path: polygon(0 0, 50% 55%, 100% 0);
+    background: var(--paper-deep); border-bottom: 1px solid var(--ink-soft);
+  }
+  .envelope.sealed::after {
+    content: ""; position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%);
+    width: 9px; height: 9px; border-radius: 50%; background: var(--stamp);
+  }
+  .letter-title { font-size: 14px; transition: color .15s; }
+  .letter-meta { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-top: 2px; }
+  .letter-badge { margin-left: auto; font-size: 10px; color: var(--stamp); border: 1px solid rgba(168,54,45,.4); padding: 1px 6px; border-radius: 999px; }
+
+  /* ============ CHAT ============ */
+  #page-chat.active { display: flex; flex-direction: column; }
+  .chat-wrap { flex: 1; display: flex; flex-direction: column; max-width: 780px; width: 100%; margin: 0 auto; padding: 0 20px; min-height: 0; }
+  .chat-head { padding: 18px 6px 12px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .ai-avatar {
+    width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, #E8D8BC, #C4652F);
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); color: #fff; font-size: 17px;
+  }
+  .ai-name { font-family: var(--serif); font-size: 16px; }
+  .ai-status { font-size: 11px; color: var(--green); display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+  .ai-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .chat-messages { flex: 1; overflow-y: auto; padding: 22px 4px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { display: flex; gap: 10px; max-width: 82%; }
+  .msg .bubble {
+    padding: 11px 15px; border-radius: 16px; font-size: 14px; line-height: 1.7;
+    border: 1px solid var(--line);
+  }
+  .msg.ai { align-self: flex-start; }
+  .msg.ai .bubble { background: var(--card); border-top-left-radius: 4px; }
+  .msg.me { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.me .bubble { background: var(--ink); color: var(--paper); border-color: var(--ink); border-top-right-radius: 4px; }
+  .msg .m-avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-family: var(--serif); }
+  .msg.ai .m-avatar { background: radial-gradient(circle at 35% 30%, #E8D8BC, #C4652F); color: #fff; }
+  .msg.me .m-avatar { background: var(--paper-deep); border: 1px solid var(--line); }
+  .msg-time { text-align: center; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; }
+  .typing { display: inline-flex; gap: 4px; padding: 4px 2px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,60%,100%{opacity:.25} 30%{opacity:1} }
+  .chat-input-bar { flex-shrink: 0; padding: 14px 0 22px; }
+  .chat-input-inner {
+    display: flex; align-items: flex-end; gap: 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+    padding: 9px 9px 9px 18px; box-shadow: 0 2px 8px rgba(42,38,32,.05);
+  }
+  .chat-input-inner:focus-within { border-color: var(--ink-soft); }
+  #chatInput {
+    flex: 1; border: none; background: transparent; resize: none; outline: none;
+    font-family: var(--sans); font-size: 14px; line-height: 1.6; color: var(--ink);
+    max-height: 120px; padding: 4px 0;
+  }
+  .send-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--ink); color: var(--paper); font-size: 15px; flex-shrink: 0;
+    transition: all .15s;
+  }
+  .send-btn:hover { background: var(--stamp); }
+
+  /* ============ MEMORY ============ */
+  .memory-empty { text-align: center; padding: 90px 20px; }
+  .memory-icon {
+    width: 88px; height: 88px; margin: 0 auto 24px; border-radius: 50%;
+    border: 1.5px dashed var(--ink-faint);
+    display: flex; align-items: center; justify-content: center; font-size: 34px;
+  }
+  .memory-title { font-family: var(--serif); font-size: 20px; letter-spacing: .2em; }
+  .memory-sub { color: var(--ink-faint); font-size: 13px; margin-top: 10px; line-height: 2; }
+  .memory-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 640px; margin: 40px auto 0; }
+  .memory-slot {
+    height: 90px; border: 1.5px dashed var(--line); border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-faint); letter-spacing: .15em;
+  }
+  @media (max-width: 640px) { .memory-slots { grid-template-columns: 1fr; } }
+
+  /* ============ SETTINGS ============ */
+  .settings-wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; letter-spacing: .08em; }
+  .field input {
+    width: 100%; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--paper);
+    font-family: var(--mono); font-size: 13px; color: var(--ink); outline: none;
+  }
+  .field input:focus { border-color: var(--ink-soft); background: var(--card); }
+  .btn-row { display: flex; justify-content: flex-end; margin-top: 4px; }
+  .btn {
+    padding: 9px 22px; border-radius: 999px; border: 1px solid var(--ink);
+    background: var(--ink); color: var(--paper); font-size: 13px; cursor: pointer;
+    letter-spacing: .1em; transition: all .15s;
+  }
+  .btn:hover { background: var(--stamp); border-color: var(--stamp); }
+  .btn.outline { background: transparent; color: var(--ink); }
+  .btn.outline:hover { background: var(--paper-deep); color: var(--ink); border-color: var(--ink); }
+  .settings-note { font-size: 11px; color: var(--ink-faint); line-height: 1.8; }
+
+  /* toast */
+  #toast {
+    position: fixed; left: 50%; bottom: 36px; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: var(--paper); font-size: 13px;
+    padding: 10px 22px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: all .3s; z-index: 200; letter-spacing: .05em;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<!-- ================= 密码锁屏 ================= -->
+<div id="lockScreen">
+  <div class="lock-card">
+    <div class="lock-logo">你</div>
+    <div class="lock-title">与 你</div>
+    <div class="lock-sub">WITH YOU · PRIVATE</div>
+    <div class="pin-dots" id="pinDots">
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+      <div class="pin-dot"></div><div class="pin-dot"></div>
+    </div>
+    <div class="keypad" id="keypad">
+      <button class="key">1</button><button class="key">2</button><button class="key">3</button>
+      <button class="key">4</button><button class="key">5</button><button class="key">6</button>
+      <button class="key">7</button><button class="key">8</button><button class="key">9</button>
+      <button class="key ghost" data-act="clear">清空</button>
+      <button class="key">0</button>
+      <button class="key ghost" data-act="back">⌫</button>
+    </div>
+    <div class="lock-hint" id="lockHint">请输入四位数字密码</div>
+  </div>
+</div>
+
+<!-- ================= 应用 ================= -->
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">你</span>与你</div>
+    <nav class="nav" id="nav">
+      <button class="nav-btn" data-page="home">主页<span class="en">HOME</span></button>
+      <button class="nav-btn active" data-page="chat">聊天<span class="en">CHAT</span></button>
+      <button class="nav-btn" data-page="memory">记忆<span class="en">MEMORY</span></button>
+      <button class="nav-btn" data-page="settings">设置<span class="en">SETTINGS</span></button>
+    </nav>
+    <div class="topbar-right" id="topClock">--:--</div>
+  </header>
+
+  <!-- ============ HOME ============ -->
+  <section class="page" id="page-home">
+    <div class="page-inner">
+      <div class="home-grid">
+
+        <div class="card clock-card col-4">
+          <div class="clock-time" id="clockTime">--:--:--</div>
+          <div class="clock-date"><span id="clockDate"></span> <span class="clock-week" id="clockWeek"></span></div>
+        </div>
+
+        <div class="card days-card col-4">
+          <div class="days-stamp">纪念</div>
+          <div class="days-num" id="daysNum">0</div>
+          <div class="days-label">这是我们在一起的第 <span id="daysNum2">-</span> 天</div>
+          <div class="days-since">SINCE 2025.05.27</div>
+        </div>
+
+        <div class="card col-4">
+          <div class="card-title">日历<span class="en">CALENDAR</span></div>
+          <div class="cal-head"><div class="cal-month" id="calMonth"></div></div>
+          <div class="cal-grid" id="calGrid"></div>
+        </div>
+
+        <div class="card col-5">
+          <div class="card-title">日记<span class="en">DIARY</span></div>
+          <div class="diary-item">
+            <div class="diary-date">2026.07.17 · 晴</div>
+            <div class="diary-title">夏夜的风</div>
+            <div class="diary-excerpt">晚上散步的时候闻到了栀子花的味道，想起去年这个时候……</div>
+          </div>
+          <div class="diary-item">
+            <div class="diary-date">2026.07.15 · 小雨</div>
+            <div class="diary-title">下雨天适合读书</div>
+            <div class="diary-excerpt">把搁置很久的那本书读完了，结局和想象中不太一样。</div>
+          </div>
+          <div class="diary-item">
+            <div class="diary-date">2026.07.12 · 多云</div>
+            <div class="diary-title">尝试做了柠檬塔</div>
+            <div class="diary-excerpt">第一次烤塔皮有点糊，但味道意外地不错。</div>
+          </div>
+        </div>
+
+        <!-- 收据风 To-do -->
+        <div class="col-7 card" style="padding: 12px;">
+          <div class="receipt">
+            <div class="receipt-tear"></div>
+            <div class="receipt-head">
+              <div class="shop">今日清单</div>
+              <div class="meta">
+                TODAY'S RECEIPT · <span id="receiptDate"></span><br>
+                店员：你 &amp; AI &nbsp;|&nbsp; NO.<span id="receiptNo">0527</span>
+              </div>
+            </div>
+            <div class="dashed">─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</div>
+            <div class="todo-list" id="todoList"></div>
+            <div class="dashed">─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─</div>
+            <div class="todo-progress" id="todoProgress"></div>
+            <div class="receipt-foot">
+              <div class="thanks">— 谢谢惠顾，明天也要加油 —</div>
+              <div class="barcode"></div>
+              <div class="paid-stamp">已 打 卡</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card col-8">
+          <div class="card-title">照片<span class="en">PHOTOS</span></div>
+          <div class="photo-grid">
+            <div class="photo" style="background:linear-gradient(135deg,#E8D8BC,#C4894F)">🌅</div>
+            <div class="photo" style="background:linear-gradient(135deg,#BFCDB4,#5F7A5A)">🌿</div>
+            <div class="photo" style="background:linear-gradient(135deg,#D8C6E0,#8B6E9E)">🌙</div>
+            <div class="photo" style="background:linear-gradient(135deg,#C9DAE4,#5E86A0)">🌊</div>
+            <div class="photo" style="background:linear-gradient(135deg,#EED5C2,#C4652F)">🍊</div>
+            <div class="photo photo-more">+ 23</div>
+          </div>
+        </div>
+
+        <div class="card col-4">
+          <div class="card-title">信件<span class="en">LETTERS</span></div>
+          <div class="letter-item">
+            <div class="envelope sealed"></div>
+            <div>
+              <div class="letter-title">写给三个月后的你</div>
+              <div class="letter-meta">2026.06.30 · 未拆封</div>
+            </div>
+            <div class="letter-badge">NEW</div>
+          </div>
+          <div class="letter-item">
+            <div class="envelope"></div>
+            <div>
+              <div class="letter-title">第 365 天的信</div>
+              <div class="letter-meta">2026.05.27 · 已读</div>
+            </div>
+          </div>
+          <div class="letter-item">
+            <div class="envelope"></div>
+            <div>
+              <div class="letter-title">新年快乐</div>
+              <div class="letter-meta">2026.01.01 · 已读</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CHAT ============ -->
+  <section class="page active" id="page-chat">
+    <div class="chat-wrap">
+      <div class="chat-head">
+        <div class="ai-avatar">安</div>
+        <div>
+          <div class="ai-name">小安</div>
+          <div class="ai-status">在线 · 随时可以聊</div>
+        </div>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="msg-time">今天 20:14</div>
+        <div class="msg ai">
+          <div class="m-avatar">安</div>
+          <div class="bubble">晚上好呀，今天过得怎么样？我看到清单上的「柠檬塔」已经打钩了，成功了吗？🍋</div>
+        </div>
+        <div class="msg me">
+          <div class="m-avatar">你</div>
+          <div class="bubble">成功啦！虽然塔皮有一点点糊，但是内馅很完美</div>
+        </div>
+        <div class="msg ai">
+          <div class="m-avatar">安</div>
+          <div class="bubble">那已经很厉害了，第一次烤塔皮糊一点很正常～要不要我把这次的配方记到日记里？下次可以把烤箱温度降 10 度试试。</div>
+        </div>
+        <div class="msg me">
+          <div class="m-avatar">你</div>
+          <div class="bubble">好呀，帮我记一下，顺便提醒我周末买黄油</div>
+        </div>
+        <div class="msg ai">
+          <div class="m-avatar">安</div>
+          <div class="bubble">记好啦 ✓ 已经加到周六的清单里了：「买黄油（做第二次柠檬塔）」。还有什么想聊的吗？</div>
+        </div>
+      </div>
+      <div class="chat-input-bar">
+        <div class="chat-input-inner">
+          <textarea id="chatInput" rows="1" placeholder="说点什么吧……"></textarea>
+          <button class="send-btn" id="sendBtn" title="发送">↑</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MEMORY ============ -->
+  <section class="page" id="page-memory">
+    <div class="page-inner">
+      <div class="memory-empty">
+        <div class="memory-icon">🫧</div>
+        <div class="memory-title">记 忆</div>
+        <div class="memory-sub">这里将存放我们共同的记忆碎片。<br>此页面正在设计中，敬请期待。</div>
+        <div class="memory-slots">
+          <div class="memory-slot">MEMORY · 01</div>
+          <div class="memory-slot">MEMORY · 02</div>
+          <div class="memory-slot">MEMORY · 03</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section class="page" id="page-settings">
+    <div class="page-inner">
+      <div class="settings-wrap">
+
+        <div class="card">
+          <div class="card-title">API 接口<span class="en">API CONNECTION</span></div>
+          <div class="field">
+            <label>API 地址</label>
+            <input type="text" placeholder="https://api.example.com/v1" value="">
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <input type="password" placeholder="sk-••••••••••••••••">
+          </div>
+          <div class="btn-row"><button class="btn outline" onclick="toast('已保存（预览版暂不生效）')">保存</button></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">MCP 接口<span class="en">MCP CONNECTION</span></div>
+          <div class="field">
+            <label>MCP 服务器地址</label>
+            <input type="text" placeholder="mcp://localhost:3000">
+          </div>
+          <div class="btn-row"><button class="btn outline" onclick="toast('已保存（预览版暂不生效）')">保存</button></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">页面密码<span class="en">PASSCODE</span></div>
+          <div class="field">
+            <label>当前密码</label>
+            <input type="password" placeholder="••••" maxlength="4">
+          </div>
+          <div class="field">
+            <label>新密码（四位数字）</label>
+            <input type="password" placeholder="••••" maxlength="4">
+          </div>
+          <div class="btn-row"><button class="btn outline" onclick="toast('已保存（预览版暂不生效）')">修改密码</button></div>
+        </div>
+
+        <div class="settings-note">* 当前为静态预览版本，以上设置仅作界面展示，尚未接入实际功能。</div>
+
+      </div>
+    </div>
+  </section>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ================= 密码锁 ================= */
+const PIN = "0527";
+let pinBuf = "";
+const pinDots = document.getElementById("pinDots");
+const lockHint = document.getElementById("lockHint");
+
+document.getElementById("keypad").addEventListener("click", e => {
+  const btn = e.target.closest(".key");
+  if (!btn) return;
+  const act = btn.dataset.act;
+  if (act === "clear") pinBuf = "";
+  else if (act === "back") pinBuf = pinBuf.slice(0, -1);
+  else if (pinBuf.length < 4) pinBuf += btn.textContent;
+  renderPin();
+  if (pinBuf.length === 4) checkPin();
+});
+document.addEventListener("keydown", e => {
+  if (document.getElementById("lockScreen").classList.contains("unlocked")) return;
+  if (/^[0-9]$/.test(e.key) && pinBuf.length < 4) { pinBuf += e.key; renderPin(); if (pinBuf.length === 4) checkPin(); }
+  else if (e.key === "Backspace") { pinBuf = pinBuf.slice(0, -1); renderPin(); }
+});
+function renderPin() {
+  [...pinDots.children].forEach((d, i) => d.classList.toggle("filled", i < pinBuf.length));
+}
+function checkPin() {
+  setTimeout(() => {
+    if (pinBuf === PIN) {
+      document.getElementById("app").classList.add("ready");
+      document.getElementById("lockScreen").classList.add("unlocked");
+    } else {
+      pinDots.classList.add("shake", "error");
+      lockHint.textContent = "密码不对哦，再试一次";
+      setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); }, 450);
+    }
+  }, 160);
+}
+
+/* ================= 页面切换 ================= */
+document.getElementById("nav").addEventListener("click", e => {
+  const btn = e.target.closest(".nav-btn");
+  if (!btn) return;
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + btn.dataset.page));
+});
+
+/* ================= 时钟 & 天数 ================= */
+const WEEK = ["星期日","星期一","星期二","星期三","星期四","星期五","星期六"];
+function pad(n){ return String(n).padStart(2,"0"); }
+function tick() {
+  const n = new Date();
+  const t = pad(n.getHours())+":"+pad(n.getMinutes())+":"+pad(n.getSeconds());
+  document.getElementById("clockTime").textContent = t;
+  document.getElementById("topClock").textContent = t.slice(0,5);
+  document.getElementById("clockDate").textContent = n.getFullYear()+" 年 "+(n.getMonth()+1)+" 月 "+n.getDate()+" 日";
+  document.getElementById("clockWeek").textContent = WEEK[n.getDay()];
+}
+tick(); setInterval(tick, 1000);
+
+const SINCE = new Date(2025, 4, 27);
+const daysTogether = Math.floor((Date.now() - SINCE) / 86400000) + 1;
+document.getElementById("daysNum").textContent = daysTogether;
+document.getElementById("daysNum2").textContent = daysTogether;
+
+/* ================= 日历 ================= */
+(function renderCal() {
+  const n = new Date(), y = n.getFullYear(), m = n.getMonth();
+  document.getElementById("calMonth").textContent = y + " / " + pad(m+1);
+  const grid = document.getElementById("calGrid");
+  ["日","一","二","三","四","五","六"].forEach(w => grid.insertAdjacentHTML("beforeend", `<div class="wd">${w}</div>`));
+  const first = new Date(y, m, 1).getDay();
+  const days = new Date(y, m+1, 0).getDate();
+  const marked = [5, 12, 17, 27];
+  for (let i = 0; i < first; i++) grid.insertAdjacentHTML("beforeend", "<div></div>");
+  for (let d = 1; d <= days; d++) {
+    const cls = ["cal-day", d === n.getDate() ? "today" : "", marked.includes(d) ? "marked" : ""].join(" ");
+    grid.insertAdjacentHTML("beforeend", `<div class="${cls}">${d}</div>`);
+  }
+})();
+
+/* ================= 收据 To-do ================= */
+const todos = [
+  { text: "回复妈妈的消息", time: "09:20", done: true },
+  { text: "读完《山茶文具店》最后一章", time: "14:00", done: true },
+  { text: "给窗台的绿萝浇水", time: "16:30", done: false, overdue: true },
+  { text: "晚饭后散步 30 分钟", time: "19:30", done: false },
+  { text: "买黄油（做第二次柠檬塔）", time: "周六", done: false, byAI: true },
+];
+function renderTodos() {
+  todos.sort((a,b) => (b.overdue && !b.done) - (a.overdue && !a.done));
+  document.getElementById("todoList").innerHTML = todos.map((t, i) => `
+    <div class="todo-item ${t.done ? "done" : ""}" data-i="${i}">
+      <span class="todo-box">[${t.done ? "✓" : "&nbsp;"}]</span>
+      <span class="todo-time">${t.time}</span>
+      <span class="todo-text">${t.text}</span>
+      ${t.overdue && !t.done ? '<span class="bang">!</span>' : ""}
+      ${t.byAI ? '<span class="todo-tag">小安</span>' : ""}
+    </div>`).join("");
+  const doneN = todos.filter(t => t.done).length, total = todos.length;
+  const filled = Math.round(doneN / total * 12);
+  document.getElementById("todoProgress").textContent =
+    "█".repeat(filled) + "░".repeat(12 - filled) +
+    `  ${Math.round(doneN/total*100)}%  (${doneN}/${total} 已完成)`;
+}
+document.getElementById("todoList").addEventListener("click", e => {
+  const item = e.target.closest(".todo-item");
+  if (!item) return;
+  todos[item.dataset.i].done = !todos[item.dataset.i].done;
+  renderTodos();
+});
+renderTodos();
+(function(){
+  const n = new Date();
+  document.getElementById("receiptDate").textContent =
+    n.getFullYear() + "." + pad(n.getMonth()+1) + "." + pad(n.getDate());
+})();
+
+/* ================= 聊天（静态演示） ================= */
+const chatMessages = document.getElementById("chatMessages");
+const chatInput = document.getElementById("chatInput");
+const replies = [
+  "嗯嗯，我在听～",
+  "这个想法不错，要不要展开说说？",
+  "记下来啦，需要我加进清单吗？",
+  "哈哈，我也这么觉得。",
+];
+function sendMsg() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  chatMessages.insertAdjacentHTML("beforeend",
+    `<div class="msg me"><div class="m-avatar">你</div><div class="bubble"></div></div>`);
+  chatMessages.lastElementChild.querySelector(".bubble").textContent = text;
+  chatInput.value = ""; chatInput.style.height = "auto";
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  chatMessages.insertAdjacentHTML("beforeend",
+    `<div class="msg ai" id="typingMsg"><div class="m-avatar">安</div><div class="bubble"><span class="typing"><i></i><i></i><i></i></span></div></div>`);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  setTimeout(() => {
+    const t = document.getElementById("typingMsg");
+    t.removeAttribute("id");
+    t.querySelector(".bubble").textContent = replies[Math.floor(Math.random() * replies.length)];
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }, 900 + Math.random() * 700);
+}
+document.getElementById("sendBtn").addEventListener("click", sendMsg);
+chatInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+});
+
+/* ================= toast ================= */
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2000);
+}
+</script>
+</body>
+</html>
