@@ -52,11 +52,15 @@
 static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/遗忘曲线/语义检索，
 可由 server.js 持 token 调用，无需前端懂 MCP。原生起步与此路线数据不冲突。）
 
-1. 修上面两个 iOS bug
-2. **给 wu-home 挂 Zeabur Volume**（1GB，挂 `/app/data`）——一切云端数据的前提
-3. **server.js 加 `/api/memories` CRUD**：记忆卡片 = {日期, 类型, 内容, 标签}，JSON 文件存
+**她明确说过：记忆是最高优先级——"其他功能不完善没关系，记忆用不了晤就是空白的"。**
+
+1. **给 wu-home 挂 Zeabur Volume**（1GB，挂 `/app/data`）——一切云端数据的前提。
+   ⚠️ 先在 Zeabur 服务页的 Volumes 标签确认是否真挂载成功：容器内直接写文件不挂
+   Volume 的话**重启就丢**（她的旧 ob 可能一直如此而未察觉）
+2. **server.js 加 `/api/memories` CRUD**：记忆卡片 = {日期, 类型, 内容, 标签}，JSON 文件存
    `/app/data`；顺势把日记/清单/倒数日也搬上服务器（解决跨设备同步）
-4. **Memory 页**读写记忆卡（UI 已留占位）；聊天时服务器把相关记忆卡拼进 system prompt
+3. **Memory 页**读写记忆卡（UI 已留占位）；聊天时服务器把相关记忆卡拼进 system prompt
+4. 修上面两个 iOS bug（次优先，她已确认可容忍）
 5. **八维驱动引擎原生化**：她手里有完整施工图纸 **`desire_public_for_ai.pdf`**（原作者
    写给实现 AI 的规格书，问她要），照它实现纯函数状态机：八维（attachment/curiosity/
    reflection/duty/social/libido/stress/fatigue）随时间衰减、随事件涨落，召唤力 =
@@ -70,6 +74,20 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
 9. OmbreBrain-folio 合并原作者更新（若她还想维护）：clone → `git remote add upstream
    原作者地址` → fetch → **新分支** merge → Zeabur 切分支试跑 → 再合 main。
    **绝对不要直接改它的 main**，那是她线上跑着的服务
+
+## 模型与上下文（她的要求）
+
+- **不要把代码焊死在 DeepSeek 上**。server.js 用的是 OpenAI 风格 chat/completions 格式，
+  DeepSeek 与绝大多数中转站都兼容。请把环境变量泛化为 `LLM_API_KEY / LLM_BASE_URL /
+  LLM_MODEL`（保留旧 DEEPSEEK_* 作为兼容读取），换供应商=改环境变量。若接 Claude 官方
+  API（Anthropic Messages 格式），需在 server.js 加一层格式翻译
+- **上下文缓存**：DeepSeek 官方 API 自动启用 context caching（重复前缀按缓存价计费），
+  无需代码；Claude API 需要在请求中显式标记 prompt caching。省钱的大头在这里
+- **长对话策略**：目前仅送最近 24 条。后续做"滚动摘要"——更早的对话由 LLM 压缩成
+  摘要并入记忆系统，与记忆蒸馏（里程碑 6）是同一条流水线
+- **MCP 说明**：模型本身都不"讲 MCP"，讲 MCP 的是中间人程序。条件 = 模型有工具调用
+  能力（DeepSeek 有）+ 一个会 MCP 协议的中间人（可由 server.js 充当）。因此"DeepSeek
+  接 MCP"可行，只是要写中间人代码，不是模型限制
 
 ## 纪律（务必遵守）
 
