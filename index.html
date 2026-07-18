@@ -119,11 +119,18 @@
     box-shadow: var(--shadow);
   }
 
-  /* 主要状态（左，柔和渐变 · 不规则圆角） */
+  /* 在一起时间（横版 · 突出天数） */
+  .days-row { display: flex; align-items: baseline; gap: 14px; margin-top: 24px; padding: 0 4px; }
+  .days-num { font-family: var(--serif); font-size: 66px; color: var(--blue); line-height: 1; letter-spacing: .01em; }
+  .days-side { padding-bottom: 6px; }
+  .days-label { font-size: 14px; color: var(--ink-soft); }
+  .days-since { font-size: 10.5px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .05em; }
+
+  /* 主要状态（柔和渐变 · 不规则圆角 · 紧凑） */
   .mood-card {
     display: flex; flex-direction: column; cursor: pointer; transition: transform .15s;
-    padding: 17px 17px 13px;
-    border-radius: 30px 46px 34px 50px / 46px 30px 48px 32px;
+    padding: 14px 15px 11px;
+    border-radius: 26px 40px 30px 44px / 40px 26px 42px 28px;
     background:
       radial-gradient(120% 90% at 18% 8%, rgba(255,255,255,.92), rgba(255,255,255,.3) 62%),
       linear-gradient(140deg, rgba(178,199,227,.6), rgba(213,202,233,.45) 52%, rgba(241,216,199,.4));
@@ -132,45 +139,47 @@
     box-shadow: var(--shadow);
   }
   .mood-card:active { transform: scale(.97); }
-  .mood-label { font-size: 10px; color: var(--ink-soft); letter-spacing: .18em; }
-  .mood-name { font-family: var(--serif); font-size: 19px; margin-top: 7px; }
+  .mood-label { font-size: 9.5px; color: var(--ink-soft); letter-spacing: .18em; }
+  .mood-name { font-family: var(--serif); font-size: 16.5px; margin-top: 6px; }
   .mood-name b { color: #C08A44; font-weight: normal; }
-  .mood-say { font-size: 12px; color: var(--ink-soft); line-height: 1.7; margin-top: 7px; flex: 1; }
-  .mood-foot { margin-top: 9px; font-size: 11px; color: var(--ink-faint); display: flex; align-items: center; }
+  .mood-say { font-size: 11.5px; color: var(--ink-soft); line-height: 1.65; margin-top: 6px; flex: 1;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mood-foot { margin-top: 8px; font-size: 10.5px; color: var(--ink-faint); display: flex; align-items: center; }
   .mood-foot .dot { width: 6px; height: 6px; border-radius: 50%; background: #9BC29B; margin-right: 5px; }
   .mood-foot .arr { margin-left: auto; }
 
-  /* 在一起时间（右上 · 无底框） */
-  .days-free { padding: 4px 4px 0; }
-  .days-num { font-family: var(--serif); font-size: 42px; color: var(--blue); line-height: 1.05; }
-  .days-label { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
-  .days-since { font-size: 10px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
-
-  /* 倒数日（右下 · 无底框） */
-  .cd-free { padding: 2px 4px; cursor: pointer; }
-  .cd-title { font-size: 10px; color: var(--ink-faint); letter-spacing: .15em; display: flex; }
+  /* 倒数日（轮播 · 无底框） */
+  .cd-free { padding: 4px 4px 0; cursor: pointer; display: flex; flex-direction: column; }
+  .cd-title { font-size: 10px; color: var(--ink-soft); letter-spacing: .15em; display: flex; }
   .cd-title .arr { margin-left: auto; }
-  .cd-row { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; border-bottom: 1px dashed rgba(168,178,196,.28); padding-bottom: 6px; }
-  .cd-row:last-child { border-bottom: none; padding-bottom: 0; }
-  .cd-row .n { font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cd-row .d { font-family: var(--serif); font-size: 18px; color: var(--blue-deep); white-space: nowrap; }
-  .cd-row .d small { font-size: 10px; color: var(--ink-faint); }
+  .cd-stage { flex: 1; display: flex; align-items: center; min-height: 74px; }
+  .cd-slide { animation: cdIn .5s ease; }
+  @keyframes cdIn { from { opacity: 0; transform: translateY(10px); } }
+  .cd-big { font-family: var(--serif); font-size: 34px; color: var(--blue-deep); line-height: 1.1; }
+  .cd-big small { font-size: 14px; color: var(--ink-faint); }
+  .cd-nm { font-size: 12.5px; margin-top: 3px; }
+  .cd-dt { font-size: 10px; color: var(--ink-faint); margin-top: 2px; letter-spacing: .04em; }
+  .cd-dots { display: flex; gap: 5px; padding: 6px 0 2px; }
+  .cd-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(168,178,196,.4); transition: all .3s; }
+  .cd-dots i.on { background: var(--blue-deep); width: 14px; border-radius: 99px; }
+  .cd-empty { font-size: 11px; color: var(--ink-faint); }
 
-  /* 本周日历条（无底框） */
+  /* 本周日历条（无底框 · 加深） */
   .week-card { margin-top: 26px; padding: 0 4px; cursor: pointer; }
-  .week-head { display: flex; font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; margin-bottom: 10px; }
+  .week-head { display: flex; font-size: 11px; color: var(--ink-soft); letter-spacing: .12em; margin-bottom: 10px; }
   .week-head .arr { margin-left: auto; }
   .week { display: flex; justify-content: space-between; }
   .wd { text-align: center; flex: 1; }
-  .wd .n { font-size: 10px; color: var(--ink-faint); }
+  .wd .n { font-size: 10px; color: var(--ink-soft); }
   .wd .d {
     margin: 6px auto 0; width: 32px; height: 32px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-family: var(--serif); font-size: 14px; color: var(--ink-soft);
+    font-family: var(--serif); font-size: 15px; color: var(--ink);
+    background: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.7);
   }
-  .wd.today .d { background: var(--blue-deep); color: #fff; box-shadow: 0 4px 12px rgba(126,150,184,.4); }
-  .wd .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--coral); margin: 3px auto 0; opacity: 0; }
-  .wd.marked .dot { opacity: .85; }
+  .wd.today .d { background: var(--blue-deep); border-color: var(--blue-deep); color: #fff; box-shadow: 0 4px 12px rgba(126,150,184,.5); }
+  .wd .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--coral); margin: 4px auto 0; opacity: 0; }
+  .wd.marked .dot { opacity: 1; }
 
   /* ── 票据 To-do 🧾 ── */
   .receipt-wrap { filter: drop-shadow(0 6px 16px rgba(90,110,140,.16)); }
@@ -240,9 +249,9 @@
   .stack-block { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 4px 22px 0 0; }
   .stack-cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .08em; }
 
-  /* 信件（横向整块） */
-  .letters-card { margin-top: 13px; }
-  .lt-head { display: flex; font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; margin-bottom: 4px; }
+  /* 信件（无底框） */
+  .letters-block { margin-top: 26px; padding: 0 4px; }
+  .lt-head { display: flex; font-size: 11px; color: var(--ink-soft); letter-spacing: .12em; margin-bottom: 4px; }
   .letter { display: flex; align-items: center; gap: 13px; padding: 10px 2px; cursor: pointer; }
   .letter + .letter { border-top: 1px dashed rgba(168,178,196,.25); }
   .lv { width: 38px; height: 28px; border-radius: 6px; flex-shrink: 0; position: relative;
@@ -301,7 +310,7 @@
   .win-item.active .ck { opacity: 1; }
   .win-item.new { color: var(--blue-deep); }
 
-  .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 16px calc(var(--navspace) + 62px); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
   .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; }
   .bub {
     max-width: 78%; padding: 11px 15px; font-size: 15px; line-height: 1.65;
@@ -325,10 +334,12 @@
   .typing i:nth-child(2){animation-delay:.2s} .typing i:nth-child(3){animation-delay:.4s}
   @keyframes blink { 0%,60%,100%{opacity:.25} 30%{opacity:1} }
 
-  .chat-inbar { flex-shrink: 0; padding: 8px 22px calc(var(--navspace) - 8px); position: relative; z-index: 5; }
+  /* 完全悬浮：绝对定位盖在消息流上，消息从玻璃下方滚过 */
+  .chat-inbar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 22px calc(var(--navspace) - 6px); z-index: 5; pointer-events: none; }
+  .chat-inbar > * { pointer-events: auto; }
   .chat-in {
     display: flex; align-items: flex-end; gap: 6px;
-    background: rgba(250,251,253,.55);
+    background: rgba(250,251,253,.5);
     border: 1px solid rgba(255,255,255,.8);
     backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
     border-radius: 999px; padding: 8px 9px;
@@ -604,6 +615,15 @@
         <div class="h-greet" id="hGreet">Have you had dinner?</div>
         <div class="h-greet-sub" id="hGreetSub">今天也想见到你。</div>
 
+        <!-- 在一起时间（横版） -->
+        <div class="days-row">
+          <div class="days-num" id="daysNum">418</div>
+          <div class="days-side">
+            <div class="days-label">day together</div>
+            <div class="days-since">since 2025.05.27</div>
+          </div>
+        </div>
+
         <div class="grid2">
           <!-- 主要状态 -->
           <div class="mood-card" onclick="openSub('status')">
@@ -612,18 +632,11 @@
             <div class="mood-say" id="moodSay"></div>
             <div class="mood-foot"><span class="dot"></span>Driven · On<span class="arr">›</span></div>
           </div>
-          <div class="rcol">
-            <!-- 在一起时间 -->
-            <div class="days-free">
-              <div class="days-num" id="daysNum">418</div>
-              <div class="days-label">day together</div>
-              <div class="days-since">since 2025.05.27</div>
-            </div>
-            <!-- 重要日期倒数日 -->
-            <div class="cd-free" onclick="openSub('countdown')">
-              <div class="cd-title">倒数日 D-DAY<span class="arr">›</span></div>
-              <div id="cdHome"></div>
-            </div>
+          <!-- 重要日期倒数日（轮播） -->
+          <div class="cd-free" onclick="openSub('countdown')">
+            <div class="cd-title">倒数日 D-DAY<span class="arr">›</span></div>
+            <div class="cd-stage" id="cdHome"></div>
+            <div class="cd-dots" id="cdDots"></div>
           </div>
         </div>
 
@@ -669,7 +682,7 @@
         </div>
 
         <!-- 信件 -->
-        <div class="card-soft letters-card">
+        <div class="letters-block">
           <div class="lt-head">信件 LETTERS</div>
           <div class="letter">
             <div class="lv sealed"></div>
@@ -1235,13 +1248,28 @@ function cdDays(dateStr) {
   const today = new Date(); today.setHours(0,0,0,0);
   return Math.round((t - today) / 86400000);
 }
+/* 首页轮播：一次展示一个，几秒轮换 */
+let cdIdx = 0;
 function renderCdHome() {
-  document.getElementById("cdHome").innerHTML = countdowns.slice(0, 2).map(c => {
-    const d = cdDays(c.date);
-    const label = d >= 0 ? `<small>D-</small>${d}` : `<small>+</small>${-d}`;
-    return `<div class="cd-row"><span class="n">${c.name}</span><span class="d">${label}</span></div>`;
-  }).join("");
+  const stage = document.getElementById("cdHome");
+  const dots = document.getElementById("cdDots");
+  if (!countdowns.length) {
+    stage.innerHTML = '<div class="cd-empty">还没有倒数日，点击添加 ›</div>';
+    dots.innerHTML = "";
+    return;
+  }
+  cdIdx = cdIdx % countdowns.length;
+  const c = countdowns[cdIdx];
+  const d = cdDays(c.date);
+  const big = d >= 0 ? `<small>D-</small>${d}` : `<small>+</small>${-d}`;
+  stage.innerHTML = `<div class="cd-slide">
+    <div class="cd-big">${big}</div>
+    <div class="cd-nm">${c.name}</div>
+    <div class="cd-dt">${c.date.replaceAll("-", ".")}</div>
+  </div>`;
+  dots.innerHTML = countdowns.map((_, i) => `<i class="${i === cdIdx ? "on" : ""}"></i>`).join("");
 }
+setInterval(() => { cdIdx++; renderCdHome(); }, 3200);
 function renderCdList() {
   document.getElementById("cdList").innerHTML = countdowns.map((c, i) => {
     const d = cdDays(c.date);
