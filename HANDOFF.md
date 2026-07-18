@@ -90,8 +90,18 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
   DeepSeek 与绝大多数中转站都兼容。请把环境变量泛化为 `LLM_API_KEY / LLM_BASE_URL /
   LLM_MODEL`（保留旧 DEEPSEEK_* 作为兼容读取），换供应商=改环境变量。若接 Claude 官方
   API（Anthropic Messages 格式），需在 server.js 加一层格式翻译
-- **上下文缓存**：DeepSeek 官方 API 自动启用 context caching（重复前缀按缓存价计费），
-  无需代码；Claude API 需要在请求中显式标记 prompt caching。省钱的大头在这里
+- **上下文缓存**（她明确要求做好）：DeepSeek 官方 API 自动启用 context caching
+  （重复前缀按缓存价计费），无需代码；Claude API 需显式标记 prompt caching。
+  ⚠️ 要吃到缓存红利，messages 必须**前缀稳定**：固定人设放最前 → 慢变的记忆块
+  居中 → 聊天历史只在尾部追加；不要每轮把易变内容插在开头，否则前缀天天变、
+  缓存永远不命中
+
+### 下一场施工顺序（额度刷新后，她已确认）
+1. 记忆后端 /api/memories + 日记/清单/倒数日/信件搬上 /app/data
+2. Memory 页真实化（看/编辑记忆卡）
+3. 聊天注入记忆（按上述缓存友好顺序拼 prompt）
+4. （有余力）**真实照片/文件上传**——她点名想要，见里程碑 6c
+5. （有余力）/admin 管理台毛坯
 - **长对话策略**：目前仅送最近 24 条。后续做"滚动摘要"——更早的对话由 LLM 压缩成
   摘要并入记忆系统，与记忆蒸馏（里程碑 6）是同一条流水线
 - **MCP 说明**：模型本身都不"讲 MCP"，讲 MCP 的是中间人程序。条件 = 模型有工具调用
