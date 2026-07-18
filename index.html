@@ -19,8 +19,8 @@
     --blue: #A9BDD8;
     --blue-deep: #7E96B8;
     --coral: #D97757;
-    --paper: #FDFCF6;          /* 票据纸色 */
-    --paper-ink: #4A4438;
+    --paper: #FAFBFD;          /* 票据纸色（冷白） */
+    --paper-ink: #4B5567;
     --glass: rgba(255,255,255,.62);
     --glass-border: rgba(255,255,255,.75);
     --shadow: 0 8px 28px rgba(90,110,140,.10);
@@ -119,36 +119,45 @@
     box-shadow: var(--shadow);
   }
 
-  /* 主要状态（左，竖高） */
-  .mood-card { display: flex; flex-direction: column; cursor: pointer; transition: transform .15s; }
+  /* 主要状态（左，柔和渐变 · 不规则圆角） */
+  .mood-card {
+    display: flex; flex-direction: column; cursor: pointer; transition: transform .15s;
+    padding: 17px 17px 13px;
+    border-radius: 30px 46px 34px 50px / 46px 30px 48px 32px;
+    background:
+      radial-gradient(120% 90% at 18% 8%, rgba(255,255,255,.92), rgba(255,255,255,.3) 62%),
+      linear-gradient(140deg, rgba(178,199,227,.6), rgba(213,202,233,.45) 52%, rgba(241,216,199,.4));
+    border: 1px solid rgba(255,255,255,.85);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow);
+  }
   .mood-card:active { transform: scale(.97); }
-  .mood-emoji { font-size: 30px; }
-  .mood-name { font-family: var(--serif); font-size: 19px; margin-top: 8px; }
+  .mood-label { font-size: 10px; color: var(--ink-soft); letter-spacing: .18em; }
+  .mood-name { font-family: var(--serif); font-size: 19px; margin-top: 7px; }
   .mood-name b { color: #C08A44; font-weight: normal; }
   .mood-say { font-size: 12px; color: var(--ink-soft); line-height: 1.7; margin-top: 7px; flex: 1; }
-  .mood-foot { margin-top: 10px; font-size: 11px; color: var(--ink-faint); display: flex; align-items: center; }
+  .mood-foot { margin-top: 9px; font-size: 11px; color: var(--ink-faint); display: flex; align-items: center; }
   .mood-foot .dot { width: 6px; height: 6px; border-radius: 50%; background: #9BC29B; margin-right: 5px; }
   .mood-foot .arr { margin-left: auto; }
 
-  /* 在一起时间（右上） */
-  .days-card { cursor: default; }
-  .days-num { font-family: var(--serif); font-size: 38px; color: var(--blue); line-height: 1.05; }
+  /* 在一起时间（右上 · 无底框） */
+  .days-free { padding: 4px 4px 0; }
+  .days-num { font-family: var(--serif); font-size: 42px; color: var(--blue); line-height: 1.05; }
   .days-label { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
   .days-since { font-size: 10px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
 
-  /* 倒数日（右下） */
-  .cd-card { cursor: pointer; transition: transform .15s; }
-  .cd-card:active { transform: scale(.97); }
-  .cd-title { font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; display: flex; }
+  /* 倒数日（右下 · 无底框） */
+  .cd-free { padding: 2px 4px; cursor: pointer; }
+  .cd-title { font-size: 10px; color: var(--ink-faint); letter-spacing: .15em; display: flex; }
   .cd-title .arr { margin-left: auto; }
-  .cd-row { display: flex; align-items: baseline; gap: 7px; margin-top: 9px; }
+  .cd-row { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; border-bottom: 1px dashed rgba(168,178,196,.28); padding-bottom: 6px; }
+  .cd-row:last-child { border-bottom: none; padding-bottom: 0; }
   .cd-row .n { font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cd-row .d { font-family: var(--serif); font-size: 17px; color: var(--blue-deep); white-space: nowrap; }
+  .cd-row .d { font-family: var(--serif); font-size: 18px; color: var(--blue-deep); white-space: nowrap; }
   .cd-row .d small { font-size: 10px; color: var(--ink-faint); }
 
-  /* 本周日历条 */
-  .week-card { margin-top: 13px; cursor: pointer; transition: transform .15s; }
-  .week-card:active { transform: scale(.98); }
+  /* 本周日历条（无底框） */
+  .week-card { margin-top: 26px; padding: 0 4px; cursor: pointer; }
   .week-head { display: flex; font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; margin-bottom: 10px; }
   .week-head .arr { margin-left: auto; }
   .week { display: flex; justify-content: space-between; }
@@ -180,32 +189,32 @@
       50% calc(100% - 6px), 45.83% 100%, 41.66% calc(100% - 6px), 37.5% 100%,
       33.33% calc(100% - 6px), 29.16% 100%, 25% calc(100% - 6px), 20.83% 100%,
       16.66% calc(100% - 6px), 12.5% 100%, 8.33% calc(100% - 6px), 4.16% 100%, 0 calc(100% - 6px));
-    background-image: repeating-linear-gradient(0deg, transparent 0 23px, rgba(74,68,56,.025) 23px 24px);
+    background-image: repeating-linear-gradient(0deg, transparent 0 23px, rgba(75,85,103,.025) 23px 24px);
   }
   .rc-head { text-align: center; }
   .rc-head .t { font-size: 13px; letter-spacing: .35em; margin-left: .35em; }
-  .rc-head .m { font-size: 8.5px; color: rgba(74,68,56,.55); margin-top: 5px; line-height: 1.7; letter-spacing: .03em; }
-  .rc-dash { border: none; border-top: 1.5px dashed rgba(74,68,56,.28); margin: 9px 0; }
+  .rc-head .m { font-size: 8.5px; color: rgba(75,85,103,.55); margin-top: 5px; line-height: 1.7; letter-spacing: .03em; }
+  .rc-dash { border: none; border-top: 1.5px dashed rgba(75,85,103,.28); margin: 9px 0; }
   .rc-item { display: flex; align-items: baseline; gap: 6px; padding: 5px 0; font-size: 11px; cursor: pointer; line-height: 1.5; }
   .rc-item .bx { flex-shrink: 0; }
   .rc-item .tx { flex: 1; word-break: break-all; }
-  .rc-item .tm { flex-shrink: 0; font-size: 8.5px; color: rgba(74,68,56,.5); }
-  .rc-item.done .tx { text-decoration: line-through; color: rgba(74,68,56,.4); }
+  .rc-item .tm { flex-shrink: 0; font-size: 8.5px; color: rgba(75,85,103,.5); }
+  .rc-item.done .tx { text-decoration: line-through; color: rgba(75,85,103,.4); }
   .rc-item.done .bx { color: #6F8F6F; }
   .rc-item .by { font-size: 8px; color: var(--blue-deep); border: 1px solid rgba(126,150,184,.4); border-radius: 3px; padding: 0 3px; }
-  .rc-prog { font-size: 9.5px; letter-spacing: .04em; color: rgba(74,68,56,.65); }
+  .rc-prog { font-size: 9.5px; letter-spacing: .04em; color: rgba(75,85,103,.65); }
   .rc-foot { text-align: center; margin-top: 8px; }
-  .rc-foot .th { font-family: var(--serif); font-style: italic; font-size: 10px; color: rgba(74,68,56,.55); }
+  .rc-foot .th { font-family: var(--serif); font-style: italic; font-size: 10px; color: rgba(75,85,103,.55); }
   .rc-barcode {
     margin: 8px auto 2px; height: 22px; width: 80%;
     background: repeating-linear-gradient(90deg, var(--paper-ink) 0 2px, transparent 2px 4px, var(--paper-ink) 4px 6.5px, transparent 6.5px 8px, var(--paper-ink) 8px 9px, transparent 9px 12px);
     opacity: .75;
   }
-  .rc-no { font-size: 8px; color: rgba(74,68,56,.45); letter-spacing: .2em; }
+  .rc-no { font-size: 8px; color: rgba(75,85,103,.45); letter-spacing: .2em; }
 
   /* ── 日记本 ── */
   .notebook {
-    background: #FFFEF9; border-radius: 18px; padding: 13px 14px 11px 24px;
+    background: #FBFCFE; border-radius: 18px; padding: 13px 14px 11px 24px;
     box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.8);
     position: relative; cursor: pointer; transition: transform .15s;
   }
@@ -292,7 +301,7 @@
   .win-item.active .ck { opacity: 1; }
   .win-item.new { color: var(--blue-deep); }
 
-  .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 11px; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
   .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; }
   .bub {
     max-width: 78%; padding: 11px 15px; font-size: 15px; line-height: 1.65;
@@ -316,14 +325,31 @@
   .typing i:nth-child(2){animation-delay:.2s} .typing i:nth-child(3){animation-delay:.4s}
   @keyframes blink { 0%,60%,100%{opacity:.25} 30%{opacity:1} }
 
-  .chat-inbar { flex-shrink: 0; padding: 8px 14px calc(var(--navspace) - 8px); position: relative; }
+  .chat-inbar { flex-shrink: 0; padding: 8px 22px calc(var(--navspace) - 8px); position: relative; z-index: 5; }
   .chat-in {
     display: flex; align-items: flex-end; gap: 6px;
-    background: rgba(255,255,255,.66); border: 1px solid rgba(255,255,255,.85);
-    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    border-radius: 26px; padding: 8px 9px;
-    box-shadow: 0 8px 24px rgba(110,130,160,.14);
+    background: rgba(250,251,253,.55);
+    border: 1px solid rgba(255,255,255,.8);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    border-radius: 999px; padding: 8px 9px;
+    box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
   }
+  /* 待发送附件预览 */
+  .att-prev {
+    display: flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%;
+    margin: 0 6px 9px;
+    background: rgba(250,251,253,.6); border: 1px solid rgba(255,255,255,.85);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border-radius: 16px; padding: 8px 10px;
+    box-shadow: 0 6px 18px rgba(70,90,120,.12);
+    animation: pop .2s ease;
+  }
+  .att-prev img { width: 42px; height: 54px; border-radius: 8px; object-fit: cover; }
+  .att-prev .att-fi { width: 42px; height: 42px; border-radius: 10px; background: rgba(126,150,184,.14);
+    display: flex; align-items: center; justify-content: center; font-size: 19px; }
+  .att-prev .att-n { font-size: 11.5px; color: var(--ink-soft); }
+  .att-x { border: none; background: rgba(60,69,87,.1); border-radius: 50%; width: 22px; height: 22px;
+    cursor: pointer; color: var(--ink-soft); font-size: 13px; line-height: 1; flex-shrink: 0; }
   .plus-btn {
     width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
     background: rgba(126,150,184,.12); color: var(--ink-soft); font-size: 20px; line-height: 1;
@@ -455,6 +481,12 @@
   .cal-cell.has-diary { background: rgba(255,255,255,.65); }
   .cal-legend { display: flex; justify-content: center; gap: 18px; margin-top: 16px; font-size: 11px; color: var(--ink-faint); }
 
+  /* 照片页 */
+  .pg-count { font-size: 11px; color: var(--ink-faint); text-align: center; margin: 4px 0 14px; letter-spacing: .08em; }
+  .pg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .pg-grid img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 14px;
+    border: 1px solid rgba(255,255,255,.7); box-shadow: 0 4px 14px rgba(90,110,140,.12); cursor: pointer; }
+
   /* 日记列表 & 详情 */
   .di-item {
     border-radius: 20px; padding: 15px 18px; margin-bottom: 12px;
@@ -469,7 +501,7 @@
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   #page-diaryDetail { z-index: 45; }
   .dd-paper {
-    background: #FFFEF9; border-radius: 22px; padding: 24px 22px;
+    background: #FBFCFE; border-radius: 22px; padding: 24px 22px;
     box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.85);
     background-image: repeating-linear-gradient(transparent 0 31px, #EDF1F6 31px 32px);
   }
@@ -574,21 +606,21 @@
 
         <div class="grid2">
           <!-- 主要状态 -->
-          <div class="card-soft mood-card" onclick="openSub('status')">
-            <div class="mood-emoji" id="moodEmoji">🌿</div>
+          <div class="mood-card" onclick="openSub('status')">
+            <div class="mood-label">晤的此刻</div>
             <div class="mood-name">此刻 · <b id="moodName">依恋</b></div>
             <div class="mood-say" id="moodSay"></div>
             <div class="mood-foot"><span class="dot"></span>Driven · On<span class="arr">›</span></div>
           </div>
           <div class="rcol">
             <!-- 在一起时间 -->
-            <div class="card-soft days-card">
+            <div class="days-free">
               <div class="days-num" id="daysNum">418</div>
               <div class="days-label">day together</div>
               <div class="days-since">since 2025.05.27</div>
             </div>
             <!-- 重要日期倒数日 -->
-            <div class="card-soft cd-card" onclick="openSub('countdown')">
+            <div class="cd-free" onclick="openSub('countdown')">
               <div class="cd-title">倒数日 D-DAY<span class="arr">›</span></div>
               <div id="cdHome"></div>
             </div>
@@ -596,7 +628,7 @@
         </div>
 
         <!-- 本周日历 -->
-        <div class="card-soft week-card" onclick="openSub('calendar')">
+        <div class="week-card" onclick="openSub('calendar')">
           <div class="week-head">本周 THIS WEEK<span class="arr">›</span></div>
           <div class="week" id="weekStrip"></div>
         </div>
@@ -631,7 +663,7 @@
             <!-- 重叠照片 -->
             <div class="stack-block">
               <div id="homeStack"></div>
-              <div class="stack-cap">‹ 滑动翻看 ›</div>
+              <div class="stack-cap">滑动翻看 · 点击查看全部</div>
             </div>
           </div>
         </div>
@@ -696,6 +728,7 @@
           <div class="pm-item" data-act="photo"><span class="ic">📷</span>上传照片</div>
           <div class="pm-item" data-act="file"><span class="ic">📄</span>上传文件</div>
         </div>
+        <div class="att-prev" id="attPrev" style="display:none"></div>
         <div class="chat-in">
           <button class="plus-btn" id="plusBtn">＋</button>
           <textarea id="chatInput" rows="1" placeholder="说点什么吧…"></textarea>
@@ -807,6 +840,18 @@
         <div class="cal-legend">
           <span>● 今天</span><span style="color:var(--coral)">· 有日记（点击查看）</span><span style="color:#C08A44">♥ 倒数日</span>
         </div>
+      </div>
+    </section>
+
+    <!-- ===== 子页：照片 ===== -->
+    <section class="subpage" id="page-photos">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('photos')">‹ 返回</button>
+        <div class="sp-title">照片</div>
+      </div>
+      <div class="sp-scroll">
+        <div class="pg-count" id="pgCount"></div>
+        <div class="pg-grid" id="pgGrid"></div>
       </div>
     </section>
 
@@ -1135,7 +1180,7 @@ function checkPin() {
 }
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -1151,6 +1196,7 @@ function openSub(name) {
   if (name === "calendar") renderCal();
   if (name === "diary") renderDiaryList();
   if (name === "countdown") renderCdList();
+  if (name === "photos") renderPhotosPage();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -1370,7 +1416,6 @@ const drives = [
 ];
 const topDrive = drives.filter(d => !d.gate).reduce((a, b) => a.val >= b.val ? a : b);
 
-document.getElementById("moodEmoji").textContent = topDrive.e;
 document.getElementById("moodName").textContent = topDrive.name + " " + topDrive.val;
 document.getElementById("moodSay").textContent = "「" + topDrive.say + "」";
 document.getElementById("chatStName").textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
@@ -1391,14 +1436,26 @@ document.getElementById("driveList").innerHTML = drives.map(d => `
     </div>
   </div>`).join("");
 
-/* ================= 照片堆 ================= */
+/* ================= 照片堆 & 照片页 ================= */
+const ALL_PHOTOS = [
+  ...PHOTOS, ...TART_PHOTOS,
+  phImg("#D9E4EE", "#8FA8C4", "🎡"),
+  phImg("#E4E9DC", "#A3B18A", "🍃"),
+  phImg("#EFE2E4", "#C39BA4", "🌸"),
+  phImg("#E2E6EF", "#94A3C0", "☁️"),
+];
+function renderPhotosPage() {
+  document.getElementById("pgCount").textContent = ALL_PHOTOS.length + " PHOTOS · 共同的相册";
+  document.getElementById("pgGrid").innerHTML =
+    ALL_PHOTOS.map(s => `<img src="${s}" onclick="toast('照片查看器 · 敬请期待')">`).join("");
+}
 new PhotoStack("#homeStack", PHOTOS, {
   width: 138, height: 178, counter: true,
-  onTap: () => toast("照片查看器 · 敬请期待"),
+  onTap: () => openSub("photos"),
 });
 new PhotoStack("#demoStack", TART_PHOTOS, {
   width: 120, height: 156, counter: true,
-  onTap: () => toast("照片查看器 · 敬请期待"),
+  onTap: () => openSub("photos"),
 });
 
 /* ================= 聊天 ================= */
@@ -1416,13 +1473,45 @@ function aiReply() {
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
   }, 900 + Math.random() * 700);
 }
+/* 待发送附件 */
+let pendingAtt = null;
+function renderAtt() {
+  const el = document.getElementById("attPrev");
+  if (!pendingAtt) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "flex";
+  el.innerHTML = (pendingAtt.type === "photo"
+    ? pendingAtt.imgs.map(s => `<img src="${s}">`).join("") + `<span class="att-n">${pendingAtt.imgs.length} 张照片</span>`
+    : `<div class="att-fi">📄</div><span class="att-n">${pendingAtt.name} · ${pendingAtt.size}</span>`)
+    + `<button class="att-x" onclick="clearAtt()">×</button>`;
+}
+function clearAtt() { pendingAtt = null; renderAtt(); }
+
 function sendMsg() {
   const text = chatInput.value.trim();
-  if (!text) return;
-  const me = document.createElement("div");
-  me.className = "bub me"; me.textContent = text;
-  chatMsgs.appendChild(me);
-  chatInput.value = ""; chatInput.style.height = "auto";
+  if (!text && !pendingAtt) return;
+  if (pendingAtt) {
+    if (pendingAtt.type === "photo") {
+      const wrap = document.createElement("div");
+      wrap.className = "msg-stack";
+      chatMsgs.appendChild(wrap);
+      new PhotoStack(wrap, pendingAtt.imgs, {
+        width: 120, height: 156, counter: true,
+        onTap: () => openSub("photos"),
+      });
+    } else {
+      const f = document.createElement("div");
+      f.className = "bub me file";
+      f.innerHTML = `<div class="fi">📄</div><div><div class="fn">${pendingAtt.name}</div><div class="fs">${pendingAtt.size} · 已发送</div></div>`;
+      chatMsgs.appendChild(f);
+    }
+    clearAtt();
+  }
+  if (text) {
+    const me = document.createElement("div");
+    me.className = "bub me"; me.textContent = text;
+    chatMsgs.appendChild(me);
+    chatInput.value = ""; chatInput.style.height = "auto";
+  }
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
   aiReply();
 }
@@ -1447,24 +1536,14 @@ plusMenu.addEventListener("click", e => {
   const item = e.target.closest(".pm-item");
   if (!item) return;
   plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
+  /* 选择后先进入“待发送”状态，显示在输入框上方；点发送才真正发出 */
   if (item.dataset.act === "photo") {
-    const wrap = document.createElement("div");
-    wrap.className = "msg-stack";
-    chatMsgs.appendChild(wrap);
-    new PhotoStack(wrap, [PHOTOS[0], PHOTOS[3], PHOTOS[4]], {
-      width: 120, height: 156, counter: true,
-      onTap: () => toast("照片查看器 · 敬请期待"),
-    });
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    aiReply();
+    pendingAtt = { type: "photo", imgs: [PHOTOS[0], PHOTOS[3], PHOTOS[4]] };
   } else {
-    const f = document.createElement("div");
-    f.className = "bub me file";
-    f.innerHTML = '<div class="fi">📄</div><div><div class="fn">柠檬塔配方.pdf</div><div class="fs">2.4 MB · 已发送</div></div>';
-    chatMsgs.appendChild(f);
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    aiReply();
+    pendingAtt = { type: "file", name: "柠檬塔配方.pdf", size: "2.4 MB" };
   }
+  renderAtt();
+  chatInput.focus();
 });
 
 /* 窗口切换 */
