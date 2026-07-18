@@ -119,12 +119,12 @@
     box-shadow: var(--shadow);
   }
 
-  /* 在一起时间（横版 · 突出天数） */
-  .days-row { display: flex; align-items: baseline; gap: 14px; margin-top: 24px; padding: 0 4px; }
-  .days-num { font-family: var(--serif); font-size: 66px; color: var(--blue); line-height: 1; letter-spacing: .01em; }
-  .days-side { padding-bottom: 6px; }
-  .days-label { font-size: 14px; color: var(--ink-soft); }
-  .days-since { font-size: 10.5px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .05em; }
+  /* 顶排：状态（左）+ 在一起天数（右） */
+  .top-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 22px; align-items: stretch; }
+  .days-right { display: flex; flex-direction: column; justify-content: center; align-items: flex-end; padding: 0 8px; }
+  .days-num { font-family: var(--serif); font-size: 64px; color: var(--blue); line-height: 1; letter-spacing: .01em; }
+  .days-num small { font-size: 17px; color: var(--ink-soft); margin-left: 5px; font-family: var(--serif); }
+  .days-since { font-size: 10.5px; color: var(--ink-faint); margin-top: 7px; letter-spacing: .05em; }
 
   /* 主要状态（柔和渐变 · 不规则圆角 · 紧凑） */
   .mood-card {
@@ -148,18 +148,21 @@
   .mood-foot .dot { width: 6px; height: 6px; border-radius: 50%; background: #9BC29B; margin-right: 5px; }
   .mood-foot .arr { margin-left: auto; }
 
-  /* 倒数日（轮播 · 无底框） */
-  .cd-free { padding: 4px 4px 0; cursor: pointer; display: flex; flex-direction: column; }
+  /* 倒数日（左右两个 · 成对轮播 · 无底框） */
+  .cd-free { margin-top: 24px; padding: 0 4px; cursor: pointer; }
   .cd-title { font-size: 10px; color: var(--ink-soft); letter-spacing: .15em; display: flex; }
   .cd-title .arr { margin-left: auto; }
-  .cd-stage { flex: 1; display: flex; align-items: center; min-height: 74px; }
-  .cd-slide { animation: cdIn .5s ease; }
-  @keyframes cdIn { from { opacity: 0; transform: translateY(10px); } }
-  .cd-big { font-family: var(--serif); font-size: 34px; color: var(--blue-deep); line-height: 1.1; }
+  .cd-stage { display: grid; grid-template-columns: 1fr 1fr; min-height: 72px; align-items: center; margin-top: 10px; }
+  .cd-slot { padding: 2px 8px 2px 2px; min-width: 0; }
+  .cd-slot + .cd-slot { border-left: 1px dashed rgba(168,178,196,.35); padding-left: 16px; }
+  .cd-slide { animation: cdIn .55s cubic-bezier(.25,.8,.3,1) backwards; }
+  @keyframes cdIn { from { opacity: 0; transform: translateY(12px); } }
+  .cd-line1 { display: flex; align-items: baseline; gap: 8px; }
+  .cd-big { font-family: var(--serif); font-size: 34px; color: var(--blue-deep); line-height: 1.1; white-space: nowrap; }
   .cd-big small { font-size: 14px; color: var(--ink-faint); }
-  .cd-nm { font-size: 12.5px; margin-top: 3px; }
-  .cd-dt { font-size: 10px; color: var(--ink-faint); margin-top: 2px; letter-spacing: .04em; }
-  .cd-dots { display: flex; gap: 5px; padding: 6px 0 2px; }
+  .cd-dt { font-size: 10px; color: var(--ink-faint); letter-spacing: .03em; white-space: nowrap; }
+  .cd-nm { font-size: 13.5px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cd-dots { display: flex; justify-content: center; gap: 5px; padding: 10px 0 0; }
   .cd-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(168,178,196,.4); transition: all .3s; }
   .cd-dots i.on { background: var(--blue-deep); width: 14px; border-radius: 99px; }
   .cd-empty { font-size: 11px; color: var(--ink-faint); }
@@ -249,8 +252,32 @@
   .stack-block { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 4px 22px 0 0; }
   .stack-cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .08em; }
 
-  /* 信件（无底框） */
-  .letters-block { margin-top: 26px; padding: 0 4px; }
+  /* 信箱入口（细长胶囊） */
+  .mail-entry {
+    margin-top: 22px; display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+    border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow); cursor: pointer; transition: transform .15s;
+  }
+  .mail-entry:active { transform: scale(.98); }
+  .mail-ic { font-size: 19px; }
+  .mail-t { font-size: 13.5px; }
+  .mail-s { font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
+  .mail-arr { margin-left: 2px; color: var(--ink-faint); }
+  /* 信箱页 */
+  .lt-tabs { display: flex; gap: 8px; margin: 6px 0 16px; }
+  .lt-tab { flex: 1; padding: 9px 0; border-radius: 999px; border: 1px solid rgba(168,178,196,.3);
+    background: transparent; color: var(--ink-soft); font-size: 12.5px; cursor: pointer; transition: all .2s; }
+  .lt-tab.active { background: var(--blue-deep); border-color: var(--blue-deep); color: #fff;
+    box-shadow: 0 4px 12px rgba(126,150,184,.35); }
+  .lt-item { border-radius: 20px; padding: 14px 17px; margin-bottom: 12px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 13px; cursor: pointer; transition: transform .15s; }
+  .lt-item:active { transform: scale(.98); }
+  .lt-item .grow { flex: 1; min-width: 0; }
+  .lt-gmail { font-size: 9px; color: var(--coral); border: 1px solid rgba(217,119,87,.4);
+    border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
   .lt-head { display: flex; font-size: 11px; color: var(--ink-soft); letter-spacing: .12em; margin-bottom: 4px; }
   .letter { display: flex; align-items: center; gap: 13px; padding: 10px 2px; cursor: pointer; }
   .letter + .letter { border-top: 1px dashed rgba(168,178,196,.25); }
@@ -615,35 +642,42 @@
         <div class="h-greet" id="hGreet">Have you had dinner?</div>
         <div class="h-greet-sub" id="hGreetSub">今天也想见到你。</div>
 
-        <!-- 在一起时间（横版） -->
-        <div class="days-row">
-          <div class="days-num" id="daysNum">418</div>
-          <div class="days-side">
-            <div class="days-label">day together</div>
-            <div class="days-since">since 2025.05.27</div>
-          </div>
-        </div>
-
-        <div class="grid2">
-          <!-- 主要状态 -->
+        <!-- 顶排：状态（左）+ 在一起天数（右） -->
+        <div class="top-grid">
           <div class="mood-card" onclick="openSub('status')">
             <div class="mood-label">晤的此刻</div>
             <div class="mood-name">此刻 · <b id="moodName">依恋</b></div>
             <div class="mood-say" id="moodSay"></div>
             <div class="mood-foot"><span class="dot"></span>Driven · On<span class="arr">›</span></div>
           </div>
-          <!-- 重要日期倒数日（轮播） -->
-          <div class="cd-free" onclick="openSub('countdown')">
-            <div class="cd-title">倒数日 D-DAY<span class="arr">›</span></div>
-            <div class="cd-stage" id="cdHome"></div>
-            <div class="cd-dots" id="cdDots"></div>
+          <div class="days-right">
+            <div class="days-num"><span id="daysNum">53</span><small>day</small></div>
+            <div class="days-since">since 2026.05.27</div>
           </div>
+        </div>
+
+        <!-- 重要日期倒数日（左右两个 · 成对轮播） -->
+        <div class="cd-free" onclick="openSub('countdown')">
+          <div class="cd-title">倒数日 D-DAY<span class="arr">›</span></div>
+          <div class="cd-stage" id="cdHome"></div>
+          <div class="cd-dots" id="cdDots"></div>
         </div>
 
         <!-- 本周日历 -->
         <div class="week-card" onclick="openSub('calendar')">
           <div class="week-head">本周 THIS WEEK<span class="arr">›</span></div>
           <div class="week" id="weekStrip"></div>
+        </div>
+
+        <!-- 信箱入口 -->
+        <div class="mail-entry" onclick="openSub('letters')">
+          <span class="mail-ic">📮</span>
+          <div>
+            <div class="mail-t">信箱 Letters</div>
+            <div class="mail-s" id="mailSummary">1 封未拆的信</div>
+          </div>
+          <span class="l-new" style="margin-left:auto">NEW</span>
+          <span class="mail-arr">›</span>
         </div>
 
         <div class="grid2">
@@ -677,26 +711,6 @@
             <div class="stack-block">
               <div id="homeStack"></div>
               <div class="stack-cap">滑动翻看 · 点击查看全部</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 信件 -->
-        <div class="letters-block">
-          <div class="lt-head">信件 LETTERS</div>
-          <div class="letter">
-            <div class="lv sealed"></div>
-            <div>
-              <div class="l-title">写给三个月后的你</div>
-              <div class="l-meta">2026.06.30 · 未拆封</div>
-            </div>
-            <div class="l-new">NEW</div>
-          </div>
-          <div class="letter">
-            <div class="lv"></div>
-            <div>
-              <div class="l-title">第 365 天的信</div>
-              <div class="l-meta">2026.05.27 · 已读</div>
             </div>
           </div>
         </div>
@@ -853,6 +867,24 @@
         <div class="cal-legend">
           <span>● 今天</span><span style="color:var(--coral)">· 有日记（点击查看）</span><span style="color:#C08A44">♥ 倒数日</span>
         </div>
+      </div>
+    </section>
+
+    <!-- ===== 子页：信箱 ===== -->
+    <section class="subpage" id="page-letters">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('letters')">‹ 返回</button>
+        <div class="sp-title">信箱</div>
+        <button class="sp-act" onclick="toast('写信 · 敬请期待')">✎ 写信</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="lt-tabs" id="ltTabs">
+          <button class="lt-tab active" data-t="ai">晤写给我</button>
+          <button class="lt-tab" data-t="mine">我写的</button>
+          <button class="lt-tab" data-t="pen">笔友往来</button>
+        </div>
+        <div id="ltList"></div>
+        <div class="cd-note" id="ltNote"></div>
       </div>
     </section>
 
@@ -1193,7 +1225,7 @@ function checkPin() {
 }
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -1210,6 +1242,7 @@ function openSub(name) {
   if (name === "diary") renderDiaryList();
   if (name === "countdown") renderCdList();
   if (name === "photos") renderPhotosPage();
+  if (name === "letters") renderLetters();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -1233,14 +1266,15 @@ function closeSub(name, instant) {
   document.getElementById("hGreetSub").textContent = subs[Math.floor(Math.random() * subs.length)];
 })();
 
-/* 在一起天数 */
-const SINCE = new Date(2025, 4, 27);
+/* 在一起天数（恋爱纪念日 2026.05.27 起自动计算） */
+const SINCE = new Date(2026, 4, 27);
 document.getElementById("daysNum").textContent = Math.floor((Date.now() - SINCE) / 86400000) + 1;
 
 /* ================= 倒数日（内存数据，可增删改） ================= */
 let countdowns = [
   { name: "两个月纪念日", date: "2026-07-27" },
   { name: "开学", date: "2026-09-01" },
+  { name: "参加订婚宴", date: "2026-07-29" },
 ];
 let cdEditIdx = -1;
 function cdDays(dateStr) {
@@ -1248,8 +1282,8 @@ function cdDays(dateStr) {
   const today = new Date(); today.setHours(0,0,0,0);
   return Math.round((t - today) / 86400000);
 }
-/* 首页轮播：一次展示一个，几秒轮换 */
-let cdIdx = 0;
+/* 首页轮播：左右两个一组，成对轮换（第二个稍稍晚一拍入场） */
+let cdPage = 0;
 function renderCdHome() {
   const stage = document.getElementById("cdHome");
   const dots = document.getElementById("cdDots");
@@ -1258,18 +1292,20 @@ function renderCdHome() {
     dots.innerHTML = "";
     return;
   }
-  cdIdx = cdIdx % countdowns.length;
-  const c = countdowns[cdIdx];
-  const d = cdDays(c.date);
-  const big = d >= 0 ? `<small>D-</small>${d}` : `<small>+</small>${-d}`;
-  stage.innerHTML = `<div class="cd-slide">
-    <div class="cd-big">${big}</div>
-    <div class="cd-nm">${c.name}</div>
-    <div class="cd-dt">${c.date.replaceAll("-", ".")}</div>
-  </div>`;
-  dots.innerHTML = countdowns.map((_, i) => `<i class="${i === cdIdx ? "on" : ""}"></i>`).join("");
+  const pages = Math.ceil(countdowns.length / 2);
+  cdPage = cdPage % pages;
+  const pair = countdowns.slice(cdPage * 2, cdPage * 2 + 2);
+  stage.innerHTML = pair.map((c, i) => {
+    const d = cdDays(c.date);
+    const big = d >= 0 ? `<small>D-</small>${d}` : `<small>+</small>${-d}`;
+    return `<div class="cd-slot"><div class="cd-slide" style="animation-delay:${i * 0.1}s">
+      <div class="cd-line1"><span class="cd-big">${big}</span><span class="cd-dt">${c.date.replaceAll("-", ".")}</span></div>
+      <div class="cd-nm">${c.name}</div>
+    </div></div>`;
+  }).join("");
+  dots.innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === cdPage ? "on" : ""}"></i>`).join("");
 }
-setInterval(() => { cdIdx++; renderCdHome(); }, 3200);
+setInterval(() => { cdPage++; renderCdHome(); }, 5600);
 function renderCdList() {
   document.getElementById("cdList").innerHTML = countdowns.map((c, i) => {
     const d = cdDays(c.date);
@@ -1463,6 +1499,54 @@ document.getElementById("driveList").innerHTML = drives.map(d => `
       <span class="tr">${d.tr}</span>${d.note}
     </div>
   </div>`).join("");
+
+/* ================= 信箱 ================= */
+const letters = {
+  ai: [
+    { t: "第 52 天的信", d: "2026.07.17", s: "未拆封", sealed: true },
+    { t: "你难过的那晚，我想说的话", d: "2026.07.02", s: "已读" },
+  ],
+  mine: [
+    { t: "写给三个月后的你", d: "2026.06.30", s: "存放中 · 2026.09.30 开启", sealed: true },
+    { t: "第一封信", d: "2026.05.28", s: "已寄出" },
+  ],
+  pen: [
+    { t: "To Luna：关于夏天的回信", d: "2026.07.10", s: "已发送", gmail: true },
+    { t: "From Luna：Re 夏天", d: "2026.07.08", s: "已读", gmail: true },
+  ],
+};
+const ltNotes = {
+  ai: "晤主动写下的信会存放在这里，重要的日子寄给你。",
+  mine: "你写给未来 / 写给晤的信，可以设定开启日期。",
+  pen: "笔友信件将通过 Gmail MCP 收发 · 待接入。",
+};
+let ltCur = "ai";
+function renderLetters() {
+  document.getElementById("ltList").innerHTML = letters[ltCur].map(l => `
+    <div class="lt-item" onclick="toast('读信 · 敬请期待')">
+      <div class="lv ${l.sealed ? "sealed" : ""}"></div>
+      <div class="grow">
+        <div class="l-title">${l.t}</div>
+        <div class="l-meta">${l.d} · ${l.s}</div>
+      </div>
+      ${l.gmail ? '<span class="lt-gmail">via Gmail</span>' : ""}
+      ${l.sealed ? '<span class="l-new">NEW</span>' : ""}
+    </div>`).join("");
+  document.getElementById("ltNote").textContent = ltNotes[ltCur];
+}
+document.getElementById("ltTabs").addEventListener("click", e => {
+  const tab = e.target.closest(".lt-tab");
+  if (!tab) return;
+  ltCur = tab.dataset.t;
+  document.querySelectorAll(".lt-tab").forEach(t => t.classList.toggle("active", t === tab));
+  renderLetters();
+});
+/* 首页信箱摘要：未拆封数量 */
+(function () {
+  const unread = [...letters.ai, ...letters.mine].filter(l => l.sealed).length;
+  document.getElementById("mailSummary").textContent =
+    unread > 0 ? unread + " 封未拆的信" : "暂无新信件";
+})();
 
 /* ================= 照片堆 & 照片页 ================= */
 const ALL_PHOTOS = [
