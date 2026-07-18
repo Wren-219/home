@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -29,14 +29,18 @@
     --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
     --sat: env(safe-area-inset-top, 0px);
     --sab: env(safe-area-inset-bottom, 0px);
-    --navspace: calc(96px + var(--sab));   /* 悬浮导航占位 */
+    --navspace: calc(78px + var(--sab));   /* 悬浮导航占位 */
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; }
-  body { font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased; }
+  /* 固定整个页面：防止 iOS Safari 整页橡皮筋滚动 / 键盘顶飞布局 */
+  body {
+    font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased;
+    position: fixed; inset: 0; width: 100%; overflow: hidden; overscroll-behavior: none;
+  }
 
   #frame {
-    position: relative; margin: 0 auto; max-width: 430px; height: 100dvh; overflow: hidden;
+    position: relative; margin: 0 auto; max-width: 430px; height: 100%; overflow: hidden;
     background:
       radial-gradient(120% 60% at 15% -5%, #FDFEFF 0%, transparent 55%),
       radial-gradient(90% 50% at 100% 8%, #E3EAF3 0%, transparent 60%),
@@ -49,7 +53,7 @@
   #lockScreen {
     position: absolute; inset: 0; z-index: 90;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding-top: var(--sat);
+    padding-top: var(--sat); padding-bottom: 11vh;
     background:
       radial-gradient(100% 55% at 20% 0%, #FFFFFF 0%, transparent 60%),
       radial-gradient(90% 55% at 90% 100%, #D9E3F0 0%, transparent 60%),
@@ -57,8 +61,8 @@
     transition: opacity .55s ease;
   }
   #lockScreen.unlocked { opacity: 0; pointer-events: none; }
-  .lock-name { font-family: var(--serif); font-size: 40px; }
-  .lock-sub { font-family: var(--serif); font-size: 13px; color: var(--ink-faint); letter-spacing: .35em; margin: 10px 0 34px; }
+  .lock-name { font-family: var(--serif); font-size: 44px; letter-spacing: .02em; }
+  .lock-sub { font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink-faint); letter-spacing: .28em; margin: 12px 0 36px; }
   .pin-dots { display: flex; gap: 20px; margin-bottom: 40px; }
   .pin-dots.shake { animation: shake .4s; }
   @keyframes shake { 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
@@ -87,7 +91,8 @@
   /* 悬浮玻璃导航 */
   #tabbar {
     position: absolute; left: 22px; right: 22px; z-index: 30;
-    bottom: calc(16px + var(--sab));
+    bottom: max(6px, calc(var(--sab) - 4px));
+    transition: transform .25s ease, opacity .25s ease;
     height: 62px; border-radius: 999px;
     display: flex; align-items: stretch;
     background: rgba(250,251,253,.55);
@@ -103,6 +108,10 @@
   }
   .tab svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .tab.active { color: var(--blue-deep); }
+  /* 键盘弹出时：导航栏藏到键盘下面，输入栏贴紧键盘 */
+  body.kb-open #tabbar { transform: translateY(160%); opacity: 0; pointer-events: none; }
+  body.kb-open .chat-inbar { padding-bottom: 10px; }
+  body.kb-open .chat-msgs { padding-bottom: 80px; }
 
   /* ============ HOME ============ */
   .home-pad { padding: calc(var(--sat) + 22px) 20px var(--navspace); }
@@ -449,7 +458,7 @@
   .plus-btn.open { transform: rotate(45deg); }
   #chatInput {
     flex: 1; border: none; background: none; outline: none; resize: none;
-    font-family: var(--sans); font-size: 15px; line-height: 1.5; color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.5; color: var(--ink);
     max-height: 110px; padding: 7px 4px;
   }
   #chatInput::placeholder { color: var(--ink-faint); }
@@ -550,7 +559,7 @@
   .cd-form input {
     flex: 1; min-width: 0; padding: 10px 13px; border-radius: 12px;
     border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.7);
-    font-size: 13px; color: var(--ink); outline: none; font-family: var(--sans);
+    font-size: 16px; color: var(--ink); outline: none; font-family: var(--sans);
   }
   .cd-form input:focus { border-color: var(--blue-deep); }
   .cd-form .ops { display: flex; justify-content: flex-end; gap: 8px; }
@@ -623,7 +632,7 @@
   .field label { display: block; font-size: 11px; color: var(--ink-soft); margin-bottom: 6px; }
   .field input { width: 100%; padding: 11px 15px; border-radius: 14px;
     border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.6);
-    font-size: 13px; color: var(--ink); outline: none; font-family: var(--sans); }
+    font-size: 16px; color: var(--ink); outline: none; font-family: var(--sans); }
   .field input:focus { border-color: var(--blue-deep); background: #fff; }
   .btn-row { display: flex; justify-content: flex-end; margin-top: 14px; }
   .btn { padding: 9px 24px; border-radius: 999px; border: none; cursor: pointer;
@@ -668,8 +677,8 @@
 
   <!-- ============ 密码锁屏 ============ -->
   <div id="lockScreen">
-    <div class="lock-name">晤</div>
-    <div class="lock-sub">WITH YOU</div>
+    <div class="lock-name">Wu&rsquo;s home</div>
+    <div class="lock-sub">open the door</div>
     <div class="pin-dots" id="pinDots">
       <div class="pin-dot"></div><div class="pin-dot"></div>
       <div class="pin-dot"></div><div class="pin-dot"></div>
@@ -682,7 +691,7 @@
       <button class="key">0</button>
       <button class="key ghost" data-act="back">⌫</button>
     </div>
-    <div class="lock-hint" id="lockHint">输入四位数字密码</div>
+    <div class="lock-hint" id="lockHint"></div>
   </div>
 
   <!-- ============ 应用 ============ -->
@@ -1899,6 +1908,19 @@ document.addEventListener("click", () => {
   winMenu.classList.remove("open");
   plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
 });
+
+/* ================= iOS 键盘适配 =================
+   键盘弹出 → 隐藏底部导航（藏到键盘下面）、输入栏贴紧键盘 */
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const onVV = () => {
+    const kbOpen = (window.innerHeight - vv.height) > 120;
+    document.body.classList.toggle("kb-open", kbOpen);
+    if (kbOpen) chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  };
+  vv.addEventListener("resize", onVV);
+  vv.addEventListener("scroll", onVV);
+}
 
 /* ================= toast ================= */
 let toastTimer;
