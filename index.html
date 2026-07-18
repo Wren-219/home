@@ -426,14 +426,17 @@
   /* 完全悬浮：绝对定位盖在消息流上，消息从玻璃下方滚过 */
   .chat-inbar { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 22px calc(var(--navspace) - 6px); z-index: 5; pointer-events: none; }
   .chat-inbar > * { pointer-events: auto; }
+  /* Claude 式输入面板：文字在上，按钮一行在下（长文本自然向上生长） */
   .chat-in {
-    display: flex; align-items: flex-end; gap: 6px;
-    background: rgba(250,251,253,.5);
+    display: flex; flex-direction: column; gap: 2px;
+    background: rgba(250,251,253,.6);
     border: 1px solid rgba(255,255,255,.8);
     backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
-    border-radius: 999px; padding: 8px 9px;
+    border-radius: 24px; padding: 10px 12px 8px;
     box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
   }
+  .in-row { display: flex; align-items: center; gap: 6px; }
+  .in-row .sp { flex: 1; }
   /* 待发送附件预览 */
   .att-prev {
     display: flex; align-items: center; gap: 9px; width: fit-content; max-width: 100%;
@@ -451,15 +454,15 @@
   .att-x { border: none; background: rgba(60,69,87,.1); border-radius: 50%; width: 22px; height: 22px;
     cursor: pointer; color: var(--ink-soft); font-size: 13px; line-height: 1; flex-shrink: 0; }
   .plus-btn {
-    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
-    background: rgba(126,150,184,.12); color: var(--ink-soft); font-size: 20px; line-height: 1;
+    width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
+    background: rgba(126,150,184,.12); color: var(--ink-soft); font-size: 19px; line-height: 1;
     transition: transform .2s;
   }
   .plus-btn.open { transform: rotate(45deg); }
   #chatInput {
-    flex: 1; border: none; background: none; outline: none; resize: none;
+    width: 100%; border: none; background: none; outline: none; resize: none;
     font-family: var(--sans); font-size: 16px; line-height: 1.5; color: var(--ink);
-    max-height: 110px; padding: 7px 4px;
+    max-height: 132px; padding: 2px 4px 4px;
   }
   #chatInput::placeholder { color: var(--ink-faint); }
   .in-ic { border: none; background: none; cursor: pointer; padding: 7px 4px; color: var(--ink-soft); flex-shrink: 0; }
@@ -472,7 +475,7 @@
   .send:active { transform: scale(.92); }
   /* + 功能菜单 */
   #plusMenu {
-    position: absolute; left: 18px; bottom: calc(var(--navspace) + 48px); z-index: 50;
+    position: absolute; left: 18px; bottom: calc(var(--navspace) + 100px); z-index: 50;
     width: 170px; border-radius: 18px; overflow: hidden;
     background: rgba(252,253,255,.85);
     backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
@@ -806,12 +809,15 @@
         </div>
         <div class="att-prev" id="attPrev" style="display:none"></div>
         <div class="chat-in">
-          <button class="plus-btn" id="plusBtn">＋</button>
           <textarea id="chatInput" rows="1" placeholder="说点什么吧…"></textarea>
-          <button class="in-ic" title="语音">
-            <svg viewBox="0 0 24 24"><rect x="9.2" y="3.5" width="5.6" height="11" rx="2.8"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
-          </button>
-          <button class="send" id="sendBtn" title="发送">↑</button>
+          <div class="in-row">
+            <button class="plus-btn" id="plusBtn">＋</button>
+            <span class="sp"></span>
+            <button class="in-ic" title="语音">
+              <svg viewBox="0 0 24 24"><rect x="9.2" y="3.5" width="5.6" height="11" rx="2.8"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
+            </button>
+            <button class="send" id="sendBtn" title="发送">↑</button>
+          </div>
         </div>
       </div>
     </section>
@@ -851,7 +857,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。</div>
+        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.4 · 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1864,8 +1870,11 @@ chatInput.addEventListener("keydown", e => {
 });
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
-  chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + "px";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 132) + "px";
 });
+/* 兜底：部分内置浏览器没有 visualViewport，用输入框聚焦状态收起导航栏 */
+chatInput.addEventListener("focus", () => document.body.classList.add("kb-open"));
+chatInput.addEventListener("blur", () => setTimeout(() => document.body.classList.remove("kb-open"), 120));
 
 /* + 功能菜单 */
 const plusBtn = document.getElementById("plusBtn");
