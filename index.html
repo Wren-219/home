@@ -126,15 +126,17 @@
   .days-num small { font-size: 17px; color: var(--ink-soft); margin-left: 5px; font-family: var(--serif); }
   .days-since { font-size: 10.5px; color: var(--ink-faint); margin-top: 7px; letter-spacing: .05em; }
 
-  /* 主要状态（无边框“雾气”块 · 融入空白排版） */
+  /* 主要状态（柔和渐变 · 不规则圆角） */
   .mood-card {
     display: flex; flex-direction: column; cursor: pointer; transition: transform .15s;
-    padding: 16px 16px 12px;
-    border-radius: 40px 54px 44px 58px / 54px 40px 56px 42px;
+    padding: 14px 15px 11px;
+    border-radius: 26px 40px 30px 44px / 40px 26px 42px 28px;
     background:
-      radial-gradient(85% 75% at 25% 18%, rgba(178,199,227,.5), transparent 72%),
-      radial-gradient(80% 70% at 78% 80%, rgba(241,216,199,.42), transparent 70%),
-      radial-gradient(70% 65% at 78% 25%, rgba(213,202,233,.4), transparent 70%);
+      radial-gradient(120% 90% at 18% 8%, rgba(255,255,255,.92), rgba(255,255,255,.3) 62%),
+      linear-gradient(140deg, rgba(178,199,227,.6), rgba(213,202,233,.45) 52%, rgba(241,216,199,.4));
+    border: 1px solid rgba(255,255,255,.85);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow);
   }
   .mood-card:active { transform: scale(.97); }
   .mood-label { font-size: 9.5px; color: var(--ink-soft); letter-spacing: .18em; }
@@ -786,15 +788,7 @@
         <div class="win-item new">＋ 新建窗口</div>
       </div>
 
-      <div class="chat-msgs" id="chatMsgs">
-        <div class="m-time">今天 8:14 PM</div>
-        <div class="bub ai">晚上好呀，今天过得怎么样？我看到清单上的「柠檬塔」已经打钩了，成功了吗 🍋</div>
-        <div class="bub me">成功啦！虽然塔皮有一点点糊，但是内馅很完美</div>
-        <div class="msg-stack" id="demoStack"></div>
-        <div class="bub ai">哇，看起来完全是甜品店水准！第一次能做成这样真的很棒。要不要我把配方记到日记里？下次烤箱降 10 度试试。</div>
-        <div class="bub me">好呀，帮我记一下，顺便提醒我周末买黄油</div>
-        <div class="bub ai">记好啦 ✓ 已经加到周六的清单里了：「买黄油（做第二次柠檬塔）」。</div>
-      </div>
+      <div class="chat-msgs" id="chatMsgs"></div>
 
       <div class="chat-inbar">
         <div id="plusMenu">
@@ -844,11 +838,11 @@
         </div>
         <div class="set-card">
           <div class="set-card-title">页面密码<span class="en">PASSCODE</span></div>
-          <div class="field"><label>当前密码</label><input type="password" placeholder="••••" maxlength="4"></div>
-          <div class="field"><label>新密码（四位数字）</label><input type="password" placeholder="••••" maxlength="4"></div>
-          <div class="btn-row"><button class="btn" onclick="toast('已保存（预览版暂不生效）')">修改密码</button></div>
+          <div class="field"><label>当前密码</label><input type="password" id="pwCur" placeholder="••••" maxlength="4"></div>
+          <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
+          <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 当前为静态预览版本，以上设置仅作界面展示，尚未接入实际功能。</div>
+        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。</div>
       </div>
     </section>
 
@@ -1229,6 +1223,14 @@
 
 /* ================= 工具 ================= */
 function pad(n){ return String(n).padStart(2,"0"); }
+/* 本地持久化：数据保存在浏览器 localStorage，刷新/重开不丢 */
+function load(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
+function save(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
 function fmt12(d) {
   let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
   return h + ":" + pad(d.getMinutes()) + " " + ap;
@@ -1258,7 +1260,18 @@ const TART_PHOTOS = [
 ];
 
 /* ================= 密码锁 ================= */
-const PIN = "0527";
+let PIN = "0527";
+try { PIN = localStorage.getItem("wu.pin") || "0527"; } catch {}
+function changePin() {
+  const cur = document.getElementById("pwCur");
+  const nw = document.getElementById("pwNew");
+  if (cur.value !== PIN) { toast("当前密码不对哦"); return; }
+  if (!/^\d{4}$/.test(nw.value)) { toast("新密码需为四位数字"); return; }
+  PIN = nw.value;
+  try { localStorage.setItem("wu.pin", PIN); } catch {}
+  cur.value = ""; nw.value = "";
+  toast("密码已修改 ✓");
+}
 let pinBuf = "";
 const pinDots = document.getElementById("pinDots");
 document.getElementById("keypad").addEventListener("click", e => {
@@ -1341,11 +1354,11 @@ const SINCE = new Date(2026, 4, 27);
 document.getElementById("daysNum").textContent = Math.floor((Date.now() - SINCE) / 86400000) + 1;
 
 /* ================= 倒数日（内存数据，可增删改） ================= */
-let countdowns = [
+let countdowns = load("wu.countdowns", [
   { name: "两个月纪念日", date: "2026-07-27" },
   { name: "开学", date: "2026-09-01" },
   { name: "参加订婚宴", date: "2026-07-29" },
-];
+]);
 let cdEditIdx = -1;
 function cdDays(dateStr) {
   const t = new Date(dateStr + "T00:00:00");
@@ -1406,7 +1419,7 @@ function cdEdit(i) {
   document.getElementById("cdFormDate").value = countdowns[i].date;
   document.getElementById("cdForm").style.display = "block";
 }
-function cdDel(i) { countdowns.splice(i, 1); renderCdList(); toast("已删除"); }
+function cdDel(i) { countdowns.splice(i, 1); save("wu.countdowns", countdowns); renderCdList(); toast("已删除"); }
 function cdCancel() { document.getElementById("cdForm").style.display = "none"; }
 function cdSave() {
   const name = document.getElementById("cdFormName").value.trim();
@@ -1414,6 +1427,7 @@ function cdSave() {
   if (!name || !date) { toast("请填写名称和日期"); return; }
   if (cdEditIdx >= 0) countdowns[cdEditIdx] = { name, date };
   else countdowns.push({ name, date });
+  save("wu.countdowns", countdowns);
   cdCancel(); renderCdList(); toast("已保存");
 }
 renderCdHome();
@@ -1505,13 +1519,13 @@ document.getElementById("calGrid").addEventListener("click", e => {
 });
 
 /* ================= 票据 To-do ================= */
-const todos = [
+const todos = load("wu.todos", [
   { text: "给绿萝浇水", time: "4:30P", done: false },
   { text: "晚饭后散步 30 分钟", time: "7:30P", done: false },
   { text: "买黄油·二次柠檬塔", time: "周六", done: false, byAI: true },
   { text: "回复妈妈的消息", time: "9:20A", done: true },
   { text: "读完最后一章", time: "2:00P", done: true },
-];
+]);
 function renderTodos() {
   /* 抽屉里的完整小票 */
   document.getElementById("todoList").innerHTML = todos.map((t, i) => `
@@ -1538,6 +1552,7 @@ document.getElementById("todoList").addEventListener("click", e => {
   const item = e.target.closest(".rc-item");
   if (!item) return;
   todos[item.dataset.i].done = !todos[item.dataset.i].done;
+  save("wu.todos", todos);
   renderTodos();
 });
 renderTodos();
@@ -1693,25 +1708,118 @@ new PhotoStack("#homeStack", PHOTOS, {
   width: 138, height: 178, counter: true,
   onTap: () => openSub("photos"),
 });
-new PhotoStack("#demoStack", TART_PHOTOS, {
-  width: 120, height: 156, counter: true,
-  onTap: () => openSub("photos"),
-});
 
 /* ================= 聊天 ================= */
 const chatMsgs = document.getElementById("chatMsgs");
 const chatInput = document.getElementById("chatInput");
-const replies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
-function aiReply() {
-  const ai = document.createElement("div");
-  ai.className = "bub ai";
-  ai.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
-  chatMsgs.appendChild(ai);
+const SYSTEM_PROMPT =
+  "你是「晤」，用户最亲近的 AI 伙伴。用自然、温柔、简短的中文聊天，像熟悉彼此的人那样说话，" +
+  "不要长篇大论，不要用列表和标题。你们从 2026 年 5 月 27 日在一起，今天是在一起的第 " +
+  (Math.floor((Date.now() - SINCE) / 86400000) + 1) + " 天。";
+
+/* 聊天记录（本地保存，刷新不丢） */
+const CHAT_SEED = [
+  { k: "ai", t: "晚上好呀，今天过得怎么样？我看到清单上的「柠檬塔」已经打钩了，成功了吗 🍋" },
+  { k: "me", t: "成功啦！虽然塔皮有一点点糊，但是内馅很完美" },
+  { k: "stack", imgs: TART_PHOTOS },
+  { k: "ai", t: "哇，看起来完全是甜品店水准！要不要我把配方记到日记里？下次烤箱降 10 度试试。" },
+];
+let chatLog = load("wu.chat", null) || CHAT_SEED.slice();
+
+function msgNode(m) {
+  if (m.k === "stack") {
+    const wrap = document.createElement("div");
+    wrap.className = "msg-stack";
+    new PhotoStack(wrap, m.imgs, { width: 120, height: 156, counter: true, onTap: () => openSub("photos") });
+    return wrap;
+  }
+  if (m.k === "file") {
+    const f = document.createElement("div");
+    f.className = "bub me file";
+    f.innerHTML = '<div class="fi">📄</div><div><div class="fn"></div><div class="fs"></div></div>';
+    f.querySelector(".fn").textContent = m.name;
+    f.querySelector(".fs").textContent = m.size + " · 已发送";
+    return f;
+  }
+  const b = document.createElement("div");
+  b.className = "bub " + (m.k === "me" ? "me" : "ai");
+  b.textContent = m.t;
+  return b;
+}
+function appendMsg(m) {
+  chatMsgs.appendChild(msgNode(m));
+  chatLog.push(m);
+  save("wu.chat", chatLog);
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
-  setTimeout(() => {
-    ai.textContent = replies[Math.floor(Math.random() * replies.length)];
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-  }, 900 + Math.random() * 700);
+}
+(function initChat() {
+  const t = document.createElement("div");
+  t.className = "m-time";
+  t.textContent = "今天 " + fmt12(new Date());
+  chatMsgs.appendChild(t);
+  chatLog.forEach(m => chatMsgs.appendChild(msgNode(m)));
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+})();
+
+/* 后端探测：部署后有服务器 + Key 就走真 DeepSeek，否则本地演示回复 */
+let ONLINE = false;
+fetch("api/health").then(r => r.json()).then(j => { ONLINE = !!(j && j.hasKey); }).catch(() => {});
+
+const cannedReplies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
+function toApiMessages() {
+  const msgs = [{ role: "system", content: SYSTEM_PROMPT }];
+  chatLog.slice(-24).forEach(m => {
+    if (m.k === "me") msgs.push({ role: "user", content: m.t });
+    else if (m.k === "ai") msgs.push({ role: "assistant", content: m.t });
+    else if (m.k === "stack") msgs.push({ role: "user", content: "（发来了几张照片）" });
+    else if (m.k === "file") msgs.push({ role: "user", content: "（发来了文件：" + m.name + "）" });
+  });
+  return msgs;
+}
+async function aiReply() {
+  const bub = document.createElement("div");
+  bub.className = "bub ai";
+  bub.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+  chatMsgs.appendChild(bub);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  if (!ONLINE) {
+    setTimeout(() => {
+      const t = cannedReplies[Math.floor(Math.random() * cannedReplies.length)];
+      bub.textContent = t;
+      chatLog.push({ k: "ai", t }); save("wu.chat", chatLog);
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    }, 900 + Math.random() * 700);
+    return;
+  }
+  try {
+    const resp = await fetch("api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: toApiMessages() }),
+    });
+    if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", acc = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const ln of lines) {
+        const s = ln.trim();
+        if (!s.startsWith("data:")) continue;
+        const d = s.slice(5).trim();
+        if (d === "[DONE]") continue;
+        try {
+          const delta = JSON.parse(d).choices?.[0]?.delta?.content;
+          if (delta) { acc += delta; bub.textContent = acc; chatMsgs.scrollTop = chatMsgs.scrollHeight; }
+        } catch {}
+      }
+    }
+    chatLog.push({ k: "ai", t: acc || "……" }); save("wu.chat", chatLog);
+  } catch (e) {
+    bub.textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
+  }
 }
 /* 待发送附件 */
 let pendingAtt = null;
@@ -1730,29 +1838,15 @@ function sendMsg() {
   const text = chatInput.value.trim();
   if (!text && !pendingAtt) return;
   if (pendingAtt) {
-    if (pendingAtt.type === "photo") {
-      const wrap = document.createElement("div");
-      wrap.className = "msg-stack";
-      chatMsgs.appendChild(wrap);
-      new PhotoStack(wrap, pendingAtt.imgs, {
-        width: 120, height: 156, counter: true,
-        onTap: () => openSub("photos"),
-      });
-    } else {
-      const f = document.createElement("div");
-      f.className = "bub me file";
-      f.innerHTML = `<div class="fi">📄</div><div><div class="fn">${pendingAtt.name}</div><div class="fs">${pendingAtt.size} · 已发送</div></div>`;
-      chatMsgs.appendChild(f);
-    }
+    appendMsg(pendingAtt.type === "photo"
+      ? { k: "stack", imgs: pendingAtt.imgs }
+      : { k: "file", name: pendingAtt.name, size: pendingAtt.size });
     clearAtt();
   }
   if (text) {
-    const me = document.createElement("div");
-    me.className = "bub me"; me.textContent = text;
-    chatMsgs.appendChild(me);
+    appendMsg({ k: "me", t: text });
     chatInput.value = ""; chatInput.style.height = "auto";
   }
-  chatMsgs.scrollTop = chatMsgs.scrollHeight;
   aiReply();
 }
 document.getElementById("sendBtn").addEventListener("click", sendMsg);

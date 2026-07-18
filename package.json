@@ -1,0 +1,12 @@
+{
+  "name": "wu-with-you",
+  "version": "0.1.0",
+  "private": true,
+  "description": "晤 · With You — AI 伙伴移动端网页",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
