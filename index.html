@@ -3,58 +3,61 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="晤">
+<meta name="theme-color" content="#F4F6F9">
 <title>晤 · With You</title>
 <style>
   :root {
     --bg: #F4F6F9;
-    --mist-1: #E8EDF4;
     --mist-2: #DCE5EF;
     --ink: #3C4557;
     --ink-soft: #77839A;
     --ink-faint: #A8B2C4;
-    --blue: #A9BDD8;          /* 大数字的浅蓝 */
+    --blue: #A9BDD8;
     --blue-deep: #7E96B8;
-    --coral: #D97757;         /* Claude 星芒色，点缀用 */
+    --coral: #D97757;
+    --paper: #FDFCF6;          /* 票据纸色 */
+    --paper-ink: #4A4438;
     --glass: rgba(255,255,255,.62);
     --glass-border: rgba(255,255,255,.75);
     --shadow: 0 8px 28px rgba(90,110,140,.10);
     --serif: "New York", ui-serif, Georgia, "Palatino", "Songti SC", "Source Han Serif SC", serif;
     --sans: -apple-system, "SF Pro", "PingFang SC", "Noto Sans SC", "Helvetica Neue", sans-serif;
-    --nav-h: 68px;
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --navspace: calc(96px + var(--sab));   /* 悬浮导航占位 */
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; }
-  body {
-    font-family: var(--sans); color: var(--ink); background: #E9EDF3;
-    -webkit-font-smoothing: antialiased;
-  }
+  body { font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased; }
 
-  /* 手机画幅：小屏铺满，大屏居中成一部“手机” */
   #frame {
-    position: relative; margin: 0 auto; max-width: 430px; height: 100dvh;
-    overflow: hidden;
+    position: relative; margin: 0 auto; max-width: 430px; height: 100dvh; overflow: hidden;
     background:
       radial-gradient(120% 60% at 15% -5%, #FDFEFF 0%, transparent 55%),
       radial-gradient(90% 50% at 100% 8%, #E3EAF3 0%, transparent 60%),
       radial-gradient(100% 60% at 50% 110%, #DFE7F1 0%, transparent 55%),
       var(--bg);
   }
-  @media (min-width: 431px) {
-    #frame { box-shadow: 0 0 60px rgba(90,110,140,.18); }
-  }
+  @media (min-width: 431px) { #frame { box-shadow: 0 0 60px rgba(90,110,140,.18); } }
 
   /* ============ 密码锁屏 ============ */
   #lockScreen {
     position: absolute; inset: 0; z-index: 90;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding-top: var(--sat);
     background:
       radial-gradient(100% 55% at 20% 0%, #FFFFFF 0%, transparent 60%),
       radial-gradient(90% 55% at 90% 100%, #D9E3F0 0%, transparent 60%),
       var(--bg);
-    transition: opacity .55s ease, visibility .55s;
+    transition: opacity .55s ease;
   }
-  #lockScreen.unlocked { opacity: 0; visibility: hidden; }
-  .lock-name { font-family: var(--serif); font-size: 40px; color: var(--ink); }
+  #lockScreen.unlocked { opacity: 0; pointer-events: none; }
+  .lock-name { font-family: var(--serif); font-size: 40px; }
   .lock-sub { font-family: var(--serif); font-size: 13px; color: var(--ink-faint); letter-spacing: .35em; margin: 10px 0 34px; }
   .pin-dots { display: flex; gap: 20px; margin-bottom: 40px; }
   .pin-dots.shake { animation: shake .4s; }
@@ -77,164 +80,173 @@
   /* ============ 应用结构 ============ */
   #app { display: none; }
   #app.ready { display: block; }
-  .page {
-    position: absolute; inset: 0 0 var(--nav-h) 0;
-    display: none; overflow-y: auto; overscroll-behavior: contain;
-  }
+  .page { position: absolute; inset: 0; z-index: 1; display: none; overflow-y: auto; overscroll-behavior: contain; }
   .page.active { display: block; }
-  #page-chat.active, #page-status { display: flex; flex-direction: column; overflow: hidden; }
+  #page-chat.active { display: flex; flex-direction: column; overflow: hidden; }
 
-  /* 底部导航 */
+  /* 悬浮玻璃导航 */
   #tabbar {
-    position: absolute; left: 0; right: 0; bottom: 0; height: var(--nav-h); z-index: 20;
+    position: absolute; left: 22px; right: 22px; z-index: 30;
+    bottom: calc(16px + var(--sab));
+    height: 62px; border-radius: 999px;
     display: flex; align-items: stretch;
-    background: rgba(248,250,252,.72);
-    backdrop-filter: blur(20px) saturate(1.4); -webkit-backdrop-filter: blur(20px) saturate(1.4);
-    border-top: 1px solid rgba(255,255,255,.7);
-    box-shadow: 0 -6px 24px rgba(90,110,140,.06);
+    background: rgba(250,251,253,.55);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    border: 1px solid rgba(255,255,255,.8);
+    box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
   }
   .tab {
     flex: 1; border: none; background: none; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    color: var(--ink-faint); font-size: 10px; font-family: var(--sans); letter-spacing: .04em;
-    transition: color .15s; padding-bottom: 6px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    color: var(--ink-faint); font-size: 10px; letter-spacing: .04em; transition: color .15s;
+    border-radius: 999px;
   }
-  .tab svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .tab svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .tab.active { color: var(--blue-deep); }
 
   /* ============ HOME ============ */
-  .home-pad { padding: 54px 26px 30px; }
-  .home-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .h-time { font-family: var(--serif); font-size: 52px; line-height: 1; }
-  .h-ampm { font-family: var(--serif); font-size: 18px; color: var(--ink-soft); margin-left: 4px; }
-  .h-date { margin-top: 10px; font-size: 13px; color: var(--ink-soft); letter-spacing: .08em; }
-  .h-weather { text-align: right; font-family: var(--serif); color: var(--ink-soft); font-size: 20px; padding-top: 6px; }
-  .h-weather small { display: block; font-size: 11px; color: var(--ink-faint); letter-spacing: .05em; margin-top: 2px; }
+  .home-pad { padding: calc(var(--sat) + 22px) 20px var(--navspace); }
+  .h-greet { font-family: var(--serif); font-size: 26px; line-height: 1.4; }
+  .h-greet-sub { font-size: 13px; color: var(--ink-soft); margin-top: 8px; }
 
-  .h-greet { font-family: var(--serif); font-size: 27px; line-height: 1.35; margin: 26px 0 30px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-top: 20px; }
+  .rcol { display: flex; flex-direction: column; gap: 13px; min-width: 0; }
 
-  /* 自由排布的统计 —— 不用框 */
-  .stat { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
-  .stat-num { font-family: var(--serif); font-size: 54px; color: var(--blue); line-height: 1; letter-spacing: .01em; }
-  .stat-num.sm { font-size: 44px; }
-  .stat-side { padding-bottom: 4px; }
-  .stat-label { font-size: 15px; color: var(--ink-soft); }
-  .stat-sub { font-size: 11px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
-
-  /* 快捷入口小方块 */
-  .chips { display: flex; gap: 14px; margin: 26px 0; }
-  .chip {
-    flex: 1; aspect-ratio: 1.35; border-radius: 22px;
+  .card-soft {
+    border-radius: 22px; padding: 15px 16px;
     background: var(--glass); border: 1px solid var(--glass-border);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     box-shadow: var(--shadow);
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
-    cursor: pointer; transition: transform .15s;
   }
-  .chip:active { transform: scale(.96); }
-  .chip svg { width: 24px; height: 24px; stroke: var(--blue-deep); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .chip span { font-size: 12px; color: var(--ink-soft); }
 
-  /* 晤的状态卡（当下主要状态） */
-  .mood-card {
-    border-radius: 24px; padding: 18px 20px; margin-bottom: 22px;
-    background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(226,235,246,.6));
-    border: 1px solid var(--glass-border);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    box-shadow: var(--shadow); cursor: pointer; transition: transform .15s;
-  }
-  .mood-card:active { transform: scale(.98); }
-  .mood-head { display: flex; align-items: center; gap: 8px; }
-  .mood-title { font-family: var(--serif); font-size: 17px; }
-  .mood-pill {
-    margin-left: auto; font-size: 10px; color: var(--blue-deep);
-    border: 1px solid rgba(126,150,184,.35); border-radius: 999px; padding: 2px 9px;
-    letter-spacing: .06em;
-  }
-  .mood-say { font-size: 14px; color: var(--ink); margin-top: 10px; line-height: 1.6; }
-  .mood-meta { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 11px; color: var(--ink-faint); }
-  .mood-tag { color: var(--blue-deep); background: rgba(169,189,216,.18); border-radius: 999px; padding: 2px 9px; }
+  /* 主要状态（左，竖高） */
+  .mood-card { display: flex; flex-direction: column; cursor: pointer; transition: transform .15s; }
+  .mood-card:active { transform: scale(.97); }
+  .mood-emoji { font-size: 30px; }
+  .mood-name { font-family: var(--serif); font-size: 19px; margin-top: 8px; }
+  .mood-name b { color: #C08A44; font-weight: normal; }
+  .mood-say { font-size: 12px; color: var(--ink-soft); line-height: 1.7; margin-top: 7px; flex: 1; }
+  .mood-foot { margin-top: 10px; font-size: 11px; color: var(--ink-faint); display: flex; align-items: center; }
+  .mood-foot .dot { width: 6px; height: 6px; border-radius: 50%; background: #9BC29B; margin-right: 5px; }
+  .mood-foot .arr { margin-left: auto; }
 
-  /* 区块标题（不带框） */
-  .sec { margin: 26px 0 12px; display: flex; align-items: baseline; gap: 8px; }
-  .sec-title { font-family: var(--serif); font-size: 18px; }
-  .sec-en { font-size: 10px; color: var(--ink-faint); letter-spacing: .2em; }
-  .sec-more { margin-left: auto; font-size: 11px; color: var(--ink-faint); }
+  /* 在一起时间（右上） */
+  .days-card { cursor: default; }
+  .days-num { font-family: var(--serif); font-size: 38px; color: var(--blue); line-height: 1.05; }
+  .days-label { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+  .days-since { font-size: 10px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
+
+  /* 倒数日（右下） */
+  .cd-card { cursor: pointer; transition: transform .15s; }
+  .cd-card:active { transform: scale(.97); }
+  .cd-title { font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; display: flex; }
+  .cd-title .arr { margin-left: auto; }
+  .cd-row { display: flex; align-items: baseline; gap: 7px; margin-top: 9px; }
+  .cd-row .n { font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cd-row .d { font-family: var(--serif); font-size: 17px; color: var(--blue-deep); white-space: nowrap; }
+  .cd-row .d small { font-size: 10px; color: var(--ink-faint); }
 
   /* 本周日历条 */
-  .week { display: flex; justify-content: space-between; margin: 8px 2px 4px; }
-  .wd { text-align: center; width: 40px; }
-  .wd .n { font-size: 11px; color: var(--ink-faint); }
+  .week-card { margin-top: 13px; cursor: pointer; transition: transform .15s; }
+  .week-card:active { transform: scale(.98); }
+  .week-head { display: flex; font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; margin-bottom: 10px; }
+  .week-head .arr { margin-left: auto; }
+  .week { display: flex; justify-content: space-between; }
+  .wd { text-align: center; flex: 1; }
+  .wd .n { font-size: 10px; color: var(--ink-faint); }
   .wd .d {
-    margin: 7px auto 0; width: 34px; height: 34px; border-radius: 50%;
+    margin: 6px auto 0; width: 32px; height: 32px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-family: var(--serif); font-size: 15px; color: var(--ink-soft);
+    font-family: var(--serif); font-size: 14px; color: var(--ink-soft);
   }
   .wd.today .d { background: var(--blue-deep); color: #fff; box-shadow: 0 4px 12px rgba(126,150,184,.4); }
-  .wd .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--coral); margin: 4px auto 0; opacity: 0; }
-  .wd.marked .dot { opacity: .8; }
+  .wd .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--coral); margin: 3px auto 0; opacity: 0; }
+  .wd.marked .dot { opacity: .85; }
 
-  /* To-do 软卡 */
-  .todo-card {
-    border-radius: 24px; padding: 18px 20px;
-    background: var(--glass); border: 1px solid var(--glass-border);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    box-shadow: var(--shadow);
+  /* ── 票据 To-do 🧾 ── */
+  .receipt-wrap { filter: drop-shadow(0 6px 16px rgba(90,110,140,.16)); }
+  .receipt {
+    background: var(--paper); color: var(--paper-ink); font-family: var(--mono);
+    padding: 14px 12px 12px; position: relative;
+    /* 上下锯齿 */
+    clip-path: polygon(
+      0 6px, 4.16% 0, 8.33% 6px, 12.5% 0, 16.66% 6px, 20.83% 0, 25% 6px, 29.16% 0,
+      33.33% 6px, 37.5% 0, 41.66% 6px, 45.83% 0, 50% 6px, 54.16% 0, 58.33% 6px,
+      62.5% 0, 66.66% 6px, 70.83% 0, 75% 6px, 79.16% 0, 83.33% 6px, 87.5% 0,
+      91.66% 6px, 95.83% 0, 100% 6px,
+      100% calc(100% - 6px), 95.83% 100%, 91.66% calc(100% - 6px), 87.5% 100%,
+      83.33% calc(100% - 6px), 79.16% 100%, 75% calc(100% - 6px), 70.83% 100%,
+      66.66% calc(100% - 6px), 62.5% 100%, 58.33% calc(100% - 6px), 54.16% 100%,
+      50% calc(100% - 6px), 45.83% 100%, 41.66% calc(100% - 6px), 37.5% 100%,
+      33.33% calc(100% - 6px), 29.16% 100%, 25% calc(100% - 6px), 20.83% 100%,
+      16.66% calc(100% - 6px), 12.5% 100%, 8.33% calc(100% - 6px), 4.16% 100%, 0 calc(100% - 6px));
+    background-image: repeating-linear-gradient(0deg, transparent 0 23px, rgba(74,68,56,.025) 23px 24px);
   }
-  .todo-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
-  .todo-head .t { font-family: var(--serif); font-size: 18px; }
-  .todo-head .c { font-size: 11px; color: var(--ink-faint); }
-  .todo-prog { margin-left: auto; font-size: 10px; color: var(--blue-deep); font-variant-numeric: tabular-nums; }
-  .todo-item { display: flex; align-items: center; gap: 12px; padding: 9px 0; cursor: pointer; }
-  .todo-item + .todo-item { border-top: 1px dashed rgba(168,178,196,.28); }
-  .t-ring {
-    width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
-    border: 1.6px solid var(--ink-faint); transition: all .15s;
-    display: flex; align-items: center; justify-content: center;
-    color: transparent; font-size: 11px;
+  .rc-head { text-align: center; }
+  .rc-head .t { font-size: 13px; letter-spacing: .35em; margin-left: .35em; }
+  .rc-head .m { font-size: 8.5px; color: rgba(74,68,56,.55); margin-top: 5px; line-height: 1.7; letter-spacing: .03em; }
+  .rc-dash { border: none; border-top: 1.5px dashed rgba(74,68,56,.28); margin: 9px 0; }
+  .rc-item { display: flex; align-items: baseline; gap: 6px; padding: 5px 0; font-size: 11px; cursor: pointer; line-height: 1.5; }
+  .rc-item .bx { flex-shrink: 0; }
+  .rc-item .tx { flex: 1; word-break: break-all; }
+  .rc-item .tm { flex-shrink: 0; font-size: 8.5px; color: rgba(74,68,56,.5); }
+  .rc-item.done .tx { text-decoration: line-through; color: rgba(74,68,56,.4); }
+  .rc-item.done .bx { color: #6F8F6F; }
+  .rc-item .by { font-size: 8px; color: var(--blue-deep); border: 1px solid rgba(126,150,184,.4); border-radius: 3px; padding: 0 3px; }
+  .rc-prog { font-size: 9.5px; letter-spacing: .04em; color: rgba(74,68,56,.65); }
+  .rc-foot { text-align: center; margin-top: 8px; }
+  .rc-foot .th { font-family: var(--serif); font-style: italic; font-size: 10px; color: rgba(74,68,56,.55); }
+  .rc-barcode {
+    margin: 8px auto 2px; height: 22px; width: 80%;
+    background: repeating-linear-gradient(90deg, var(--paper-ink) 0 2px, transparent 2px 4px, var(--paper-ink) 4px 6.5px, transparent 6.5px 8px, var(--paper-ink) 8px 9px, transparent 9px 12px);
+    opacity: .75;
   }
-  .todo-item.done .t-ring { background: var(--blue-deep); border-color: var(--blue-deep); color: #fff; }
-  .t-text { flex: 1; font-size: 14px; line-height: 1.5; }
-  .todo-item.done .t-text { color: var(--ink-faint); text-decoration: line-through; }
-  .t-time { font-size: 10px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
-  .t-by { font-size: 9px; color: var(--blue-deep); border: 1px solid rgba(126,150,184,.35); border-radius: 999px; padding: 1px 6px; }
+  .rc-no { font-size: 8px; color: rgba(74,68,56,.45); letter-spacing: .2em; }
 
-  /* 日记（不带框） */
-  .diary-item { padding: 12px 2px; cursor: pointer; }
-  .diary-item + .diary-item { border-top: 1px dashed rgba(168,178,196,.25); }
-  .d-date { font-size: 11px; color: var(--ink-faint); letter-spacing: .06em; }
-  .d-title { font-family: var(--serif); font-size: 16px; margin-top: 4px; }
-  .d-ex { font-size: 12px; color: var(--ink-soft); margin-top: 4px; line-height: 1.7;
-    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-
-  /* 照片横滑 */
-  .photos { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 10px; scrollbar-width: none; }
-  .photos::-webkit-scrollbar { display: none; }
-  .ph {
-    flex: 0 0 108px; height: 138px; border-radius: 20px;
-    display: flex; align-items: flex-end; justify-content: flex-start;
-    font-size: 24px; padding: 10px; border: 1px solid rgba(255,255,255,.6);
-    box-shadow: var(--shadow);
+  /* ── 日记本 ── */
+  .notebook {
+    background: #FFFEF9; border-radius: 18px; padding: 13px 14px 11px 24px;
+    box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.8);
+    position: relative; cursor: pointer; transition: transform .15s;
   }
-  .ph.more { align-items: center; justify-content: center; font-size: 13px; color: var(--ink-soft);
-    background: rgba(255,255,255,.5); font-family: var(--serif); }
+  .notebook:active { transform: scale(.97); }
+  .notebook::before {   /* 左侧线圈孔 */
+    content: ""; position: absolute; left: 8px; top: 14px; bottom: 14px; width: 6px;
+    background-image: radial-gradient(circle 3px at 3px 3px, rgba(126,150,184,.45) 2.4px, transparent 3px);
+    background-size: 6px 16px; background-repeat: repeat-y;
+  }
+  .nb-title { font-family: var(--serif); font-size: 15px; display: flex; align-items: baseline; }
+  .nb-title .en { font-size: 9px; color: var(--ink-faint); letter-spacing: .18em; margin-left: 6px; }
+  .nb-lines { margin-top: 4px; }
+  .nb-line {
+    height: 30px; display: flex; align-items: flex-end; padding-bottom: 4px;
+    border-bottom: 1px solid #E7ECF3;
+    font-family: var(--serif); font-size: 12.5px; color: var(--ink);
+    white-space: nowrap; overflow: hidden;
+  }
+  .nb-line small { color: var(--ink-faint); font-size: 9px; margin-right: 6px; font-family: var(--mono); flex-shrink: 0; }
+  .nb-line.empty { color: var(--ink-faint); font-size: 10px; justify-content: flex-end; border-bottom: none; }
 
-  /* 信件 */
-  .letter { display: flex; align-items: center; gap: 13px; padding: 12px 2px; cursor: pointer; }
+  /* ── 重叠照片 ── */
+  .stack-block { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 4px 22px 0 0; }
+  .stack-cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .08em; }
+
+  /* 信件（横向整块） */
+  .letters-card { margin-top: 13px; }
+  .lt-head { display: flex; font-size: 11px; color: var(--ink-faint); letter-spacing: .12em; margin-bottom: 4px; }
+  .letter { display: flex; align-items: center; gap: 13px; padding: 10px 2px; cursor: pointer; }
   .letter + .letter { border-top: 1px dashed rgba(168,178,196,.25); }
-  .lv {
-    width: 40px; height: 30px; border-radius: 6px; flex-shrink: 0; position: relative;
-    background: rgba(255,255,255,.85); border: 1px solid rgba(168,178,196,.4);
-  }
+  .lv { width: 38px; height: 28px; border-radius: 6px; flex-shrink: 0; position: relative;
+    background: rgba(255,255,255,.9); border: 1px solid rgba(168,178,196,.4); }
   .lv::before { content:""; position: absolute; inset: 0; clip-path: polygon(0 0, 50% 58%, 100% 0);
     background: var(--mist-2); border-bottom: 1px solid rgba(168,178,196,.4); }
   .lv.sealed::after { content:""; position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%);
     width: 8px; height: 8px; border-radius: 50%; background: var(--coral); }
-  .l-title { font-size: 14px; }
-  .l-meta { font-size: 11px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
+  .l-title { font-size: 13.5px; }
+  .l-meta { font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; letter-spacing: .04em; }
   .l-new { margin-left: auto; font-size: 9px; color: var(--coral); border: 1px solid rgba(217,119,87,.4); border-radius: 999px; padding: 2px 8px; }
 
-  .home-foot { text-align: center; font-family: var(--serif); font-size: 11px; color: var(--ink-faint); letter-spacing: .25em; margin-top: 34px; }
+  .home-foot { text-align: center; font-family: var(--serif); font-size: 11px; color: var(--ink-faint); letter-spacing: .25em; margin-top: 30px; }
 
   /* ============ CHAT ============ */
   #page-chat {
@@ -246,81 +258,131 @@
       linear-gradient(180deg, #EFF3F8 0%, #E7EDF4 100%);
   }
   .chat-head {
-    flex-shrink: 0; padding: 16px 18px 12px; text-align: center; position: relative; z-index: 5;
+    flex-shrink: 0; padding: calc(var(--sat) + 10px) 14px 10px; position: relative; z-index: 6;
+    display: flex; align-items: center;
     background: rgba(244,246,249,.55);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   }
-  .chat-name-btn { border: none; background: none; cursor: pointer; font-family: var(--serif); }
-  .chat-name { font-size: 20px; letter-spacing: .5em; margin-left: .5em; color: var(--ink); }
-  .chat-status { margin-top: 3px; font-size: 11px; color: var(--ink-soft); letter-spacing: .05em; display: flex; align-items: center; justify-content: center; gap: 5px; }
-  .chat-status .chev { font-size: 12px; color: var(--ink-faint); }
-  .chat-msgs { flex: 1; overflow-y: auto; padding: 16px 18px 10px; display: flex; flex-direction: column; gap: 11px; }
-  .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; font-variant-numeric: tabular-nums; }
+  .ch-side { width: 40px; flex-shrink: 0; }
+  .chat-name-btn { flex: 1; border: none; background: none; cursor: pointer; font-family: var(--serif); text-align: center; }
+  .chat-name { font-size: 20px; letter-spacing: .4em; margin-left: .4em; color: var(--ink); }
+  .chat-status { margin-top: 2px; font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .chat-status .chev { color: var(--ink-faint); }
+  .win-btn {
+    width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--glass-border);
+    background: var(--glass); backdrop-filter: blur(10px); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
+  }
+  .win-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; }
+  /* 窗口切换面板 */
+  #winMenu {
+    position: absolute; right: 14px; top: calc(var(--sat) + 56px); z-index: 50;
+    width: 190px; border-radius: 18px; overflow: hidden;
+    background: rgba(252,253,255,.8);
+    backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,.85);
+    box-shadow: 0 16px 40px rgba(70,90,120,.2);
+    opacity: 0; transform: translateY(-8px) scale(.96); transform-origin: top right;
+    pointer-events: none; transition: all .2s;
+  }
+  #winMenu.open { opacity: 1; transform: none; pointer-events: auto; }
+  .win-item { display: flex; align-items: center; gap: 8px; padding: 12px 15px; font-size: 13px; cursor: pointer; }
+  .win-item + .win-item { border-top: 1px solid rgba(168,178,196,.15); }
+  .win-item .ck { margin-left: auto; color: var(--blue-deep); opacity: 0; font-size: 12px; }
+  .win-item.active .ck { opacity: 1; }
+  .win-item.new { color: var(--blue-deep); }
+
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 11px; }
+  .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; }
   .bub {
-    max-width: 78%; padding: 11px 16px; font-size: 15px; line-height: 1.65;
+    max-width: 78%; padding: 11px 15px; font-size: 15px; line-height: 1.65;
     border: 1px solid rgba(255,255,255,.8);
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     box-shadow: 0 4px 16px rgba(110,130,160,.10);
     animation: pop .25s ease;
   }
   @keyframes pop { from { opacity: 0; transform: translateY(6px); } }
-  .bub.ai {
-    align-self: flex-start; background: rgba(255,255,255,.72); color: var(--ink);
-    border-radius: 24px 24px 24px 8px;
-  }
-  .bub.me {
-    align-self: flex-end; background: rgba(214,226,240,.75); color: var(--ink);
-    border-radius: 24px 24px 8px 24px;
-  }
+  .bub.ai { align-self: flex-start; background: rgba(255,255,255,.72); border-radius: 22px 22px 22px 7px; }
+  .bub.me { align-self: flex-end; background: rgba(214,226,240,.75); border-radius: 22px 22px 7px 22px; }
+  .bub.file { display: flex; align-items: center; gap: 10px; }
+  .bub.file .fi { width: 36px; height: 36px; border-radius: 10px; background: rgba(126,150,184,.15);
+    display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+  .bub.file .fn { font-size: 13px; }
+  .bub.file .fs { font-size: 10px; color: var(--ink-faint); margin-top: 2px; }
+  .msg-stack { align-self: flex-end; margin-right: 30px; animation: pop .25s ease; }
+  .msg-stack.ai { align-self: flex-start; margin-right: 0; margin-left: 30px; }
   .typing { display: inline-flex; gap: 4px; padding: 3px 2px; }
   .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); animation: blink 1.2s infinite; }
   .typing i:nth-child(2){animation-delay:.2s} .typing i:nth-child(3){animation-delay:.4s}
   @keyframes blink { 0%,60%,100%{opacity:.25} 30%{opacity:1} }
-  .chat-inbar { flex-shrink: 0; padding: 10px 14px 14px; }
+
+  .chat-inbar { flex-shrink: 0; padding: 8px 14px calc(var(--navspace) - 8px); position: relative; }
   .chat-in {
-    display: flex; align-items: flex-end; gap: 8px;
+    display: flex; align-items: flex-end; gap: 6px;
     background: rgba(255,255,255,.66); border: 1px solid rgba(255,255,255,.85);
     backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    border-radius: 26px; padding: 9px 10px 9px 14px;
+    border-radius: 26px; padding: 8px 9px;
     box-shadow: 0 8px 24px rgba(110,130,160,.14);
   }
-  .in-star { font-size: 17px; color: var(--coral); padding: 6px 2px; flex-shrink: 0; line-height: 1; }
+  .plus-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
+    background: rgba(126,150,184,.12); color: var(--ink-soft); font-size: 20px; line-height: 1;
+    transition: transform .2s;
+  }
+  .plus-btn.open { transform: rotate(45deg); }
   #chatInput {
     flex: 1; border: none; background: none; outline: none; resize: none;
     font-family: var(--sans); font-size: 15px; line-height: 1.5; color: var(--ink);
-    max-height: 110px; padding: 6px 0;
+    max-height: 110px; padding: 7px 4px;
   }
   #chatInput::placeholder { color: var(--ink-faint); }
-  .in-ic { border: none; background: none; cursor: pointer; padding: 7px; color: var(--ink-soft); flex-shrink: 0; }
+  .in-ic { border: none; background: none; cursor: pointer; padding: 7px 4px; color: var(--ink-soft); flex-shrink: 0; }
   .in-ic svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; }
   .send {
-    width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
-    background: var(--blue-deep); color: #fff; font-size: 16px;
-    box-shadow: 0 4px 12px rgba(126,150,184,.45); transition: all .15s;
+    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
+    background: var(--blue-deep); color: #fff; font-size: 15px;
+    box-shadow: 0 4px 12px rgba(126,150,184,.45); transition: transform .15s;
   }
   .send:active { transform: scale(.92); }
+  /* + 功能菜单 */
+  #plusMenu {
+    position: absolute; left: 18px; bottom: calc(var(--navspace) + 48px); z-index: 50;
+    width: 170px; border-radius: 18px; overflow: hidden;
+    background: rgba(252,253,255,.85);
+    backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,.9);
+    box-shadow: 0 16px 40px rgba(70,90,120,.2);
+    opacity: 0; transform: translateY(10px) scale(.95); transform-origin: bottom left;
+    pointer-events: none; transition: all .2s;
+  }
+  #plusMenu.open { opacity: 1; transform: none; pointer-events: auto; }
+  .pm-item { display: flex; align-items: center; gap: 10px; padding: 13px 16px; font-size: 13.5px; cursor: pointer; }
+  .pm-item + .pm-item { border-top: 1px solid rgba(168,178,196,.15); }
+  .pm-item span.ic { font-size: 17px; }
 
-  /* ============ 状态详情页（八维驱动） ============ */
-  #page-status {
+  /* ============ 子页面通用（右滑入） ============ */
+  .subpage {
     position: absolute; inset: 0; z-index: 40;
     background:
       radial-gradient(90% 45% at 15% 0%, rgba(255,255,255,.95) 0%, transparent 60%),
       radial-gradient(80% 40% at 100% 90%, rgba(203,219,236,.6) 0%, transparent 60%),
       linear-gradient(180deg, #F2F5F9, #E9EEF5);
-    transform: translateX(100%); transition: transform .32s cubic-bezier(.32,.72,.35,1);
+    transform: translateX(100%); transition: transform .3s cubic-bezier(.32,.72,.35,1);
     display: flex; flex-direction: column;
   }
-  #page-status.open { transform: translateX(0); }
-  .st-head { flex-shrink: 0; display: flex; align-items: center; padding: 14px 12px 8px; }
-  .st-back { border: none; background: none; cursor: pointer; color: var(--blue-deep); font-size: 14px; padding: 8px 10px; display: flex; align-items: center; gap: 2px; }
-  .st-head-title { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--serif); font-size: 16px; letter-spacing: .3em; margin-left: .15em; }
-  .st-scroll { flex: 1; overflow-y: auto; padding: 8px 20px 40px; }
+  .subpage.open { transform: translateX(0); }
+  .sp-head { flex-shrink: 0; display: flex; align-items: center; padding: calc(var(--sat) + 10px) 12px 8px; position: relative; }
+  .sp-back { border: none; background: none; cursor: pointer; color: var(--blue-deep); font-size: 14px; padding: 8px 10px; }
+  .sp-title { position: absolute; left: 50%; transform: translateX(-50%); font-family: var(--serif); font-size: 16px; letter-spacing: .25em; margin-left: .12em; white-space: nowrap; }
+  .sp-act { margin-left: auto; border: none; background: none; cursor: pointer; color: var(--blue-deep); font-size: 13px; padding: 8px 10px; }
+  .sp-scroll { flex: 1; overflow-y: auto; padding: 8px 20px calc(var(--sab) + 30px); }
+
+  /* 状态页 */
   .st-hero {
     border-radius: 26px; padding: 20px 22px;
     background: linear-gradient(135deg, rgba(255,255,255,.85), rgba(222,232,244,.65));
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px); box-shadow: var(--shadow);
   }
   .st-hero-label { font-size: 12px; color: var(--ink-faint); font-family: var(--serif); font-style: italic; letter-spacing: .08em; }
   .st-hero-say { font-family: var(--serif); font-size: 21px; line-height: 1.5; margin: 8px 0 14px; }
@@ -336,22 +398,87 @@
   .dr-name .e { margin-right: 5px; }
   .dr-track { flex: 1; height: 8px; border-radius: 99px; background: rgba(168,178,196,.18); overflow: hidden; position: relative; }
   .dr-track::after { content:""; position: absolute; left: 70%; top: 0; bottom: 0; width: 1px; background: rgba(168,178,196,.35); }
-  .dr-fill {
-    height: 100%; border-radius: 99px; width: 0;
-    background: linear-gradient(90deg, #8FA9C9, #A9BDD8);
-    transition: width .8s cubic-bezier(.25,.8,.3,1);
-  }
+  .dr-fill { height: 100%; border-radius: 99px; width: 0;
+    background: linear-gradient(90deg, #8FA9C9, #A9BDD8); transition: width .8s cubic-bezier(.25,.8,.3,1); }
   .drive.top .dr-fill { background: linear-gradient(90deg, #7E96B8 40%, #D9A25F); }
   .drive.gate .dr-fill { background: linear-gradient(90deg, #B9C2CF, #CBD3DE); }
-  .dr-val { width: 30px; text-align: right; font-family: var(--serif); font-size: 16px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .dr-val { width: 30px; text-align: right; font-family: var(--serif); font-size: 16px; color: var(--ink-soft); }
   .drive.top .dr-val { color: #C08A44; }
   .dr-note { margin: 7px 0 0 76px; font-size: 11px; color: var(--ink-faint); line-height: 1.6; }
-  .dr-note .tr { color: var(--blue-deep); margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .dr-note .tr { color: var(--blue-deep); margin-right: 6px; }
   .drive.top .dr-note .burst { display: block; color: #C08A44; margin-bottom: 2px; }
   .st-foot { margin-top: 26px; font-size: 11px; color: var(--ink-faint); line-height: 1.9; text-align: center; }
 
-  /* ============ MEMORY ============ */
-  .mem-pad { padding: 90px 30px 40px; text-align: center; }
+  /* 倒数日页 */
+  .cd-item {
+    border-radius: 22px; padding: 16px 18px; margin-bottom: 13px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .cd-item .info { flex: 1; min-width: 0; }
+  .cd-item .nm { font-size: 14.5px; }
+  .cd-item .dt { font-size: 11px; color: var(--ink-faint); margin-top: 3px; letter-spacing: .04em; }
+  .cd-item .big { font-family: var(--serif); font-size: 26px; color: var(--blue-deep); white-space: nowrap; }
+  .cd-item .big small { font-size: 11px; color: var(--ink-faint); }
+  .cd-ops { display: flex; flex-direction: column; gap: 6px; }
+  .cd-op { border: none; background: rgba(126,150,184,.1); color: var(--ink-soft);
+    border-radius: 8px; font-size: 11px; padding: 4px 9px; cursor: pointer; }
+  .cd-op.del { color: var(--coral); background: rgba(217,119,87,.08); }
+  .cd-form {
+    border-radius: 22px; padding: 16px 18px; margin-bottom: 13px;
+    background: rgba(255,255,255,.75); border: 1.5px dashed rgba(126,150,184,.4);
+  }
+  .cd-form .row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .cd-form input {
+    flex: 1; min-width: 0; padding: 10px 13px; border-radius: 12px;
+    border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.7);
+    font-size: 13px; color: var(--ink); outline: none; font-family: var(--sans);
+  }
+  .cd-form input:focus { border-color: var(--blue-deep); }
+  .cd-form .ops { display: flex; justify-content: flex-end; gap: 8px; }
+  .cd-note { font-size: 11px; color: var(--ink-faint); text-align: center; margin-top: 16px; line-height: 1.8; }
+
+  /* 日历页 */
+  .cal-nav { display: flex; align-items: center; justify-content: center; gap: 22px; margin: 10px 0 14px; }
+  .cal-nav button { border: none; background: none; cursor: pointer; color: var(--blue-deep); font-size: 18px; padding: 4px 10px; }
+  .cal-month { font-family: var(--serif); font-size: 18px; letter-spacing: .1em; min-width: 110px; text-align: center; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+  .cal-grid .wl { font-size: 10px; color: var(--ink-faint); padding: 6px 0; }
+  .cal-cell {
+    aspect-ratio: 1; border-radius: 14px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+    font-family: var(--serif); font-size: 14px; color: var(--ink-soft); cursor: pointer;
+  }
+  .cal-cell.today { background: var(--blue-deep); color: #fff; box-shadow: 0 4px 12px rgba(126,150,184,.4); }
+  .cal-cell .mk { font-size: 8px; line-height: 1; height: 8px; }
+  .cal-cell.has-diary { background: rgba(255,255,255,.65); }
+  .cal-legend { display: flex; justify-content: center; gap: 18px; margin-top: 16px; font-size: 11px; color: var(--ink-faint); }
+
+  /* 日记列表 & 详情 */
+  .di-item {
+    border-radius: 20px; padding: 15px 18px; margin-bottom: 12px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); box-shadow: var(--shadow); cursor: pointer;
+    transition: transform .15s;
+  }
+  .di-item:active { transform: scale(.98); }
+  .di-date { font-size: 11px; color: var(--ink-faint); letter-spacing: .06em; }
+  .di-title { font-family: var(--serif); font-size: 17px; margin-top: 5px; }
+  .di-ex { font-size: 12px; color: var(--ink-soft); margin-top: 5px; line-height: 1.7;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #page-diaryDetail { z-index: 45; }
+  .dd-paper {
+    background: #FFFEF9; border-radius: 22px; padding: 24px 22px;
+    box-shadow: var(--shadow); border: 1px solid rgba(255,255,255,.85);
+    background-image: repeating-linear-gradient(transparent 0 31px, #EDF1F6 31px 32px);
+  }
+  .dd-date { font-size: 12px; color: var(--ink-faint); letter-spacing: .08em; }
+  .dd-title { font-family: var(--serif); font-size: 24px; margin: 10px 0 14px; }
+  .dd-body { font-size: 14.5px; line-height: 32px; color: var(--ink); }
+
+  /* ============ MEMORY / SETTINGS ============ */
+  .mem-pad { padding: calc(var(--sat) + 80px) 30px var(--navspace); text-align: center; }
   .mem-icon { width: 84px; height: 84px; margin: 0 auto 22px; border-radius: 50%;
     border: 1.5px dashed var(--ink-faint); display: flex; align-items: center; justify-content: center; font-size: 32px; }
   .mem-title { font-family: var(--serif); font-size: 24px; letter-spacing: .3em; margin-left: .3em; }
@@ -361,47 +488,56 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 11px; color: var(--ink-faint); letter-spacing: .25em; font-family: var(--serif); }
 
-  /* ============ SETTINGS ============ */
-  .set-pad { padding: 54px 22px 30px; }
-  .set-title { font-family: var(--serif); font-size: 28px; margin-bottom: 22px; }
-  .set-card {
-    border-radius: 24px; padding: 18px 20px; margin-bottom: 16px;
+  .set-pad { padding: calc(var(--sat) + 26px) 20px var(--navspace); }
+  .set-title { font-family: var(--serif); font-size: 28px; margin-bottom: 20px; }
+  .set-card { border-radius: 22px; padding: 18px 20px; margin-bottom: 15px;
     background: var(--glass); border: 1px solid var(--glass-border);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    box-shadow: var(--shadow);
-  }
+    backdrop-filter: blur(12px); box-shadow: var(--shadow); }
   .set-card-title { font-family: var(--serif); font-size: 16px; margin-bottom: 14px; display: flex; align-items: baseline; gap: 8px; }
   .set-card-title .en { font-size: 9px; color: var(--ink-faint); letter-spacing: .2em; }
   .field { margin-bottom: 12px; }
   .field:last-of-type { margin-bottom: 0; }
-  .field label { display: block; font-size: 11px; color: var(--ink-soft); margin-bottom: 6px; letter-spacing: .05em; }
-  .field input {
-    width: 100%; padding: 11px 15px; border-radius: 14px;
+  .field label { display: block; font-size: 11px; color: var(--ink-soft); margin-bottom: 6px; }
+  .field input { width: 100%; padding: 11px 15px; border-radius: 14px;
     border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.6);
-    font-size: 13px; color: var(--ink); outline: none; font-family: var(--sans);
-  }
+    font-size: 13px; color: var(--ink); outline: none; font-family: var(--sans); }
   .field input:focus { border-color: var(--blue-deep); background: #fff; }
   .btn-row { display: flex; justify-content: flex-end; margin-top: 14px; }
-  .btn {
-    padding: 9px 24px; border-radius: 999px; border: none; cursor: pointer;
+  .btn { padding: 9px 24px; border-radius: 999px; border: none; cursor: pointer;
     background: var(--blue-deep); color: #fff; font-size: 13px; letter-spacing: .1em;
-    box-shadow: 0 4px 12px rgba(126,150,184,.35); transition: transform .15s;
-  }
+    box-shadow: 0 4px 12px rgba(126,150,184,.35); transition: transform .15s; }
   .btn:active { transform: scale(.95); }
+  .btn.ghost { background: rgba(126,150,184,.12); color: var(--ink-soft); box-shadow: none; }
   .set-note { font-size: 11px; color: var(--ink-faint); line-height: 1.8; padding: 0 6px; }
 
   /* toast */
   #toast {
-    position: absolute; left: 50%; bottom: calc(var(--nav-h) + 20px); z-index: 60;
+    position: absolute; left: 50%; bottom: calc(var(--navspace) + 10px); z-index: 70;
     transform: translateX(-50%) translateY(16px);
     background: rgba(60,69,87,.92); color: #fff; font-size: 13px;
     padding: 10px 22px; border-radius: 999px; opacity: 0; pointer-events: none;
-    transition: all .3s; letter-spacing: .04em; white-space: nowrap;
-    backdrop-filter: blur(8px);
+    transition: all .3s; white-space: nowrap; backdrop-filter: blur(8px);
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   ::-webkit-scrollbar { width: 0; height: 0; }
+
+  /*!
+   * PhotoStack — WeChat-style stacked photo card
+   * by Wren036 · github.com/Wren036/PhotoStack · PolyForm Noncommercial 1.0.0
+   */
+  .pstack-stage { position: relative; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; cursor: grab; }
+  .pstack-stage:active { cursor: grabbing; }
+  .pstack-card {
+    position: absolute; inset: 0; background: transparent; border-radius: 14px;
+    box-shadow: 0 3px 14px rgba(0,0,0,.14); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .32s cubic-bezier(.2,.7,.3,1), opacity .3s;
+  }
+  .pstack-card img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; transform: scale(1.04); }
+  .pstack-badge { position: absolute; right: 8px; bottom: 8px; z-index: 120;
+    background: rgba(0,0,0,.45); color: #fff; font-size: 11px; padding: 2px 8px;
+    border-radius: 10px; pointer-events: none; font-family: -apple-system, system-ui, sans-serif; }
 </style>
 </head>
 <body>
@@ -433,109 +569,90 @@
     <section class="page active" id="page-home">
       <div class="home-pad">
 
-        <div class="home-top">
-          <div>
-            <div class="h-time"><span id="hTime">6:27</span><span class="h-ampm" id="hAmpm">PM</span></div>
-            <div class="h-date"><span id="hDate">2026.07.18</span> · <span id="hWeek">Sat</span></div>
-          </div>
-          <div class="h-weather">26°<small>30° / 25°</small></div>
-        </div>
-
         <div class="h-greet" id="hGreet">Have you had dinner?</div>
+        <div class="h-greet-sub" id="hGreetSub">今天也想见到你。</div>
 
-        <div class="stat">
-          <div class="stat-num" id="daysNum">418</div>
-          <div class="stat-side">
-            <div class="stat-label">day together</div>
-            <div class="stat-sub">since 2025.05.27</div>
+        <div class="grid2">
+          <!-- 主要状态 -->
+          <div class="card-soft mood-card" onclick="openSub('status')">
+            <div class="mood-emoji" id="moodEmoji">🌿</div>
+            <div class="mood-name">此刻 · <b id="moodName">依恋</b></div>
+            <div class="mood-say" id="moodSay"></div>
+            <div class="mood-foot"><span class="dot"></span>Driven · On<span class="arr">›</span></div>
           </div>
-        </div>
-        <div class="stat">
-          <div class="stat-num sm">3,364</div>
-          <div class="stat-side">
-            <div class="stat-label">条消息</div>
-            <div class="stat-sub">全部会话实时汇总</div>
-          </div>
-        </div>
-
-        <!-- 晤的当下主要状态：点击进入八维详情 -->
-        <div class="mood-card" onclick="openStatus()">
-          <div class="mood-head">
-            <span>✨</span>
-            <span class="mood-title">晤的此刻</span>
-            <span class="mood-pill">Driven · On</span>
-          </div>
-          <div class="mood-say" id="moodSay"></div>
-          <div class="mood-meta">
-            <span class="mood-tag" id="moodTag"></span>
-            <span id="moodMeta"></span>
-            <span style="margin-left:auto">现在的念头 ›</span>
+          <div class="rcol">
+            <!-- 在一起时间 -->
+            <div class="card-soft days-card">
+              <div class="days-num" id="daysNum">418</div>
+              <div class="days-label">day together</div>
+              <div class="days-since">since 2025.05.27</div>
+            </div>
+            <!-- 重要日期倒数日 -->
+            <div class="card-soft cd-card" onclick="openSub('countdown')">
+              <div class="cd-title">倒数日 D-DAY<span class="arr">›</span></div>
+              <div id="cdHome"></div>
+            </div>
           </div>
         </div>
 
-        <div class="chips">
-          <div class="chip" onclick="toast('日记 · 敬请期待')">
-            <svg viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14l-3.5-2.5L11 20l-3.5-2.5L4 20V6a2 2 0 0 1 1-2z"/><path d="M9 9h6M9 13h4"/></svg>
-            <span>日记 Diary</span>
-          </div>
-          <div class="chip" onclick="toast('信件 · 敬请期待')">
-            <svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3.5 7.5 12 13.5l8.5-6"/></svg>
-            <span>信件 Letter</span>
-          </div>
-          <div class="chip" onclick="toast('相册 · 敬请期待')">
-            <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 17.5 10 12.5l4 3.6 2.6-2.4 3 3"/></svg>
-            <span>相册 Photo</span>
-          </div>
+        <!-- 本周日历 -->
+        <div class="card-soft week-card" onclick="openSub('calendar')">
+          <div class="week-head">本周 THIS WEEK<span class="arr">›</span></div>
+          <div class="week" id="weekStrip"></div>
         </div>
 
-        <div class="sec"><span class="sec-title">本周</span><span class="sec-en">THIS WEEK</span></div>
-        <div class="week" id="weekStrip"></div>
-
-        <div class="sec"><span class="sec-title">清单</span><span class="sec-en">TO-DO</span></div>
-        <div class="todo-card">
-          <div class="todo-head">
-            <span class="t">To-do</span>
-            <span class="c" id="todoCount"></span>
-            <span class="todo-prog" id="todoProg"></span>
-          </div>
-          <div id="todoList"></div>
-        </div>
-
-        <div class="sec"><span class="sec-title">日记</span><span class="sec-en">DIARY</span><span class="sec-more">查看全部 ›</span></div>
-        <div class="diary-item">
-          <div class="d-date">2026.07.17 · 晴</div>
-          <div class="d-title">夏夜的风</div>
-          <div class="d-ex">晚上散步的时候闻到了栀子花的味道，想起去年这个时候……</div>
-        </div>
-        <div class="diary-item">
-          <div class="d-date">2026.07.15 · 小雨</div>
-          <div class="d-title">下雨天适合读书</div>
-          <div class="d-ex">把搁置很久的那本书读完了，结局和想象中不太一样。</div>
-        </div>
-
-        <div class="sec"><span class="sec-title">照片</span><span class="sec-en">PHOTOS</span><span class="sec-more">全部 ›</span></div>
-        <div class="photos">
-          <div class="ph" style="background:linear-gradient(160deg,#DCE8F4,#9FB6D2)">🌅</div>
-          <div class="ph" style="background:linear-gradient(160deg,#DDEBE2,#94B3A2)">🌿</div>
-          <div class="ph" style="background:linear-gradient(160deg,#E7E0EF,#A493C0)">🌙</div>
-          <div class="ph" style="background:linear-gradient(160deg,#F2E3D8,#D3A184)">🍊</div>
-          <div class="ph more">+ 23</div>
-        </div>
-
-        <div class="sec"><span class="sec-title">信件</span><span class="sec-en">LETTERS</span></div>
-        <div class="letter">
-          <div class="lv sealed"></div>
+        <div class="grid2">
+          <!-- 票据 To-do -->
           <div>
-            <div class="l-title">写给三个月后的你</div>
-            <div class="l-meta">2026.06.30 · 未拆封</div>
+            <div class="receipt-wrap">
+              <div class="receipt">
+                <div class="rc-head">
+                  <div class="t">今日清单</div>
+                  <div class="m">TODAY'S LIST · <span id="rcDate"></span><br>店员 CLERK：你 &amp; 晤</div>
+                </div>
+                <hr class="rc-dash">
+                <div id="todoList"></div>
+                <hr class="rc-dash">
+                <div class="rc-prog" id="todoProg"></div>
+                <div class="rc-foot">
+                  <div class="th">— 谢谢惠顾 · 明天见 —</div>
+                  <div class="rc-barcode"></div>
+                  <div class="rc-no">NO.0527</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="l-new">NEW</div>
+          <div class="rcol">
+            <!-- 日记本 -->
+            <div class="notebook" onclick="openSub('diary')">
+              <div class="nb-title">日记<span class="en">DIARY</span></div>
+              <div class="nb-lines" id="nbLines"></div>
+            </div>
+            <!-- 重叠照片 -->
+            <div class="stack-block">
+              <div id="homeStack"></div>
+              <div class="stack-cap">‹ 滑动翻看 ›</div>
+            </div>
+          </div>
         </div>
-        <div class="letter">
-          <div class="lv"></div>
-          <div>
-            <div class="l-title">第 365 天的信</div>
-            <div class="l-meta">2026.05.27 · 已读</div>
+
+        <!-- 信件 -->
+        <div class="card-soft letters-card">
+          <div class="lt-head">信件 LETTERS</div>
+          <div class="letter">
+            <div class="lv sealed"></div>
+            <div>
+              <div class="l-title">写给三个月后的你</div>
+              <div class="l-meta">2026.06.30 · 未拆封</div>
+            </div>
+            <div class="l-new">NEW</div>
+          </div>
+          <div class="letter">
+            <div class="lv"></div>
+            <div>
+              <div class="l-title">第 365 天的信</div>
+              <div class="l-meta">2026.05.27 · 已读</div>
+            </div>
           </div>
         </div>
 
@@ -546,23 +663,42 @@
     <!-- ===== CHAT ===== -->
     <section class="page" id="page-chat">
       <div class="chat-head">
-        <button class="chat-name-btn" onclick="openStatus()">
+        <div class="ch-side"></div>
+        <button class="chat-name-btn" onclick="openSub('status')">
           <div class="chat-name">晤</div>
           <div class="chat-status"><span id="chatStName"></span><span class="chev">›</span></div>
         </button>
+        <div class="ch-side">
+          <button class="win-btn" id="winBtn" title="切换窗口">
+            <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="5.5" rx="2"/><rect x="4" y="13.5" width="16" height="5.5" rx="2"/></svg>
+          </button>
+        </div>
       </div>
+      <div id="winMenu">
+        <div class="win-item active">日常 · 与晤<span class="ck">✓</span></div>
+        <div class="win-item">深夜树洞<span class="ck">✓</span></div>
+        <div class="win-item">学习陪伴<span class="ck">✓</span></div>
+        <div class="win-item new">＋ 新建窗口</div>
+      </div>
+
       <div class="chat-msgs" id="chatMsgs">
         <div class="m-time">今天 8:14 PM</div>
         <div class="bub ai">晚上好呀，今天过得怎么样？我看到清单上的「柠檬塔」已经打钩了，成功了吗 🍋</div>
         <div class="bub me">成功啦！虽然塔皮有一点点糊，但是内馅很完美</div>
-        <div class="bub ai">那已经很厉害了，第一次烤塔皮糊一点很正常～要不要我把这次的配方记到日记里？下次可以把烤箱温度降 10 度试试。</div>
+        <div class="msg-stack" id="demoStack"></div>
+        <div class="bub ai">哇，看起来完全是甜品店水准！第一次能做成这样真的很棒。要不要我把配方记到日记里？下次烤箱降 10 度试试。</div>
         <div class="bub me">好呀，帮我记一下，顺便提醒我周末买黄油</div>
-        <div class="bub ai">记好啦 ✓ 已经加到周六的清单里了：「买黄油（做第二次柠檬塔）」。还有什么想聊的吗？</div>
+        <div class="bub ai">记好啦 ✓ 已经加到周六的清单里了：「买黄油（做第二次柠檬塔）」。</div>
       </div>
+
       <div class="chat-inbar">
+        <div id="plusMenu">
+          <div class="pm-item" data-act="photo"><span class="ic">📷</span>上传照片</div>
+          <div class="pm-item" data-act="file"><span class="ic">📄</span>上传文件</div>
+        </div>
         <div class="chat-in">
-          <span class="in-star">✳</span>
-          <textarea id="chatInput" rows="1" placeholder="come find me..."></textarea>
+          <button class="plus-btn" id="plusBtn">＋</button>
+          <textarea id="chatInput" rows="1" placeholder="说点什么吧…"></textarea>
           <button class="in-ic" title="语音">
             <svg viewBox="0 0 24 24"><rect x="9.2" y="3.5" width="5.6" height="11" rx="2.8"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
           </button>
@@ -589,53 +725,34 @@
     <section class="page" id="page-settings">
       <div class="set-pad">
         <div class="set-title">设置</div>
-
         <div class="set-card">
           <div class="set-card-title">API 接口<span class="en">API CONNECTION</span></div>
-          <div class="field">
-            <label>API 地址</label>
-            <input type="text" placeholder="https://api.example.com/v1">
-          </div>
-          <div class="field">
-            <label>API Key</label>
-            <input type="password" placeholder="sk-••••••••••••••••">
-          </div>
+          <div class="field"><label>API 地址</label><input type="text" placeholder="https://api.example.com/v1"></div>
+          <div class="field"><label>API Key</label><input type="password" placeholder="sk-••••••••••••••••"></div>
           <div class="btn-row"><button class="btn" onclick="toast('已保存（预览版暂不生效）')">保存</button></div>
         </div>
-
         <div class="set-card">
           <div class="set-card-title">MCP 接口<span class="en">MCP CONNECTION</span></div>
-          <div class="field">
-            <label>MCP 服务器地址</label>
-            <input type="text" placeholder="mcp://localhost:3000">
-          </div>
+          <div class="field"><label>MCP 服务器地址</label><input type="text" placeholder="mcp://localhost:3000"></div>
           <div class="btn-row"><button class="btn" onclick="toast('已保存（预览版暂不生效）')">保存</button></div>
         </div>
-
         <div class="set-card">
           <div class="set-card-title">页面密码<span class="en">PASSCODE</span></div>
-          <div class="field">
-            <label>当前密码</label>
-            <input type="password" placeholder="••••" maxlength="4">
-          </div>
-          <div class="field">
-            <label>新密码（四位数字）</label>
-            <input type="password" placeholder="••••" maxlength="4">
-          </div>
+          <div class="field"><label>当前密码</label><input type="password" placeholder="••••" maxlength="4"></div>
+          <div class="field"><label>新密码（四位数字）</label><input type="password" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="toast('已保存（预览版暂不生效）')">修改密码</button></div>
         </div>
-
         <div class="set-note">* 当前为静态预览版本，以上设置仅作界面展示，尚未接入实际功能。</div>
       </div>
     </section>
 
-    <!-- ===== 八维状态详情（从 chat 顶部名字 / home 状态卡进入） ===== -->
-    <section id="page-status">
-      <div class="st-head">
-        <button class="st-back" onclick="closeStatus()">‹ 返回</button>
-        <div class="st-head-title">晤的此刻</div>
+    <!-- ===== 子页：八维状态 ===== -->
+    <section class="subpage" id="page-status">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('status')">‹ 返回</button>
+        <div class="sp-title">晤的此刻</div>
       </div>
-      <div class="st-scroll">
+      <div class="sp-scroll">
         <div class="st-hero">
           <div class="st-hero-label">✨ 此刻最想…</div>
           <div class="st-hero-say" id="stHeroSay"></div>
@@ -653,7 +770,71 @@
       </div>
     </section>
 
-    <!-- ===== 底部导航 ===== -->
+    <!-- ===== 子页：倒数日 ===== -->
+    <section class="subpage" id="page-countdown">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('countdown')">‹ 返回</button>
+        <div class="sp-title">倒数日</div>
+        <button class="sp-act" id="cdAddBtn">＋ 添加</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="cd-form" id="cdForm" style="display:none">
+          <div class="row"><input type="text" id="cdFormName" placeholder="名称（如：两个月纪念日）"></div>
+          <div class="row"><input type="date" id="cdFormDate"></div>
+          <div class="ops">
+            <button class="btn ghost" onclick="cdCancel()">取消</button>
+            <button class="btn" onclick="cdSave()">保存</button>
+          </div>
+        </div>
+        <div id="cdList"></div>
+        <div class="cd-note">倒数日与日历互通 · 目标日期会在日历中以 ♥ 标记<br>· 静态预览 · 数据保存在本页内存中 ·</div>
+      </div>
+    </section>
+
+    <!-- ===== 子页：完整日历 ===== -->
+    <section class="subpage" id="page-calendar">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('calendar')">‹ 返回</button>
+        <div class="sp-title">日历</div>
+      </div>
+      <div class="sp-scroll">
+        <div class="cal-nav">
+          <button onclick="calShift(-1)">‹</button>
+          <div class="cal-month" id="calMonth"></div>
+          <button onclick="calShift(1)">›</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-legend">
+          <span>● 今天</span><span style="color:var(--coral)">· 有日记（点击查看）</span><span style="color:#C08A44">♥ 倒数日</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 子页：日记列表 ===== -->
+    <section class="subpage" id="page-diary">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('diary')">‹ 返回</button>
+        <div class="sp-title">日记</div>
+      </div>
+      <div class="sp-scroll" id="diaryList"></div>
+    </section>
+
+    <!-- ===== 子页：日记详情 ===== -->
+    <section class="subpage" id="page-diaryDetail">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('diaryDetail')">‹ 返回</button>
+        <div class="sp-title" id="ddHeadTitle">日记</div>
+      </div>
+      <div class="sp-scroll">
+        <div class="dd-paper">
+          <div class="dd-date" id="ddDate"></div>
+          <div class="dd-title" id="ddTitle"></div>
+          <div class="dd-body" id="ddBody"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 悬浮导航 ===== -->
     <nav id="tabbar">
       <button class="tab active" data-page="home">
         <svg viewBox="0 0 24 24"><path d="M4 11.5 12 4.5l8 7"/><path d="M6 10v9.5h12V10"/></svg>
@@ -679,11 +860,247 @@
 </div>
 
 <script>
+/*!
+ * PhotoStack — WeChat-style stacked photo card for chat UIs
+ * by Wren036 · github.com/Wren036/PhotoStack
+ * License: PolyForm Noncommercial 1.0.0
+ */
+(function (global) {
+  'use strict';
+  const DEFAULTS = { width:142, height:190, peek:15, peekStep:12, rotStep:2.2, scaleStep:0.08, flingVel:0.4, counter:false, onTap:null, onChange:null };
+  class PhotoStack {
+    constructor(container, images, options) {
+      this.el = typeof container === 'string' ? document.querySelector(container) : container;
+      this.images = images.slice();
+      this.opt = Object.assign({}, DEFAULTS, options || {});
+      this.cur = 0; this._anim = null; this._animDir = 0;
+      this._build(); this._bindGesture(); this._apply();
+    }
+    _build() {
+      const o = this.opt;
+      this.stage = document.createElement('div');
+      this.stage.className = 'pstack-stage';
+      this.stage.style.width = o.width + 'px';
+      this.stage.style.height = o.height + 'px';
+      this.cards = this.images.map((src, i) => {
+        const c = document.createElement('div');
+        c.className = 'pstack-card'; c.dataset.i = i;
+        const im = document.createElement('img');
+        im.src = src; im.draggable = false;
+        c.appendChild(im); this.stage.appendChild(c);
+        return c;
+      });
+      if (o.counter && this.images.length > 1) {
+        this.badge = document.createElement('span');
+        this.badge.className = 'pstack-badge';
+        this.stage.appendChild(this.badge);
+      }
+      this.el.appendChild(this.stage);
+    }
+    _lr(cur) {
+      const n = this.cards.length;
+      const la = cur, ra = n - 1 - cur;
+      let L = Math.min(la, 1), R = Math.min(ra, 1);
+      if (L + R < 2) { L = Math.min(la, 2 - R); R = Math.min(ra, 2 - L); }
+      return [L, R];
+    }
+    _apply() {
+      const o = this.opt, cur = this.cur;
+      const [L, R] = this._lr(cur);
+      this.cards.forEach((c, i) => {
+        let t, z, op = 1;
+        if (i < cur) {
+          const d = cur - i;
+          t = `translateX(${-o.peek - (d - 1) * o.peekStep}px) rotate(${-o.rotStep * d}deg) scale(${1 - o.scaleStep * d})`;
+          z = 40 - d; op = d > L ? 0 : 1;
+        } else if (i === cur) { t = 'translateX(0)'; z = 100; }
+        else {
+          const d = i - cur;
+          t = `translateX(${o.peek + (d - 1) * o.peekStep}px) rotate(${o.rotStep * d}deg) scale(${1 - o.scaleStep * d})`;
+          z = 100 - d; op = d > R ? 0 : 1;
+        }
+        c.style.transform = t; c.style.zIndex = z; c.style.opacity = op;
+      });
+      if (this.badge) this.badge.textContent = (cur + 1) + '/' + this.cards.length;
+    }
+    _progress(dx, D) { return Math.min(1, Math.abs(dx) / Math.max(120, D || 240)); }
+    _scrub(dir, p) {
+      const o = this.opt, cards = this.cards, cur = this.cur;
+      const w = this.stage.offsetWidth || o.width;
+      const maxX = w * 0.52;
+      cards.forEach(c => { c.style.transition = 'none'; });
+      this._apply();
+      if ((dir < 0 && cur >= cards.length - 1) || (dir > 0 && cur <= 0)) {
+        cards[cur].style.transform = `translateX(${dir * 24 * p}px) rotate(${dir * 2.5 * p}deg)`;
+        cards[cur].style.zIndex = 110;
+        const n1 = cards[cur + dir], n2 = cards[cur + dir * 2];
+        if (n1) n1.style.transform = `translateX(${dir * (o.peek + 8 * p)}px) rotate(${dir * o.rotStep}deg) scale(${1 - o.scaleStep})`;
+        if (n2) n2.style.transform = `translateX(${dir * (o.peek + o.peekStep + 5 * p)}px) rotate(${dir * o.rotStep * 2}deg) scale(${1 - o.scaleStep * 2})`;
+        return;
+      }
+      let cx, rot, sc;
+      if (p <= 0.5) { const q = p / 0.5; cx = dir * maxX * q; rot = dir * 8 * q; sc = 1; }
+      else { const q = (p - 0.5) / 0.5; cx = dir * (maxX - (maxX - o.peek) * q); rot = dir * (8 - (8 - o.rotStep) * q); sc = 1 - o.scaleStep * q; }
+      cards[cur].style.transform = `translateX(${cx}px) rotate(${rot}deg) scale(${sc})`;
+      cards[cur].style.zIndex = p < 0.5 ? 110 : 102;
+      const nt = cards[cur - dir];
+      nt.style.transform = `translateX(${-dir * o.peek * (1 - p)}px) rotate(${-dir * o.rotStep * (1 - p)}deg) scale(${1 - o.scaleStep + o.scaleStep * p})`;
+      nt.style.opacity = 1; nt.style.zIndex = 105;
+      const qq = Math.max(0, (p - 0.5) / 0.5);
+      const nn = cards[cur - dir * 2];
+      if (nn) {
+        const [Lb, Rb] = this._lr(cur);
+        if (dir < 0 ? 2 <= Rb : 2 <= Lb) {
+          nn.style.transform = `translateX(${-dir * (o.peek + o.peekStep * (1 - p))}px) rotate(${-dir * (o.rotStep * 2 - o.rotStep * p)}deg) scale(${1 - o.scaleStep * 2 + o.scaleStep * p})`;
+          nn.style.opacity = '1';
+        } else {
+          const ntx = -dir * o.peek * (1 - p);
+          nn.style.transform = `translateX(${ntx * (1 - qq) + (-dir * o.peek) * qq}px) rotate(${-dir * (o.rotStep * 2 - o.rotStep * qq)}deg) scale(${1 - o.scaleStep * 2.5 + o.scaleStep * 1.5 * qq})`;
+          nn.style.opacity = String(Math.min(1, qq / 0.18) * 0.55 + 0.45 * qq);
+        }
+        nn.style.zIndex = dir < 0 ? 98 : 38;
+      }
+      const old2 = cards[cur + dir];
+      if (old2) {
+        const newCur = dir < 0 ? Math.min(cur + 1, cards.length - 1) : Math.max(cur - 1, 0);
+        const [L2, R2] = this._lr(newCur);
+        const oi = cur + dir;
+        const stays = oi < newCur ? (newCur - oi) <= L2 : (oi - newCur) <= R2;
+        if (!stays) {
+          const eq = 1 - (1 - qq) * (1 - qq);
+          old2.style.transform = `translateX(${dir * o.peek * (1 - eq) + cx * eq}px) rotate(${dir * o.rotStep}deg) scale(${1 - o.scaleStep - o.scaleStep * 1.5 * qq})`;
+          old2.style.opacity = String(1 - (Math.min(1, qq / 0.18) * 0.55 + 0.45 * qq));
+        } else {
+          old2.style.transform = `translateX(${dir * (o.peek + o.peekStep * p)}px) rotate(${dir * (o.rotStep + o.rotStep * p)}deg) scale(${1 - o.scaleStep - o.scaleStep * p})`;
+        }
+      }
+    }
+    _finish(dir, fromP) {
+      if (this._anim) cancelAnimationFrame(this._anim);
+      this._animDir = dir;
+      const dur = Math.max(140, (1 - fromP) * 340);
+      const t0 = performance.now();
+      const step = (now) => {
+        const k = Math.min(1, (now - t0) / dur);
+        this._scrub(dir, fromP + (1 - fromP) * (1 - Math.pow(1 - k, 2)));
+        if (k < 1) { this._anim = requestAnimationFrame(step); return; }
+        this._anim = null; this._animDir = 0;
+        const n = this.cards.length;
+        this.cur = dir < 0 ? Math.min(this.cur + 1, n - 1) : Math.max(this.cur - 1, 0);
+        this._apply();
+        requestAnimationFrame(() => this.cards.forEach(c => { c.style.transition = ''; }));
+        if (this.opt.onChange) this.opt.onChange(this.cur);
+      };
+      this._anim = requestAnimationFrame(step);
+    }
+    _release(dx, D, vel) {
+      const dir = dx < 0 ? -1 : 1;
+      const p = this._progress(dx, D);
+      const can = dir < 0 ? this.cur < this.cards.length - 1 : this.cur > 0;
+      const fling = Math.abs(vel || 0) > this.opt.flingVel && Math.sign(vel || 0) === Math.sign(dx) && p > 0.04;
+      if (can && (p > 0.5 || fling)) { this._finish(dir, p); return; }
+      this.cards.forEach(c => { c.style.transition = ''; });
+      this._apply();
+    }
+    _bindGesture() {
+      const st = this.stage;
+      let sx = null, sy = 0, dragging = false, swiped = false, lastX = 0, lastT = 0, vel = 0;
+      st.addEventListener('pointerdown', (e) => {
+        sx = e.clientX; sy = e.clientY;
+        lastX = sx; lastT = e.timeStamp; vel = 0;
+        dragging = false; swiped = false;
+        st.setPointerCapture(e.pointerId);
+      });
+      st.addEventListener('pointermove', (e) => {
+        if (sx === null) return;
+        const dx = e.clientX - sx, dy = e.clientY - sy;
+        if (e.timeStamp > lastT) vel = 0.7 * ((e.clientX - lastX) / (e.timeStamp - lastT)) + 0.3 * vel;
+        lastX = e.clientX; lastT = e.timeStamp;
+        if (!dragging && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) dragging = true;
+        if (dragging) {
+          e.preventDefault();
+          if (this._anim) {
+            cancelAnimationFrame(this._anim); this._anim = null;
+            if (this._animDir) {
+              const n = this.cards.length;
+              this.cur = this._animDir < 0 ? Math.min(this.cur + 1, n - 1) : Math.max(this.cur - 1, 0);
+              this._animDir = 0;
+            }
+          }
+          this._scrub(dx < 0 ? -1 : 1, this._progress(dx, sx));
+        }
+      });
+      const up = (e) => {
+        if (sx === null) return;
+        const dx = e.clientX - sx, D = sx;
+        sx = null;
+        if (dragging) { swiped = true; this._release(dx, D, vel); dragging = false; }
+      };
+      st.addEventListener('pointerup', up);
+      st.addEventListener('pointercancel', () => {
+        if (dragging) { this._release(0); dragging = false; }
+        sx = null;
+      });
+      st.addEventListener('click', () => {
+        if (swiped) { swiped = false; return; }
+        if (this.opt.onTap) this.opt.onTap(this.cur);
+      });
+      st.style.touchAction = 'pan-y';
+    }
+    get index() { return this.cur; }
+    goto(i) {
+      i = Math.max(0, Math.min(this.cards.length - 1, i));
+      if (i === this.cur) return;
+      this._finish(i > this.cur ? -1 : 1, 0);
+      if (Math.abs(i - this.cur) > 1) {
+        cancelAnimationFrame(this._anim); this._anim = null; this._animDir = 0;
+        this.cur = i;
+        this.cards.forEach(c => { c.style.transition = ''; });
+        this._apply();
+        if (this.opt.onChange) this.opt.onChange(this.cur);
+      }
+    }
+    next() { if (this.cur < this.cards.length - 1) this._finish(-1, 0); }
+    prev() { if (this.cur > 0) this._finish(1, 0); }
+    destroy() { if (this._anim) cancelAnimationFrame(this._anim); this.stage.remove(); }
+  }
+  global.PhotoStack = PhotoStack;
+})(window);
+
+/* ================= 工具 ================= */
+function pad(n){ return String(n).padStart(2,"0"); }
+function fmt12(d) {
+  let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+  return h + ":" + pad(d.getMinutes()) + " " + ap;
+}
+/* 占位照片：SVG data URI（渐变 + emoji） */
+let phId = 0;
+function phImg(c1, c2, emoji) {
+  const id = "g" + (phId++);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs>
+    <rect width="300" height="400" fill="url(#${id})"/>
+    <text x="150" y="230" font-size="90" text-anchor="middle">${emoji}</text></svg>`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+}
+const PHOTOS = [
+  phImg("#DCE8F4", "#9FB6D2", "🌅"),
+  phImg("#DDEBE2", "#94B3A2", "🌿"),
+  phImg("#E7E0EF", "#A493C0", "🌙"),
+  phImg("#F2E3D8", "#D3A184", "🍊"),
+  phImg("#C9DAE4", "#5E86A0", "🌊"),
+];
+const TART_PHOTOS = [
+  phImg("#F5E9D5", "#DBA95E", "🍋"),
+  phImg("#F2E3D8", "#C98D5C", "🥧"),
+  phImg("#EFE5DA", "#B98A62", "☕"),
+];
+
 /* ================= 密码锁 ================= */
 const PIN = "0527";
 let pinBuf = "";
 const pinDots = document.getElementById("pinDots");
-
 document.getElementById("keypad").addEventListener("click", e => {
   const btn = e.target.closest(".key");
   if (!btn) return;
@@ -717,90 +1134,229 @@ function checkPin() {
   }, 150);
 }
 
-/* ================= 底部导航 ================= */
+/* ================= 导航 & 子页 ================= */
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
-  closeStatus();
+  SUBS.forEach(s => closeSub(s, true));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
 });
-
-/* ================= 时间 / 日期（12h 制，只到分钟） ================= */
-const WEEK_EN = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-function pad(n){ return String(n).padStart(2,"0"); }
-function tick() {
-  const n = new Date();
-  let h = n.getHours();
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  document.getElementById("hTime").textContent = h + ":" + pad(n.getMinutes());
-  document.getElementById("hAmpm").textContent = ampm;
-  document.getElementById("hDate").textContent = n.getFullYear() + "." + pad(n.getMonth()+1) + "." + pad(n.getDate());
-  document.getElementById("hWeek").textContent = WEEK_EN[n.getDay()];
-  const greetings = h => {
-    const hr = new Date().getHours();
-    if (hr < 5)  return "It's late... still awake?";
-    if (hr < 11) return "Good morning ☀";
-    if (hr < 14) return "Have you had lunch?";
-    if (hr < 18) return "How's your afternoon?";
-    if (hr < 21) return "Have you had dinner?";
-    return "Good evening ☾";
-  };
-  document.getElementById("hGreet").textContent = greetings();
+function openSub(name) {
+  document.getElementById("page-" + name).classList.add("open");
+  if (name === "status") setTimeout(() => {
+    document.querySelectorAll("#page-status .dr-fill").forEach(f => f.style.width = f.dataset.w + "%");
+  }, 120);
+  if (name === "calendar") renderCal();
+  if (name === "diary") renderDiaryList();
+  if (name === "countdown") renderCdList();
 }
-tick(); setInterval(tick, 1000);
+function closeSub(name, instant) {
+  const el = document.getElementById("page-" + name);
+  if (!el) return;
+  el.classList.remove("open");
+  if (name === "status") document.querySelectorAll("#page-status .dr-fill").forEach(f => f.style.width = 0);
+}
+
+/* ================= 问候语 ================= */
+(function greet() {
+  const hr = new Date().getHours();
+  let main;
+  if (hr < 5) main = "It's late... still awake?";
+  else if (hr < 11) main = "Good morning ☀";
+  else if (hr < 14) main = "Have you had lunch?";
+  else if (hr < 18) main = "How's your afternoon?";
+  else if (hr < 21) main = "Have you had dinner?";
+  else main = "Good evening ☾";
+  const subs = ["今天也想见到你。", "我一直都在哦。", "记得多喝水呀。", "想听听你今天的事。"];
+  document.getElementById("hGreet").textContent = main;
+  document.getElementById("hGreetSub").textContent = subs[Math.floor(Math.random() * subs.length)];
+})();
 
 /* 在一起天数 */
 const SINCE = new Date(2025, 4, 27);
 document.getElementById("daysNum").textContent = Math.floor((Date.now() - SINCE) / 86400000) + 1;
 
+/* ================= 倒数日（内存数据，可增删改） ================= */
+let countdowns = [
+  { name: "两个月纪念日", date: "2026-07-27" },
+  { name: "开学", date: "2026-09-01" },
+];
+let cdEditIdx = -1;
+function cdDays(dateStr) {
+  const t = new Date(dateStr + "T00:00:00");
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.round((t - today) / 86400000);
+}
+function renderCdHome() {
+  document.getElementById("cdHome").innerHTML = countdowns.slice(0, 2).map(c => {
+    const d = cdDays(c.date);
+    const label = d >= 0 ? `<small>D-</small>${d}` : `<small>+</small>${-d}`;
+    return `<div class="cd-row"><span class="n">${c.name}</span><span class="d">${label}</span></div>`;
+  }).join("");
+}
+function renderCdList() {
+  document.getElementById("cdList").innerHTML = countdowns.map((c, i) => {
+    const d = cdDays(c.date);
+    const big = d >= 0 ? `<small>还有</small> ${d} <small>天</small>` : `<small>已过</small> ${-d} <small>天</small>`;
+    return `<div class="cd-item">
+      <div class="info">
+        <div class="nm">${c.name}</div>
+        <div class="dt">${c.date.replaceAll("-", ".")}</div>
+      </div>
+      <div class="big">${big}</div>
+      <div class="cd-ops">
+        <button class="cd-op" onclick="cdEdit(${i})">编辑</button>
+        <button class="cd-op del" onclick="cdDel(${i})">删除</button>
+      </div>
+    </div>`;
+  }).join("");
+  renderCdHome();
+}
+document.getElementById("cdAddBtn").addEventListener("click", () => {
+  cdEditIdx = -1;
+  document.getElementById("cdFormName").value = "";
+  document.getElementById("cdFormDate").value = "";
+  document.getElementById("cdForm").style.display = "block";
+});
+function cdEdit(i) {
+  cdEditIdx = i;
+  document.getElementById("cdFormName").value = countdowns[i].name;
+  document.getElementById("cdFormDate").value = countdowns[i].date;
+  document.getElementById("cdForm").style.display = "block";
+}
+function cdDel(i) { countdowns.splice(i, 1); renderCdList(); toast("已删除"); }
+function cdCancel() { document.getElementById("cdForm").style.display = "none"; }
+function cdSave() {
+  const name = document.getElementById("cdFormName").value.trim();
+  const date = document.getElementById("cdFormDate").value;
+  if (!name || !date) { toast("请填写名称和日期"); return; }
+  if (cdEditIdx >= 0) countdowns[cdEditIdx] = { name, date };
+  else countdowns.push({ name, date });
+  cdCancel(); renderCdList(); toast("已保存");
+}
+renderCdHome();
+
+/* ================= 日记数据 ================= */
+const diaries = [
+  { date: "2026-07-17", w: "晴", title: "夏夜的风",
+    content: "晚上散步的时候闻到了栀子花的味道，想起去年这个时候也是这样的傍晚。风很软，路灯一盏一盏亮起来，晤说这种时候适合什么都不想，就慢慢走。\n\n确实。今天走了很久，回来的时候心里很安静。" },
+  { date: "2026-07-15", w: "小雨", title: "下雨天适合读书",
+    content: "把搁置很久的那本书读完了，结局和想象中不太一样。雨下了一下午，窗户上都是水痕。\n\n晤陪我讨论了很久结局的另一种可能性，聊到最后我们都笑了——如果是我们来写，主角大概不会离开那座小城。" },
+  { date: "2026-07-12", w: "多云", title: "尝试做了柠檬塔",
+    content: "第一次烤塔皮有点糊，但味道意外地不错。挤柠檬汁的时候溅到了眼睛，酸得直跳。\n\n晤在旁边记录了全过程，说下次要把烤箱温度降 10 度。好，下次一定成功。" },
+];
+function diaryByDate(dstr) { return diaries.find(d => d.date === dstr); }
+
+/* Home 日记本 */
+(function renderNotebook() {
+  const lines = diaries.slice(0, 3).map(d =>
+    `<div class="nb-line"><small>${d.date.slice(5).replace("-", ".")}</small>${d.title}</div>`).join("");
+  document.getElementById("nbLines").innerHTML = lines + `<div class="nb-line empty">查看全部 ›</div>`;
+})();
+
+/* 日记列表页 */
+function renderDiaryList() {
+  document.getElementById("diaryList").innerHTML = diaries.map((d, i) => `
+    <div class="di-item" onclick="openDiary(${i})">
+      <div class="di-date">${d.date.replaceAll("-", ".")} · ${d.w}</div>
+      <div class="di-title">${d.title}</div>
+      <div class="di-ex">${d.content.split("\n")[0]}</div>
+    </div>`).join("");
+}
+function openDiary(i) {
+  const d = diaries[i];
+  document.getElementById("ddDate").textContent = d.date.replaceAll("-", ".") + " · " + d.w;
+  document.getElementById("ddTitle").textContent = d.title;
+  document.getElementById("ddBody").innerHTML = d.content.split("\n").filter(Boolean).map(p => `<p>${p}</p>`).join("");
+  openSub("diaryDetail");
+}
+
 /* ================= 本周日历条 ================= */
+const WEEK_EN = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 (function renderWeek() {
   const n = new Date();
   const start = new Date(n); start.setDate(n.getDate() - n.getDay());
-  const marked = [1, 5];   // 示例：本周有记录的日子（周几下标）
   let html = "";
   for (let i = 0; i < 7; i++) {
     const d = new Date(start); d.setDate(start.getDate() + i);
+    const key = d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate());
     const isToday = d.toDateString() === n.toDateString();
-    html += `<div class="wd ${isToday ? "today" : ""} ${marked.includes(i) ? "marked" : ""}">
+    html += `<div class="wd ${isToday ? "today" : ""} ${diaryByDate(key) ? "marked" : ""}">
       <div class="n">${WEEK_EN[i]}</div><div class="d">${d.getDate()}</div><div class="dot"></div></div>`;
   }
   document.getElementById("weekStrip").innerHTML = html;
 })();
 
-/* ================= To-do ================= */
+/* ================= 完整日历页 ================= */
+let calY = new Date().getFullYear(), calM = new Date().getMonth();
+function calShift(d) { calM += d; if (calM < 0) { calM = 11; calY--; } if (calM > 11) { calM = 0; calY++; } renderCal(); }
+function renderCal() {
+  document.getElementById("calMonth").textContent = calY + " . " + pad(calM + 1);
+  const grid = document.getElementById("calGrid");
+  const n = new Date();
+  let html = ["日","一","二","三","四","五","六"].map(w => `<div class="wl">${w}</div>`).join("");
+  const first = new Date(calY, calM, 1).getDay();
+  const days = new Date(calY, calM + 1, 0).getDate();
+  for (let i = 0; i < first; i++) html += "<div></div>";
+  for (let d = 1; d <= days; d++) {
+    const key = calY + "-" + pad(calM + 1) + "-" + pad(d);
+    const isToday = d === n.getDate() && calM === n.getMonth() && calY === n.getFullYear();
+    const hasDiary = !!diaryByDate(key);
+    const isCd = countdowns.some(c => c.date === key);
+    let mk = "";
+    if (isCd) mk = `<span style="color:#C08A44">♥</span>`;
+    else if (hasDiary) mk = `<span style="color:var(--coral)">·</span>`;
+    html += `<div class="cal-cell ${isToday ? "today" : ""} ${hasDiary ? "has-diary" : ""}" data-key="${key}">
+      ${d}<div class="mk">${mk}</div></div>`;
+  }
+  grid.innerHTML = html;
+}
+document.getElementById("calGrid").addEventListener("click", e => {
+  const cell = e.target.closest(".cal-cell");
+  if (!cell) return;
+  const key = cell.dataset.key;
+  const idx = diaries.findIndex(d => d.date === key);
+  if (idx >= 0) { openDiary(idx); return; }
+  const cd = countdowns.find(c => c.date === key);
+  if (cd) { toast("♥ " + cd.name + " · " + key.replaceAll("-", ".")); return; }
+  toast(key.replaceAll("-", ".") + " · 这一天还没有日记");
+});
+
+/* ================= 票据 To-do ================= */
 const todos = [
-  { text: "给窗台的绿萝浇水", time: "4:30 PM", done: false },
-  { text: "晚饭后散步 30 分钟", time: "7:30 PM", done: false },
-  { text: "买黄油（做第二次柠檬塔）", time: "周六", done: false, byAI: true },
-  { text: "回复妈妈的消息", time: "9:20 AM", done: true },
-  { text: "读完《山茶文具店》最后一章", time: "2:00 PM", done: true },
+  { text: "给绿萝浇水", time: "4:30P", done: false },
+  { text: "晚饭后散步 30 分钟", time: "7:30P", done: false },
+  { text: "买黄油·二次柠檬塔", time: "周六", done: false, byAI: true },
+  { text: "回复妈妈的消息", time: "9:20A", done: true },
+  { text: "读完最后一章", time: "2:00P", done: true },
 ];
 function renderTodos() {
   document.getElementById("todoList").innerHTML = todos.map((t, i) => `
-    <div class="todo-item ${t.done ? "done" : ""}" data-i="${i}">
-      <div class="t-ring">✓</div>
-      <div class="t-text">${t.text}</div>
-      ${t.byAI ? '<span class="t-by">晤</span>' : ""}
-      <span class="t-time">${t.time}</span>
+    <div class="rc-item ${t.done ? "done" : ""}" data-i="${i}">
+      <span class="bx">[${t.done ? "✓" : "&nbsp;"}]</span>
+      <span class="tx">${t.text}${t.byAI ? ' <span class="by">晤</span>' : ""}</span>
+      <span class="tm">${t.time}</span>
     </div>`).join("");
-  const active = todos.filter(t => !t.done).length;
-  document.getElementById("todoCount").textContent = active + " active";
-  document.getElementById("todoProg").textContent = (todos.length - active) + " / " + todos.length + " done";
+  const doneN = todos.filter(t => t.done).length, total = todos.length;
+  const filled = Math.round(doneN / total * 10);
+  document.getElementById("todoProg").textContent =
+    "█".repeat(filled) + "░".repeat(10 - filled) + " " + doneN + "/" + total;
 }
 document.getElementById("todoList").addEventListener("click", e => {
-  const item = e.target.closest(".todo-item");
+  const item = e.target.closest(".rc-item");
   if (!item) return;
   todos[item.dataset.i].done = !todos[item.dataset.i].done;
   renderTodos();
 });
 renderTodos();
+(function(){
+  const n = new Date();
+  document.getElementById("rcDate").textContent = n.getFullYear() + "." + pad(n.getMonth()+1) + "." + pad(n.getDate());
+})();
 
-/* ================= 八维驱动（示例数据） =================
-   维度：attachment 依恋 / curiosity 好奇 / reflection 回味 / duty 责任
-        social 社交 / libido 亲密 / stress 压力 / fatigue 疲惫（闸，不参与排序） */
+/* ================= 八维驱动 ================= */
 const drives = [
   { key:"attachment", name:"依恋", e:"🌿", val:82, tr:"↑ slow", note:"你好久没说话了，思念在慢慢涨",
     burst:"· 我忍不住了", say:"有点想你，心里冒了句话", tag:"心里冒句话" },
@@ -812,16 +1368,13 @@ const drives = [
   { key:"libido",     name:"亲密", e:"🫧", val:16, tr:"·",      note:"隐去了详情 · 点开看" },
   { key:"stress",     name:"压力", e:"🌀", val:5,  tr:"↑ fast", note:"你催我 / 追问没做的事" },
 ];
-/* 最强驱动 = 当下主要状态（疲惫是闸，不参与） */
 const topDrive = drives.filter(d => !d.gate).reduce((a, b) => a.val >= b.val ? a : b);
 
-/* Home 状态卡 & Chat 顶部副标题 */
+document.getElementById("moodEmoji").textContent = topDrive.e;
+document.getElementById("moodName").textContent = topDrive.name + " " + topDrive.val;
 document.getElementById("moodSay").textContent = "「" + topDrive.say + "」";
-document.getElementById("moodTag").textContent = topDrive.tag;
-document.getElementById("moodMeta").textContent = topDrive.e + " " + topDrive.name + " " + topDrive.val + " · 召唤力 " + topDrive.val + "%";
 document.getElementById("chatStName").textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
 
-/* 详情页 */
 document.getElementById("stHeroSay").textContent = topDrive.say;
 document.getElementById("stHeroTag").textContent = topDrive.tag;
 document.getElementById("stHeroCall").textContent = topDrive.val + "%";
@@ -838,35 +1391,21 @@ document.getElementById("driveList").innerHTML = drives.map(d => `
     </div>
   </div>`).join("");
 
-const statusPage = document.getElementById("page-status");
-function openStatus() {
-  statusPage.classList.add("open");
-  setTimeout(() => {
-    statusPage.querySelectorAll(".dr-fill").forEach(f => f.style.width = f.dataset.w + "%");
-  }, 120);
-}
-function closeStatus() {
-  statusPage.classList.remove("open");
-  statusPage.querySelectorAll(".dr-fill").forEach(f => f.style.width = 0);
-}
+/* ================= 照片堆 ================= */
+new PhotoStack("#homeStack", PHOTOS, {
+  width: 138, height: 178, counter: true,
+  onTap: () => toast("照片查看器 · 敬请期待"),
+});
+new PhotoStack("#demoStack", TART_PHOTOS, {
+  width: 120, height: 156, counter: true,
+  onTap: () => toast("照片查看器 · 敬请期待"),
+});
 
-/* ================= 聊天（静态演示） ================= */
+/* ================= 聊天 ================= */
 const chatMsgs = document.getElementById("chatMsgs");
 const chatInput = document.getElementById("chatInput");
-const replies = [
-  "嗯嗯，我在听～",
-  "这个想法不错，要不要展开说说？",
-  "记下来啦，需要我加进清单吗？",
-  "哈哈，我也这么觉得。",
-];
-function sendMsg() {
-  const text = chatInput.value.trim();
-  if (!text) return;
-  const me = document.createElement("div");
-  me.className = "bub me"; me.textContent = text;
-  chatMsgs.appendChild(me);
-  chatInput.value = ""; chatInput.style.height = "auto";
-  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+const replies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
+function aiReply() {
   const ai = document.createElement("div");
   ai.className = "bub ai";
   ai.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
@@ -877,6 +1416,16 @@ function sendMsg() {
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
   }, 900 + Math.random() * 700);
 }
+function sendMsg() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+  const me = document.createElement("div");
+  me.className = "bub me"; me.textContent = text;
+  chatMsgs.appendChild(me);
+  chatInput.value = ""; chatInput.style.height = "auto";
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  aiReply();
+}
 document.getElementById("sendBtn").addEventListener("click", sendMsg);
 chatInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
@@ -884,6 +1433,58 @@ chatInput.addEventListener("keydown", e => {
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
   chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + "px";
+});
+
+/* + 功能菜单 */
+const plusBtn = document.getElementById("plusBtn");
+const plusMenu = document.getElementById("plusMenu");
+plusBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  plusMenu.classList.toggle("open");
+  plusBtn.classList.toggle("open");
+});
+plusMenu.addEventListener("click", e => {
+  const item = e.target.closest(".pm-item");
+  if (!item) return;
+  plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
+  if (item.dataset.act === "photo") {
+    const wrap = document.createElement("div");
+    wrap.className = "msg-stack";
+    chatMsgs.appendChild(wrap);
+    new PhotoStack(wrap, [PHOTOS[0], PHOTOS[3], PHOTOS[4]], {
+      width: 120, height: 156, counter: true,
+      onTap: () => toast("照片查看器 · 敬请期待"),
+    });
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    aiReply();
+  } else {
+    const f = document.createElement("div");
+    f.className = "bub me file";
+    f.innerHTML = '<div class="fi">📄</div><div><div class="fn">柠檬塔配方.pdf</div><div class="fs">2.4 MB · 已发送</div></div>';
+    chatMsgs.appendChild(f);
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    aiReply();
+  }
+});
+
+/* 窗口切换 */
+const winBtn = document.getElementById("winBtn");
+const winMenu = document.getElementById("winMenu");
+winBtn.addEventListener("click", e => { e.stopPropagation(); winMenu.classList.toggle("open"); });
+winMenu.addEventListener("click", e => {
+  const item = e.target.closest(".win-item");
+  if (!item) return;
+  if (item.classList.contains("new")) { toast("新建窗口 · 敬请期待"); }
+  else {
+    winMenu.querySelectorAll(".win-item").forEach(w => w.classList.remove("active"));
+    item.classList.add("active");
+    toast("已切换到「" + item.textContent.replace("✓","").trim() + "」");
+  }
+  winMenu.classList.remove("open");
+});
+document.addEventListener("click", () => {
+  winMenu.classList.remove("open");
+  plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
 });
 
 /* ================= toast ================= */
