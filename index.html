@@ -612,16 +612,38 @@
   .dd-title { font-family: var(--serif); font-size: 24px; margin: 10px 0 14px; }
   .dd-body { font-size: 14.5px; line-height: 32px; color: var(--ink); }
 
-  /* ============ MEMORY / SETTINGS ============ */
-  .mem-pad { padding: calc(var(--sat) + 80px) 30px var(--navspace); text-align: center; }
-  .mem-icon { width: 84px; height: 84px; margin: 0 auto 22px; border-radius: 50%;
-    border: 1.5px dashed var(--ink-faint); display: flex; align-items: center; justify-content: center; font-size: 32px; }
-  .mem-title { font-family: var(--serif); font-size: 24px; letter-spacing: .3em; margin-left: .3em; }
-  .mem-sub { color: var(--ink-faint); font-size: 13px; margin-top: 12px; line-height: 2; }
-  .mem-slots { display: flex; flex-direction: column; gap: 14px; margin-top: 36px; }
-  .mem-slot { height: 76px; border: 1.5px dashed rgba(168,178,196,.4); border-radius: 20px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; color: var(--ink-faint); letter-spacing: .25em; font-family: var(--serif); }
+  /* ============ MEMORY ============ */
+  .mem-pad2 { padding: calc(var(--sat) + 24px) 20px var(--navspace); }
+  .mem-top { display: flex; align-items: baseline; gap: 8px; }
+  .mem-title2 { font-family: var(--serif); font-size: 26px; flex: 1; }
+  .mem-title2 .en { font-size: 10px; color: var(--ink-faint); letter-spacing: .2em; margin-left: 6px; }
+  .mem-btn { border: none; background: rgba(126,150,184,.12); color: var(--ink-soft);
+    border-radius: 999px; padding: 7px 13px; font-size: 12px; cursor: pointer; }
+  .mem-btn.add { background: var(--blue-deep); color: #fff; box-shadow: 0 4px 12px rgba(126,150,184,.35); }
+  .mem-stats { font-size: 11px; color: var(--ink-faint); margin: 8px 0 12px; }
+  .mem-tabs .lt-tab { font-size: 12px; padding: 8px 0; }
+  .mem-card { border-radius: 20px; padding: 14px 16px; margin-bottom: 12px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--shadow); }
+  .mc-head { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--ink-faint); }
+  .mc-type { color: var(--blue-deep); background: rgba(169,189,216,.18); border-radius: 999px; padding: 2px 9px; }
+  .mc-emo { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .mc-ops { margin-left: auto; display: flex; gap: 4px; }
+  .mc-op { border: none; background: none; color: var(--ink-faint); font-size: 11px; cursor: pointer; padding: 2px 4px; }
+  .mc-content { font-size: 14px; line-height: 1.7; margin-top: 7px; }
+  .mc-tags { margin-top: 6px; font-size: 10.5px; color: var(--blue-deep); }
+  .mc-meta { display: flex; align-items: center; gap: 8px; margin-top: 9px; font-size: 10px; color: var(--ink-faint); white-space: nowrap; }
+  .mc-fresh { flex: 1; height: 5px; border-radius: 99px; background: rgba(168,178,196,.2); overflow: hidden; min-width: 40px; }
+  .mc-fresh i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg,#8FA9C9,#A9BDD8); }
+  .mem-empty { text-align: center; color: var(--ink-faint); font-size: 13px; padding: 46px 20px; line-height: 2.2; }
+  .cd-form textarea { flex: 1; min-width: 0; padding: 10px 13px; border-radius: 12px;
+    border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.7);
+    font-size: 16px; color: var(--ink); outline: none; font-family: var(--sans); resize: none; }
+  .cd-form select { flex: 1; min-width: 0; padding: 10px 13px; border-radius: 12px;
+    border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.7);
+    font-size: 15px; color: var(--ink); outline: none; font-family: var(--sans); }
+
+  /* ============ SETTINGS ============ */
 
   .set-pad { padding: calc(var(--sat) + 26px) 20px var(--navspace); }
   .set-title { font-family: var(--serif); font-size: 28px; margin-bottom: 20px; }
@@ -808,6 +830,8 @@
           <div class="pm-item" data-act="file"><span class="ic">📄</span>上传文件</div>
         </div>
         <div class="att-prev" id="attPrev" style="display:none"></div>
+        <input type="file" id="pickPhoto" accept="image/*" multiple hidden>
+        <input type="file" id="pickFile" hidden>
         <div class="chat-in">
           <textarea id="chatInput" rows="1" placeholder="说点什么吧…"></textarea>
           <div class="in-row">
@@ -824,15 +848,35 @@
 
     <!-- ===== MEMORY ===== -->
     <section class="page" id="page-memory">
-      <div class="mem-pad">
-        <div class="mem-icon">🫧</div>
-        <div class="mem-title">记忆</div>
-        <div class="mem-sub">这里将存放我们共同的记忆碎片。<br>此页面正在设计中，敬请期待。</div>
-        <div class="mem-slots">
-          <div class="mem-slot">MEMORY · 01</div>
-          <div class="mem-slot">MEMORY · 02</div>
-          <div class="mem-slot">MEMORY · 03</div>
+      <div class="mem-pad2">
+        <div class="mem-top">
+          <div class="mem-title2">记忆<span class="en">MEMORY</span></div>
+          <button class="mem-btn" onclick="memDream()">🌙 整理</button>
+          <button class="mem-btn add" onclick="memShowForm()">＋ 记一笔</button>
         </div>
+        <div class="mem-stats" id="memStats"></div>
+        <div class="lt-tabs mem-tabs" id="memTabs">
+          <button class="lt-tab active" data-t="全部">全部</button>
+          <button class="lt-tab" data-t="事件">事件</button>
+          <button class="lt-tab" data-t="喜好">喜好</button>
+          <button class="lt-tab" data-t="约定">约定</button>
+          <button class="lt-tab" data-t="情绪">情绪</button>
+          <button class="lt-tab" data-t="日常">日常</button>
+        </div>
+        <div class="cd-form" id="memForm" style="display:none">
+          <div class="row"><textarea id="mfContent" rows="2" placeholder="记住什么…（如：她喜欢栀子花的味道）"></textarea></div>
+          <div class="row">
+            <select id="mfType"><option>日常</option><option>事件</option><option>喜好</option><option>约定</option><option>情绪</option></select>
+            <select id="mfImp"><option value="1">★</option><option value="2">★★</option><option value="3" selected>★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option></select>
+          </div>
+          <div class="row"><input type="text" id="mfTags" placeholder="标签，用空格分开（可留空）"></div>
+          <div class="ops">
+            <button class="btn ghost" onclick="memCancel()">取消</button>
+            <button class="btn" onclick="memSave()">保存</button>
+          </div>
+        </div>
+        <div id="memList"></div>
+        <div class="cd-note" id="memNote"></div>
       </div>
     </section>
 
@@ -857,7 +901,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.4 · 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.5（记忆系统+云同步+真实上传）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1246,6 +1290,15 @@ function load(key, fallback) {
 function save(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
+/* 服务器同步：连上后端时数据以服务器为准，本地 localStorage 兜底 */
+let SERVER = false;
+function pushState(key, val) {
+  save("wu." + key, val);
+  if (SERVER) fetch("api/state/" + key, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(val),
+  }).catch(() => {});
+}
 function fmt12(d) {
   let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
   return h + ":" + pad(d.getMinutes()) + " " + ap;
@@ -1330,6 +1383,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   SUBS.forEach(s => closeSub(s, true));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
+  if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -1434,7 +1488,7 @@ function cdEdit(i) {
   document.getElementById("cdFormDate").value = countdowns[i].date;
   document.getElementById("cdForm").style.display = "block";
 }
-function cdDel(i) { countdowns.splice(i, 1); save("wu.countdowns", countdowns); renderCdList(); toast("已删除"); }
+function cdDel(i) { countdowns.splice(i, 1); pushState("countdowns", countdowns); renderCdList(); toast("已删除"); }
 function cdCancel() { document.getElementById("cdForm").style.display = "none"; }
 function cdSave() {
   const name = document.getElementById("cdFormName").value.trim();
@@ -1442,7 +1496,7 @@ function cdSave() {
   if (!name || !date) { toast("请填写名称和日期"); return; }
   if (cdEditIdx >= 0) countdowns[cdEditIdx] = { name, date };
   else countdowns.push({ name, date });
-  save("wu.countdowns", countdowns);
+  pushState("countdowns", countdowns);
   cdCancel(); renderCdList(); toast("已保存");
 }
 renderCdHome();
@@ -1459,11 +1513,12 @@ const diaries = [
 function diaryByDate(dstr) { return diaries.find(d => d.date === dstr); }
 
 /* Home 日记本 */
-(function renderNotebook() {
+function renderNotebook() {
   const lines = diaries.slice(0, 3).map(d =>
     `<div class="nb-line"><small>${d.date.slice(5).replace("-", ".")}</small>${d.title}</div>`).join("");
   document.getElementById("nbLines").innerHTML = lines + `<div class="nb-line empty">查看全部 ›</div>`;
-})();
+}
+renderNotebook();
 
 /* 日记列表页 */
 function renderDiaryList() {
@@ -1484,7 +1539,7 @@ function openDiary(i) {
 
 /* ================= 本周日历条 ================= */
 const WEEK_EN = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-(function renderWeek() {
+function renderWeek() {
   const n = new Date();
   const start = new Date(n); start.setDate(n.getDate() - n.getDay());
   let html = "";
@@ -1496,7 +1551,8 @@ const WEEK_EN = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
       <div class="n">${WEEK_EN[i]}</div><div class="d">${d.getDate()}</div><div class="dot"></div></div>`;
   }
   document.getElementById("weekStrip").innerHTML = html;
-})();
+}
+renderWeek();
 
 /* ================= 完整日历页 ================= */
 let calY = new Date().getFullYear(), calM = new Date().getMonth();
@@ -1567,7 +1623,7 @@ document.getElementById("todoList").addEventListener("click", e => {
   const item = e.target.closest(".rc-item");
   if (!item) return;
   todos[item.dataset.i].done = !todos[item.dataset.i].done;
-  save("wu.todos", todos);
+  pushState("todos", todos);
   renderTodos();
 });
 renderTodos();
@@ -1727,10 +1783,7 @@ new PhotoStack("#homeStack", PHOTOS, {
 /* ================= 聊天 ================= */
 const chatMsgs = document.getElementById("chatMsgs");
 const chatInput = document.getElementById("chatInput");
-const SYSTEM_PROMPT =
-  "你是「晤」，用户最亲近的 AI 伙伴。用自然、温柔、简短的中文聊天，像熟悉彼此的人那样说话，" +
-  "不要长篇大论，不要用列表和标题。你们从 2026 年 5 月 27 日在一起，今天是在一起的第 " +
-  (Math.floor((Date.now() - SINCE) / 86400000) + 1) + " 天。";
+/* 人设与记忆注入已移交服务器（缓存友好的固定前缀在 server.js 里拼装） */
 
 /* 聊天记录（本地保存，刷新不丢） */
 const CHAT_SEED = [
@@ -1754,6 +1807,7 @@ function msgNode(m) {
     f.innerHTML = '<div class="fi">📄</div><div><div class="fn"></div><div class="fs"></div></div>';
     f.querySelector(".fn").textContent = m.name;
     f.querySelector(".fs").textContent = m.size + " · 已发送";
+    if (m.url) { f.style.cursor = "pointer"; f.onclick = () => window.open(m.url, "_blank"); }
     return f;
   }
   const b = document.createElement("div");
@@ -1764,17 +1818,19 @@ function msgNode(m) {
 function appendMsg(m) {
   chatMsgs.appendChild(msgNode(m));
   chatLog.push(m);
-  save("wu.chat", chatLog);
+  pushState("chat", chatLog);
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
-(function initChat() {
+function rerenderChat() {
+  chatMsgs.innerHTML = "";
   const t = document.createElement("div");
   t.className = "m-time";
   t.textContent = "今天 " + fmt12(new Date());
   chatMsgs.appendChild(t);
   chatLog.forEach(m => chatMsgs.appendChild(msgNode(m)));
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
-})();
+}
+rerenderChat();
 
 /* 后端探测：部署后有服务器 + Key 就走真 DeepSeek，否则本地演示回复 */
 let ONLINE = false;
@@ -1782,7 +1838,7 @@ fetch("api/health").then(r => r.json()).then(j => { ONLINE = !!(j && j.hasKey); 
 
 const cannedReplies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
 function toApiMessages() {
-  const msgs = [{ role: "system", content: SYSTEM_PROMPT }];
+  const msgs = [];
   chatLog.slice(-24).forEach(m => {
     if (m.k === "me") msgs.push({ role: "user", content: m.t });
     else if (m.k === "ai") msgs.push({ role: "assistant", content: m.t });
@@ -1801,7 +1857,7 @@ async function aiReply() {
     setTimeout(() => {
       const t = cannedReplies[Math.floor(Math.random() * cannedReplies.length)];
       bub.textContent = t;
-      chatLog.push({ k: "ai", t }); save("wu.chat", chatLog);
+      chatLog.push({ k: "ai", t }); pushState("chat", chatLog);
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
     }, 900 + Math.random() * 700);
     return;
@@ -1831,7 +1887,7 @@ async function aiReply() {
         } catch {}
       }
     }
-    chatLog.push({ k: "ai", t: acc || "……" }); save("wu.chat", chatLog);
+    chatLog.push({ k: "ai", t: acc || "……" }); pushState("chat", chatLog);
   } catch (e) {
     bub.textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
   }
@@ -1855,7 +1911,7 @@ function sendMsg() {
   if (pendingAtt) {
     appendMsg(pendingAtt.type === "photo"
       ? { k: "stack", imgs: pendingAtt.imgs }
-      : { k: "file", name: pendingAtt.name, size: pendingAtt.size });
+      : { k: "file", name: pendingAtt.name, size: pendingAtt.size, url: pendingAtt.url });
     clearAtt();
   }
   if (text) {
@@ -1888,14 +1944,47 @@ plusMenu.addEventListener("click", e => {
   const item = e.target.closest(".pm-item");
   if (!item) return;
   plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
-  /* 选择后先进入“待发送”状态，显示在输入框上方；点发送才真正发出 */
-  if (item.dataset.act === "photo") {
-    pendingAtt = { type: "photo", imgs: [PHOTOS[0], PHOTOS[3], PHOTOS[4]] };
-  } else {
-    pendingAtt = { type: "file", name: "柠檬塔配方.pdf", size: "2.4 MB" };
-  }
+  /* 打开真实的系统选择器；选完先进入“待发送”，点发送才发出 */
+  if (item.dataset.act === "photo") document.getElementById("pickPhoto").click();
+  else document.getElementById("pickFile").click();
+});
+
+/* ===== 真实照片 / 文件上传 ===== */
+function fileToDataURL(f) {
+  return new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(f); });
+}
+async function uploadFile(f) {
+  if (!SERVER) return null;
+  try {
+    const dataUrl = await fileToDataURL(f);
+    const r = await fetch("api/upload", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: f.name, data: dataUrl.split(",")[1] }),
+    }).then(r => r.json());
+    return r && r.url ? r.url : null;
+  } catch { return null; }
+}
+function humanSize(n) {
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
+}
+document.getElementById("pickPhoto").addEventListener("change", async e => {
+  const files = [...e.target.files].slice(0, 9);
+  if (!files.length) return;
+  toast(SERVER ? "上传照片中…" : "处理照片中…");
+  const imgs = [];
+  for (const f of files) imgs.push((await uploadFile(f)) || (await fileToDataURL(f)));
+  pendingAtt = { type: "photo", imgs };
   renderAtt();
-  chatInput.focus();
+  e.target.value = "";
+});
+document.getElementById("pickFile").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  toast(SERVER ? "上传中…" : "处理中…");
+  const url = await uploadFile(f);
+  pendingAtt = { type: "file", name: f.name, size: humanSize(f.size), url };
+  renderAtt();
+  e.target.value = "";
 });
 
 /* 窗口切换 */
@@ -1917,6 +2006,151 @@ document.addEventListener("click", () => {
   winMenu.classList.remove("open");
   plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
 });
+
+/* ================= 记忆页 ================= */
+let memCur = "全部", memEditId = null, memCache = [];
+function memHalfLife(imp) { return 7 * Math.pow(Math.max(1, imp || 3), 1.5); }
+function memEffLocal(c) {
+  if (c.type === "约定") return 1;
+  const anchor = new Date(c.last_recalled || c.created || Date.now()).getTime();
+  const age = Math.max(0, (Date.now() - anchor) / 86400000);
+  return (c.freshness ?? 1) * Math.exp(-age * Math.LN2 / memHalfLife(c.importance));
+}
+async function memAll() {
+  if (SERVER) {
+    try { const r = await fetch("api/memories"); if (r.ok) return await r.json(); } catch {}
+  }
+  return load("wu.memories", []).filter(c => !c.archived)
+    .map(c => ({ ...c, eff: +memEffLocal(c).toFixed(3) }))
+    .sort((a, b) => (b.created || "").localeCompare(a.created || ""));
+}
+async function memRefresh() {
+  memCache = await memAll();
+  const list = memCache.filter(c => memCur === "全部" || c.type === memCur);
+  document.getElementById("memStats").textContent = (memCache.length
+    ? memCache.length + " 张记忆卡 · 平均鲜度 " + Math.round(memCache.reduce((s, c) => s + (c.eff ?? 1), 0) / memCache.length * 100) + "%"
+    : "") + (SERVER ? "" : (memCache.length ? " · " : "") + "本地模式 · 连接服务器后自动上云");
+  const emoColor = v => v > 0.15 ? "#D9A25F" : v < -0.15 ? "#7E96B8" : "#A8B2C4";
+  const srcName = s => s === "distill" ? "晤记下的" : s === "dream" ? "梦里整理" : "手记";
+  document.getElementById("memList").innerHTML = list.length ? list.map(c => `
+    <div class="mem-card">
+      <div class="mc-head">
+        <span class="mc-type">${c.type}</span>
+        <span>${c.date || ""}</span>
+        <span class="mc-emo" style="background:${emoColor(c.emotion?.valence || 0)};transform:scale(${(0.7 + (c.emotion?.arousal || 0) * 0.7).toFixed(2)})"></span>
+        <span>${"★".repeat(c.importance || 3)}</span>
+        <div class="mc-ops">
+          <button class="mc-op" onclick="memEdit('${c.id}')">编辑</button>
+          <button class="mc-op" onclick="memDel('${c.id}')">删除</button>
+        </div>
+      </div>
+      <div class="mc-content"></div>
+      ${c.tags && c.tags.length ? `<div class="mc-tags">${c.tags.map(t => "#" + t).join(" ")}</div>` : ""}
+      <div class="mc-meta">
+        <span>鲜度</span>
+        <div class="mc-fresh"><i style="width:${Math.round((c.eff ?? 1) * 100)}%"></i></div>
+        <span>${Math.round((c.eff ?? 1) * 100)}%</span>
+        <span>回忆 ${c.recalled || 0} 次</span>
+        <span>${srcName(c.source)}</span>
+      </div>
+    </div>`).join("")
+    : '<div class="mem-empty">这里还没有记忆。<br>和晤聊聊天，他会自己记下重要的事；<br>也可以点右上角「＋ 记一笔」。</div>';
+  /* 内容用 textContent 填，避免注入 */
+  const nodes = document.querySelectorAll("#memList .mc-content");
+  list.forEach((c, i) => { if (nodes[i]) nodes[i].textContent = c.content; });
+  document.getElementById("memNote").textContent = list.length
+    ? "记忆会随时间自然淡忘，被想起时重新变鲜活；「约定」永不褪色。" : "";
+}
+function memShowForm() {
+  memEditId = null;
+  document.getElementById("mfContent").value = "";
+  document.getElementById("mfTags").value = "";
+  document.getElementById("mfType").value = "日常";
+  document.getElementById("mfImp").value = "3";
+  document.getElementById("memForm").style.display = "block";
+}
+function memCancel() { document.getElementById("memForm").style.display = "none"; }
+async function memSave() {
+  const content = document.getElementById("mfContent").value.trim();
+  if (!content) { toast("写点内容嘛"); return; }
+  const card = {
+    content, type: document.getElementById("mfType").value,
+    importance: +document.getElementById("mfImp").value,
+    tags: document.getElementById("mfTags").value.trim() ? document.getElementById("mfTags").value.trim().split(/\s+/) : [],
+  };
+  if (SERVER) {
+    const opt = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(card) };
+    if (memEditId) await fetch("api/memories/" + memEditId, { method: "PUT", ...opt }).catch(() => {});
+    else await fetch("api/memories", { method: "POST", ...opt }).catch(() => {});
+  } else {
+    const list = load("wu.memories", []);
+    if (memEditId) { const i = list.findIndex(c => c.id === memEditId); if (i >= 0) Object.assign(list[i], card); }
+    else list.push({
+      id: "m" + Date.now(), date: new Date().toISOString().slice(0, 10), ...card,
+      emotion: { valence: 0, arousal: 0 }, freshness: 1, recalled: 0,
+      created: new Date().toISOString(), source: "manual",
+    });
+    save("wu.memories", list);
+  }
+  memCancel(); memRefresh(); toast("已保存 ✓");
+}
+function memEdit(id) {
+  const c = memCache.find(x => x.id === id);
+  if (!c) return;
+  memEditId = id;
+  document.getElementById("mfContent").value = c.content;
+  document.getElementById("mfType").value = c.type;
+  document.getElementById("mfImp").value = String(c.importance || 3);
+  document.getElementById("mfTags").value = (c.tags || []).join(" ");
+  document.getElementById("memForm").style.display = "block";
+  document.getElementById("page-memory").scrollTop = 0;
+}
+async function memDel(id) {
+  if (SERVER) await fetch("api/memories/" + id, { method: "DELETE" }).catch(() => {});
+  else {
+    const list = load("wu.memories", []);
+    const i = list.findIndex(c => c.id === id);
+    if (i >= 0) { list[i].archived = true; save("wu.memories", list); }
+  }
+  memRefresh(); toast("已放进回忆深处");
+}
+async function memDream() {
+  if (!SERVER) { toast("整理需要连接服务器"); return; }
+  toast("晤正在整理记忆…");
+  const r = await fetch("api/memories/dream", { method: "POST" }).then(r => r.json()).catch(() => null);
+  if (r && r.merged) toast("把 " + r.merged + " 条旧记忆凝成了 " + (r.into || 1) + " 条");
+  else toast(r && r.note ? r.note : "整理失败，稍后再试");
+  memRefresh();
+}
+document.getElementById("memTabs").addEventListener("click", e => {
+  const t = e.target.closest(".lt-tab");
+  if (!t) return;
+  memCur = t.dataset.t;
+  document.querySelectorAll("#memTabs .lt-tab").forEach(x => x.classList.toggle("active", x === t));
+  memRefresh();
+});
+memRefresh();
+
+/* ================= 启动时从服务器拉取数据 ================= */
+(async function pullState() {
+  try {
+    const r = await fetch("api/state");
+    if (!r.ok) throw 0;
+    const s = await r.json();
+    SERVER = true;
+    const put = (k, v) => fetch("api/state/" + k, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v),
+    }).catch(() => {});
+    /* 服务器有数据 → 以服务器为准；服务器为空 → 把本地种子上传 */
+    if (Array.isArray(s.todos) && s.todos.length) { todos.length = 0; todos.push(...s.todos); } else put("todos", todos);
+    if (Array.isArray(s.countdowns) && s.countdowns.length) countdowns = s.countdowns; else put("countdowns", countdowns);
+    if (Array.isArray(s.diaries) && s.diaries.length) { diaries.length = 0; diaries.push(...s.diaries); } else put("diaries", diaries);
+    if (s.letters && Array.isArray(s.letters.ai)) { letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || []; } else put("letters", letters);
+    if (Array.isArray(s.chat) && s.chat.length) { chatLog = s.chat; rerenderChat(); } else put("chat", chatLog);
+    renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
+    memRefresh();
+  } catch {}
+})();
 
 /* ================= iOS 键盘适配 =================
    键盘弹出 → 隐藏底部导航（藏到键盘下面）、输入栏贴紧键盘 */
