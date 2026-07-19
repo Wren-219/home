@@ -901,7 +901,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.8（晤会自己动手了：写日记/写信/管清单/记忆）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.8.1（你也能写信给晤了；修复管理台日记覆盖）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -974,9 +974,17 @@
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('letters')">‹ 返回</button>
         <div class="sp-title">信箱</div>
-        <button class="sp-act" onclick="toast('写信 · 敬请期待')">✎ 写信</button>
+        <button class="sp-act" onclick="ltShowForm()">✎ 写信</button>
       </div>
       <div class="sp-scroll">
+        <div class="cd-form" id="ltForm" style="display:none">
+          <div class="row"><input type="text" id="ltfTitle" placeholder="信的标题…"></div>
+          <div class="row"><textarea id="ltfContent" rows="5" placeholder="想对晤说的话…（空行分段）"></textarea></div>
+          <div class="ops">
+            <button class="btn ghost" onclick="ltCancel()">取消</button>
+            <button class="btn" onclick="ltSave()">寄出</button>
+          </div>
+        </div>
         <div class="lt-tabs" id="ltTabs">
           <button class="lt-tab active" data-t="ai">晤写给我</button>
           <button class="lt-tab" data-t="mine">我写的</button>
@@ -1772,6 +1780,28 @@ function renderLetters() {
     </div>`).join("");
   document.getElementById("ltNote").textContent = ltNotes[ltCur];
 }
+/* 她写信给晤：寄出后晤下次聊天会收到提示并可用工具读 */
+function ltShowForm() { document.getElementById("ltForm").style.display = "block"; }
+function ltCancel() { document.getElementById("ltForm").style.display = "none"; }
+function ltSave() {
+  const t = document.getElementById("ltfTitle").value.trim();
+  const c = document.getElementById("ltfContent").value.trim();
+  if (!t || !c) { toast("标题和内容都写一点嘛"); return; }
+  const n = new Date();
+  letters.mine.unshift({
+    t, d: n.getFullYear() + "." + pad(n.getMonth() + 1) + "." + pad(n.getDate()),
+    s: "寄给晤 · 他还没读", content: c, unreadByAI: true,
+  });
+  pushState("letters", letters);
+  document.getElementById("ltfTitle").value = "";
+  document.getElementById("ltfContent").value = "";
+  ltCancel();
+  ltCur = "mine";
+  document.querySelectorAll(".lt-tab").forEach(x => x.classList.toggle("active", x.dataset.t === "mine"));
+  renderLetters();
+  toast("信已寄出，晤下次聊天就能读到 ✉️");
+}
+
 /* 拆信阅读（复用日记详情纸页）；拆封后标记已读 */
 function readLetter(cat, i) {
   const l = letters[cat][i];

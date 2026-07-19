@@ -263,13 +263,16 @@ let diaries = [], dCur = -1;
 async function diaryLoad(){
   const s = await api("api/state").catch(()=>({}));
   diaries = s.diaries || [];
+  renderDList();
+}
+function renderDList(){
   $("dList").innerHTML = diaries.map((d,i)=>`
     <div style="padding:9px 6px;border-bottom:1px dashed var(--line);cursor:pointer;${i===dCur?"color:var(--blue)":""}" onclick="diaryEdit(${i})">
       <div style="font-size:11px;color:var(--faint)">${esc(d.date)} · ${esc(d.w||"")}</div>
       <div style="font-family:var(--serif)">${esc(d.title)}</div>
     </div>`).join("") || '<div class="hint">还没有日记</div>';
 }
-function diaryEdit(i){ dCur=i; const d=diaries[i]; $("dEditor").style.display="block"; $("dDate").value=d.date; $("dW").value=d.w||""; $("dTitle").value=d.title; $("dContent").value=d.content||""; diaryLoad(); }
+function diaryEdit(i){ dCur=i; const d=diaries[i]; $("dEditor").style.display="block"; $("dDate").value=d.date; $("dW").value=d.w||""; $("dTitle").value=d.title; $("dContent").value=d.content||""; renderDList(); }
 function diaryNew(){ diaries.unshift({date:new Date().toISOString().slice(0,10),w:"",title:"新日记",content:""}); diaryEdit(0); }
 async function diarySave(){
   if(dCur<0)return;
