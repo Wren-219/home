@@ -295,6 +295,76 @@ async function runDream() {
   return { merged: old.length, into: cards.length };
 }
 
+/* ================= 晤的工具箱（tool calling） =================
+   模型在回复中可申请调用；server 执行真实磁盘操作后把结果递回，循环至最终回复 */
+const TOOL_DEFS = [
+  { type: "function", function: { name: "add_todo", description: "往她的今日清单添加一项待办",
+    parameters: { type: "object", properties: { text: { type: "string", description: "待办内容" }, time: { type: "string", description: "时间提示，如 7:30P 或 周六，可省略" } }, required: ["text"] } } },
+  { type: "function", function: { name: "complete_todo", description: "把清单里匹配的一项标记为完成",
+    parameters: { type: "object", properties: { text: { type: "string", description: "待办内容的关键词" } }, required: ["text"] } } },
+  { type: "function", function: { name: "write_diary", description: "以晤的身份写一篇今天的日记（记录你们共同的一天）",
+    parameters: { type: "object", properties: { title: { type: "string" }, content: { type: "string", description: "正文，空行分段" }, weather: { type: "string", description: "天气，可省略" } }, required: ["title", "content"] } } },
+  { type: "function", function: { name: "write_letter", description: "给她写一封信，放进信箱「晤写给我」栏（她会看到未拆封的新信）",
+    parameters: { type: "object", properties: { title: { type: "string" }, content: { type: "string", description: "信的正文，空行分段" } }, required: ["title", "content"] } } },
+  { type: "function", function: { name: "read_letters", description: "读信箱里的信（含正文）",
+    parameters: { type: "object", properties: { box: { type: "string", enum: ["mine", "ai", "pen"], description: "mine=她写的, ai=你写给她的, pen=笔友" } }, required: ["box"] } } },
+  { type: "function", function: { name: "read_diaries", description: "读最近的日记（含正文）",
+    parameters: { type: "object", properties: { limit: { type: "number", description: "篇数，默认 3" } } } } },
+  { type: "function", function: { name: "remember", description: "主动记住一件重要的事（存入记忆卡）",
+    parameters: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } } },
+];
+function execTool(name, args) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    if (name === "add_todo") {
+      const todos = readJson("todos", []) || [];
+      todos.push({ text: String(args.text).slice(0, 100), time: String(args.time || "").slice(0, 20), done: false, byAI: true });
+      writeJson("todos", todos);
+      return "已加入清单：" + args.text;
+    }
+    if (name === "complete_todo") {
+      const todos = readJson("todos", []) || [];
+      const t = todos.find(x => !x.done && (x.text.includes(args.text) || String(args.text).includes(x.text)));
+      if (!t) return "没找到匹配的未完成事项";
+      t.done = true;
+      writeJson("todos", todos);
+      return "已勾选：" + t.text;
+    }
+    if (name === "write_diary") {
+      const diaries = readJson("diaries", []) || [];
+      diaries.unshift({ date: today, w: String(args.weather || ""), title: String(args.title).slice(0, 50), content: String(args.content).slice(0, 4000) });
+      diaries.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      writeJson("diaries", diaries);
+      return "日记《" + args.title + "》已写好";
+    }
+    if (name === "write_letter") {
+      const letters = readJson("letters", { ai: [], mine: [], pen: [] }) || { ai: [], mine: [], pen: [] };
+      (letters.ai = letters.ai || []).unshift({ t: String(args.title).slice(0, 50), d: today.replaceAll("-", "."), s: "未拆封", sealed: true, content: String(args.content).slice(0, 4000) });
+      writeJson("letters", letters);
+      return "信《" + args.title + "》已放进信箱，她会看到未拆封的新信";
+    }
+    if (name === "read_letters") {
+      const letters = readJson("letters", { ai: [], mine: [], pen: [] }) || {};
+      const box = (letters[args.box] || []).slice(0, 10).map(l => ({ 标题: l.t, 日期: l.d, 状态: l.s, 正文: (l.content || "（无正文）").slice(0, 800) }));
+      return box.length ? JSON.stringify(box) : "这个信箱还没有信";
+    }
+    if (name === "read_diaries") {
+      const diaries = readJson("diaries", []) || [];
+      const out = diaries.slice(0, Math.min(5, args.limit || 3)).map(d => ({ 日期: d.date, 天气: d.w, 标题: d.title, 正文: (d.content || "").slice(0, 800) }));
+      return out.length ? JSON.stringify(out) : "还没有日记";
+    }
+    if (name === "remember") {
+      const all = listMem();
+      all.push({ ...newCard({ content: args.content, type: args.type, importance: args.importance, tags: args.tags }, "tool") });
+      saveMem(all);
+      return "已记住：" + args.content;
+    }
+    return "未知工具：" + name;
+  } catch (e) {
+    return "工具执行失败：" + String(e.message || e).slice(0, 100);
+  }
+}
+
 /* ================= HTTP 工具 ================= */
 function sendJson(res, code, obj) {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -328,6 +398,17 @@ const server = http.createServer(async (req, res) => {
         worker: WORKER_MODEL, workerSame: WORKER_BASE === API_BASE && WORKER_MODEL === MODEL,
         dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
       });
+      return;
+    }
+
+    /* ---- 干活模型自检：浏览器访问 /api/worker-test 看结果 ---- */
+    if (req.method === "GET" && p === "/api/worker-test") {
+      try {
+        const r = await llm([{ role: "user", content: "请只回复两个字：正常" }], 10, 0);
+        sendJson(res, 200, { ok: true, worker: WORKER_MODEL, reply: r.slice(0, 50) });
+      } catch (e) {
+        sendJson(res, 200, { ok: false, worker: WORKER_MODEL, error: String(e.message || e).slice(0, 200), hint: "若失败：去 aistudio.google.com 换一把 AIza 开头的 Key" });
+      }
       return;
     }
 
@@ -451,41 +532,83 @@ const server = http.createServer(async (req, res) => {
         (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "") +
         `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
 
-      const messages = [
+      const TOOL_HINT = "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
+        "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。";
+      let messages = [
         { role: "system", content: PERSONA },                       // 固定前缀 → 命中缓存
+        { role: "system", content: TOOL_HINT },                     // 同为固定文本
         ...(memBlock ? [{ role: "system", content: memBlock }] : []),
         { role: "system", content: status },
         ...history,
       ];
 
-      const upstream = await fetch(API_BASE + "/chat/completions", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: MODEL, messages, stream: true, temperature: 0.8, max_tokens: 1024 }),
-      });
-      if (!upstream.ok) {
-        const detail = (await upstream.text()).slice(0, 500);
-        sendJson(res, upstream.status, { error: "上游模型返回错误", detail });
-        return;
-      }
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
-      /* 边转发边攒出完整回复，供蒸馏用 */
-      let acc = "", sseBuf = "";
       const dec = new TextDecoder();
-      for await (const chunk of upstream.body) {
-        res.write(chunk);
-        sseBuf += dec.decode(chunk, { stream: true });
-        const lines = sseBuf.split("\n"); sseBuf = lines.pop();
-        for (const ln of lines) {
-          const s = ln.trim();
-          if (!s.startsWith("data:")) continue;
-          const d = s.slice(5).trim();
-          if (d === "[DONE]") continue;
-          try { const t = JSON.parse(d).choices?.[0]?.delta?.content; if (t) acc += t; } catch {}
+      /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls */
+      async function streamRound(msgs) {
+        const upstream = await fetch(API_BASE + "/chat/completions", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + API_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: MODEL, messages: msgs, stream: true, temperature: 0.8, max_tokens: 1024, tools: TOOL_DEFS }),
+        });
+        if (!upstream.ok) throw new Error("上游 HTTP " + upstream.status + "：" + (await upstream.text()).slice(0, 200));
+        let sseBuf = "", acc = "", finish = null;
+        const calls = [];
+        for await (const chunk of upstream.body) {
+          sseBuf += dec.decode(chunk, { stream: true });
+          const lines = sseBuf.split("\n"); sseBuf = lines.pop();
+          for (const ln of lines) {
+            const s = ln.trim();
+            if (!s.startsWith("data:")) continue;
+            const d = s.slice(5).trim();
+            if (d === "[DONE]") continue;
+            let j; try { j = JSON.parse(d); } catch { continue; }
+            const ch = j.choices?.[0];
+            if (!ch) continue;
+            const delta = ch.delta || {};
+            if (delta.content) {
+              acc += delta.content;
+              res.write("data: " + JSON.stringify({ choices: [{ delta: { content: delta.content } }] }) + "\n\n");
+            }
+            if (delta.tool_calls) for (const tc of delta.tool_calls) {
+              const i = tc.index || 0;
+              calls[i] = calls[i] || { id: tc.id || "call_" + i, name: "", args: "" };
+              if (tc.id) calls[i].id = tc.id;
+              if (tc.function?.name) calls[i].name += tc.function.name;
+              if (tc.function?.arguments) calls[i].args += tc.function.arguments;
+            }
+            if (ch.finish_reason) finish = ch.finish_reason;
+          }
         }
+        return { acc, finish, calls: calls.filter(Boolean) };
       }
+
+      let fullAcc = "";
+      try {
+        for (let round = 0; round < 4; round++) {
+          const r = await streamRound(messages);
+          fullAcc += r.acc;
+          if (r.finish === "tool_calls" && r.calls.length) {
+            messages = messages.concat([{
+              role: "assistant", content: r.acc || "",
+              tool_calls: r.calls.map(t => ({ id: t.id, type: "function", function: { name: t.name, arguments: t.args || "{}" } })),
+            }]);
+            for (const t of r.calls) {
+              let args = {}; try { args = JSON.parse(t.args || "{}"); } catch {}
+              const out = execTool(t.name, args);
+              console.log("[tool]", t.name, JSON.stringify(args).slice(0, 120), "→", out.slice(0, 80));
+              messages.push({ role: "tool", tool_call_id: t.id, content: out });
+            }
+            continue;
+          }
+          break;
+        }
+      } catch (e) {
+        res.write("data: " + JSON.stringify({ choices: [{ delta: { content: "（晤这边卡了一下：" + String(e.message).slice(0, 120) + "）" } }] }) + "\n\n");
+      }
+      res.write("data: [DONE]\n\n");
       res.end();
-      queueDistill(lastUser, acc);
+      queueDistill(lastUser, fullAcc);
       return;
     }
 

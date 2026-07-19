@@ -901,7 +901,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.7（+聊天/杂务双模型分流）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.8（晤会自己动手了：写日记/写信/管清单/记忆）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1531,6 +1531,7 @@ function renderDiaryList() {
 }
 function openDiary(i) {
   const d = diaries[i];
+  document.getElementById("ddHeadTitle").textContent = "日记";
   document.getElementById("ddDate").textContent = d.date.replaceAll("-", ".") + " · " + d.w;
   document.getElementById("ddTitle").textContent = d.title;
   document.getElementById("ddBody").innerHTML = d.content.split("\n").filter(Boolean).map(p => `<p>${p}</p>`).join("");
@@ -1759,8 +1760,8 @@ const ltNotes = {
 };
 let ltCur = "ai";
 function renderLetters() {
-  document.getElementById("ltList").innerHTML = letters[ltCur].map(l => `
-    <div class="lt-item" onclick="toast('读信 · 敬请期待')">
+  document.getElementById("ltList").innerHTML = letters[ltCur].map((l, i) => `
+    <div class="lt-item" onclick="readLetter('${ltCur}', ${i})">
       <div class="lv ${l.sealed ? "sealed" : ""}"></div>
       <div class="grow">
         <div class="l-title">${l.t}</div>
@@ -1771,6 +1772,22 @@ function renderLetters() {
     </div>`).join("");
   document.getElementById("ltNote").textContent = ltNotes[ltCur];
 }
+/* 拆信阅读（复用日记详情纸页）；拆封后标记已读 */
+function readLetter(cat, i) {
+  const l = letters[cat][i];
+  if (!l.content) { toast("这封信还没有正文"); return; }
+  document.getElementById("ddHeadTitle").textContent = "信";
+  document.getElementById("ddDate").textContent = l.d + " · " + l.s;
+  document.getElementById("ddTitle").textContent = l.t;
+  document.getElementById("ddBody").innerHTML = l.content.split("\n").filter(Boolean)
+    .map(p => { const el = document.createElement("p"); el.textContent = p; return el.outerHTML; }).join("");
+  openSub("diaryDetail");
+  if (l.sealed) {
+    l.sealed = false; l.s = "已读";
+    pushState("letters", letters);
+    renderLetters(); renderMailSummary();
+  }
+}
 document.getElementById("ltTabs").addEventListener("click", e => {
   const tab = e.target.closest(".lt-tab");
   if (!tab) return;
@@ -1779,11 +1796,13 @@ document.getElementById("ltTabs").addEventListener("click", e => {
   renderLetters();
 });
 /* 首页信箱摘要：未拆封数量 */
-(function () {
-  const unread = [...letters.ai, ...letters.mine].filter(l => l.sealed).length;
+function renderMailSummary() {
+  const unread = [...(letters.ai || []), ...(letters.mine || [])].filter(l => l.sealed).length;
   document.getElementById("mailSummary").textContent =
     unread > 0 ? unread + " 封未拆的信" : "暂无新信件";
-})();
+  document.querySelector(".mail-entry .l-new").style.display = unread > 0 ? "" : "none";
+}
+renderMailSummary();
 
 /* ================= 照片堆 & 照片页 ================= */
 const ALL_PHOTOS = [
@@ -1911,7 +1930,8 @@ async function aiReply() {
       }
     }
     chatLog.push({ k: "ai", t: acc || "……" }); pushState("chat", chatLog);
-    fetchDrives();   /* 聊完刷新晤的内在状态 */
+    fetchDrives();      /* 聊完刷新晤的内在状态 */
+    refreshShared();    /* 晤可能用工具改了清单/日记/信箱，同步回家里 */
   } catch (e) {
     bub.textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
   }
@@ -2155,6 +2175,20 @@ document.getElementById("memTabs").addEventListener("click", e => {
 });
 memRefresh();
 
+/* 聊天后轻量同步：晤用工具改动的清单/日记/信箱回流到界面 */
+async function refreshShared() {
+  if (!SERVER) return;
+  try {
+    const s = await (await fetch("api/state")).json();
+    if (Array.isArray(s.todos)) { todos.length = 0; todos.push(...s.todos); renderTodos(); }
+    if (Array.isArray(s.diaries)) { diaries.length = 0; diaries.push(...s.diaries); renderNotebook(); }
+    if (s.letters && Array.isArray(s.letters.ai)) {
+      letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || [];
+      renderMailSummary();
+    }
+  } catch {}
+}
+
 /* ================= 启动时从服务器拉取数据 ================= */
 (async function pullState() {
   try {
@@ -2169,7 +2203,7 @@ memRefresh();
     if (Array.isArray(s.todos) && s.todos.length) { todos.length = 0; todos.push(...s.todos); } else put("todos", todos);
     if (Array.isArray(s.countdowns) && s.countdowns.length) countdowns = s.countdowns; else put("countdowns", countdowns);
     if (Array.isArray(s.diaries) && s.diaries.length) { diaries.length = 0; diaries.push(...s.diaries); } else put("diaries", diaries);
-    if (s.letters && Array.isArray(s.letters.ai)) { letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || []; } else put("letters", letters);
+    if (s.letters && Array.isArray(s.letters.ai)) { letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || []; renderMailSummary(); } else put("letters", letters);
     if (Array.isArray(s.chat) && s.chat.length) { chatLog = s.chat; rerenderChat(); } else put("chat", chatLog);
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
     memRefresh();

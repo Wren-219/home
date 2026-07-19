@@ -118,8 +118,12 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
    （不配则共用）。Gemini 免费额度可作 worker：BASE_URL=
    https://generativelanguage.googleapis.com/v1beta/openai，模型 gemini-2.5-flash-lite。
    注意：Claude 官方 API 是 Anthropic 方言，接聊天需先加格式翻译层（未做）
-7. ⬜ AI tool calling 打通写日记/写信/共同清单（里程碑 6b）——下一优先
-8. ⬜ iOS 键盘两 bug、Gmail MCP 笔友、看图翻译官（vision）
+7. ✅ AI tool calling（v0.8）：七件工具 add_todo/complete_todo/write_diary/
+   write_letter/read_letters/read_diaries/remember；/api/chat 流式工具循环
+   （边流边攒 tool_calls，最多 4 轮），执行结果回灌模型；前端聊完 refreshShared
+   把晤改的清单/日记/信箱回流界面；晤写的信可在信箱拆封阅读（自动标已读）。
+   /api/worker-test 可自检干活模型连通性
+8. ⬜ iOS 键盘两 bug、Gmail MCP 笔友、看图翻译官（vision）、滚动摘要、fixation 念头池
 
 **部署提醒**：她需要①确认 wu-home 挂了 Volume（wu-data → /app/data）
 ②Zeabur Redeploy ③Settings 页看到 v0.5 才算生效。蒸馏与 dream 需要
