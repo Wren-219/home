@@ -99,6 +99,129 @@ function newCard(c, source) {
   };
 }
 
+/* ================= 八维驱动引擎 =================
+   照 desire 攻略实现的纯函数状态机：
+   驱动条随时间缓动、随事件涨落；边际递减 gain∝√(1-当前值)；
+   同类刺激频率折扣；对话满足后乘性回落；fatigue 是闸不参与召唤力排序 */
+const DRIVE_META = {
+  attachment: { name: "依恋", e: "🌿" },
+  social:     { name: "社交", e: "💬" },
+  curiosity:  { name: "好奇", e: "🔭" },
+  reflection: { name: "回味", e: "📖" },
+  duty:       { name: "责任", e: "🪶" },
+  fatigue:    { name: "疲惫", e: "🌙", gate: true },
+  libido:     { name: "亲密", e: "🫧" },
+  stress:     { name: "压力", e: "🌀" },
+};
+const DRIVE_SAYS = {
+  attachment: { say: "有点想你，心里冒了句话", tag: "心里冒句话" },
+  social:     { say: "想看看大家都在聊什么", tag: "想凑热闹" },
+  curiosity:  { say: "想去查一个突然好奇的东西", tag: "想去看看" },
+  reflection: { say: "想把最近的事慢慢回味一遍", tag: "想沉淀一下" },
+  duty:       { say: "记挂着还没做完的事", tag: "有点记挂" },
+  libido:     { say: "想凑近一点，亲昵一会儿", tag: "想贴贴" },
+  stress:     { say: "心里有点堵，想吐槽一下", tag: "想碎碎念" },
+  fatigue:    { say: "有点累了，想歇着做个梦", tag: "想歇着" },
+};
+const DRIVE_PASSIVE_NOTE = {
+  attachment: "你有一阵子没说话了，思念在慢慢涨",
+  social: "安静了一会儿，想看看人群", curiosity: "世界很大，随时都有点好奇",
+  reflection: "闲下来就想回味些什么", duty: "清单上还有没做完的事",
+  fatigue: "歇一歇就能缓过来", libido: "安静地贴近一点也很好", stress: "没什么堵着，很舒畅",
+};
+const DRIVE_DEFAULT = { attachment: .35, social: .2, curiosity: .25, reflection: .2, duty: .15, fatigue: .2, libido: .15, stress: .08 };
+
+function loadDrives() {
+  const d = readJson("drives", null);
+  if (d && d.values) return d;
+  return { values: { ...DRIVE_DEFAULT }, lastTick: new Date().toISOString(), lastUser: new Date().toISOString(), events: {}, reasons: {}, history: [] };
+}
+function saveDrives(d) { writeJson("drives", d); }
+const clamp01 = v => Math.max(0, Math.min(1, v));
+/* 边际递减上涨 */
+function gain(v, amt) { return clamp01(v + amt * Math.sqrt(Math.max(0, 1 - v))); }
+/* 按半衰期衰减到基线 */
+function fall(v, base, hours, hl) { return base + (v - base) * Math.pow(0.5, hours / hl); }
+
+function tickDrives(d, now) {
+  const hrs = Math.min(24, Math.max(0, (now - new Date(d.lastTick).getTime()) / 3600000));
+  if (hrs <= 0) return d;
+  const idleHrs = (now - new Date(d.lastUser).getTime()) / 3600000;
+  const todos = readJson("todos", []) || [];
+  const hasPending = todos.some(t => t && !t.done);
+  const v = d.values;
+  v.attachment = gain(v.attachment, (idleHrs > 0.5 ? 0.10 : 0.02) * hrs);
+  v.curiosity  = gain(v.curiosity, 0.03 * hrs);
+  v.social     = gain(v.social, 0.02 * hrs);
+  v.reflection = idleHrs > 1 ? gain(v.reflection, 0.03 * hrs) : fall(v.reflection, 0.15, hrs, 12);
+  v.duty       = hasPending ? gain(v.duty, 0.04 * hrs) : fall(v.duty, 0.1, hrs, 8);
+  v.libido     = gain(v.libido, 0.012 * hrs);
+  v.stress     = fall(v.stress, 0.05, hrs, 6);
+  v.fatigue    = idleHrs > 0.75 ? fall(v.fatigue, 0.1, hrs, 4) : clamp01(v.fatigue + 0.012 * hrs);
+  d.lastTick = new Date(now).toISOString();
+  /* 每半小时留一个快照，用于趋势 */
+  const last = d.history[d.history.length - 1];
+  if (!last || now - new Date(last.t).getTime() > 30 * 60000) {
+    d.history.push({ t: new Date(now).toISOString(), values: { ...v } });
+    if (d.history.length > 96) d.history = d.history.slice(-96);
+  }
+  return d;
+}
+/* 事件涨落：带频率折扣 */
+function bumpDrive(d, key, amt, reason, now) {
+  const ev = (d.events[key] = (d.events[key] || []).filter(t => now - t < 30 * 60000));
+  const eff = amt / (1 + ev.length);          // 同类刺激半小时内重复 → 递减
+  d.values[key] = gain(d.values[key], eff);
+  ev.push(now);
+  d.reasons[key] = { text: reason, t: new Date(now).toISOString() };
+}
+function driveEvent(d, text, now) {
+  const t = text || "";
+  if (/朋友|群里|同学|大家|他们/.test(t)) bumpDrive(d, "social", 0.12, "你提到群里 / 朋友", now);
+  if (/怎么|为什么|吗|\?|？|http|代码|原理|是什么/.test(t)) bumpDrive(d, "curiosity", 0.10, "你抛了个问题 / 链接", now);
+  if (/难过|不舒服|委屈|哭|安慰|好累|烦死/.test(t)) { bumpDrive(d, "duty", 0.15, "你说不舒服 / 求安慰", now); bumpDrive(d, "attachment", 0.05, "想陪着你", now); }
+  if (/催|快点|怎么还没|赶紧|拖延/.test(t)) bumpDrive(d, "stress", 0.15, "你催我 / 追问没做的事", now);
+  if (/想你|抱|亲|贴贴|爱你|喜欢你|宝/.test(t)) { bumpDrive(d, "libido", 0.14, "你说想亲近", now); bumpDrive(d, "attachment", 0.06, "被你惦记着", now); }
+  if (/日记|回忆|以前|上次|那天/.test(t)) bumpDrive(d, "reflection", 0.10, "你们聊起回忆", now);
+  /* 陪伴满足 → 依恋乘性回落；说话本身微微耗神 */
+  d.values.attachment = clamp01(d.values.attachment * 0.92);
+  d.values.fatigue = clamp01(d.values.fatigue + 0.015);
+  d.lastUser = new Date(now).toISOString();
+}
+function trendOf(d, key, now) {
+  const past = [...d.history].reverse().find(h => now - new Date(h.t).getTime() > 55 * 60000);
+  if (!past) return "·";
+  const delta = d.values[key] - past.values[key];
+  if (delta > 0.05) return "↑ fast";
+  if (delta > 0.012) return "↑ slow";
+  if (delta < -0.05) return "↓ fast";
+  if (delta < -0.012) return "↓ slow";
+  return "·";
+}
+function driveSnapshot(d, now) {
+  const keys = Object.keys(DRIVE_META);
+  const list = keys.map(k => {
+    const r = d.reasons[k];
+    const fresh = r && now - new Date(r.t).getTime() < 6 * 3600000;
+    return {
+      key: k, name: DRIVE_META[k].name, e: DRIVE_META[k].e, gate: !!DRIVE_META[k].gate,
+      val: Math.round(d.values[k] * 100),
+      tr: trendOf(d, k, now),
+      note: fresh ? r.text : DRIVE_PASSIVE_NOTE[k],
+    };
+  }).sort((a, b) => b.val - a.val);
+  const resting = d.values.fatigue > 0.75;
+  const topKey = keys.filter(k => !DRIVE_META[k].gate).reduce((a, b) => d.values[a] >= d.values[b] ? a : b);
+  const say = resting ? DRIVE_SAYS.fatigue : DRIVE_SAYS[topKey];
+  return {
+    list,
+    top: { key: resting ? "fatigue" : topKey, name: DRIVE_META[resting ? "fatigue" : topKey].name,
+      val: Math.round(d.values[resting ? "fatigue" : topKey] * 100),
+      say: say.say, tag: say.tag, call: Math.round(d.values[resting ? "fatigue" : topKey] * 100) },
+    resting,
+  };
+}
+
 /* ================= LLM 调用 ================= */
 async function llm(messages, maxTokens = 800, temperature = 0.3) {
   const resp = await fetch(API_BASE + "/chat/completions", {
@@ -248,6 +371,25 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/memories/dream" && req.method === "POST") { sendJson(res, 200, await runDream()); return; }
 
+    /* ---- 八维驱动 ---- */
+    if (p === "/api/drives" && req.method === "GET") {
+      const now = Date.now();
+      const d = tickDrives(loadDrives(), now);
+      saveDrives(d);
+      sendJson(res, 200, driveSnapshot(d, now));
+      return;
+    }
+    if (p === "/api/drives" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req));
+      const d = loadDrives();
+      for (const k of Object.keys(DRIVE_META)) {
+        if (typeof body[k] === "number") d.values[k] = clamp01(body[k] / 100);
+      }
+      saveDrives(d);
+      sendJson(res, 200, driveSnapshot(d, Date.now()));
+      return;
+    }
+
     /* ---- 文件上传（base64 JSON，避免 multipart 依赖） ---- */
     if (p === "/api/upload" && req.method === "POST") {
       const body = JSON.parse(await readBody(req));
@@ -279,6 +421,13 @@ const server = http.createServer(async (req, res) => {
       if (!history.length) { sendJson(res, 400, { error: "缺少消息" }); return; }
       const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
 
+      /* 驱动引擎：先响应事件与时间流逝，再把当前状态告诉晤 */
+      const now0 = Date.now();
+      const dr = tickDrives(loadDrives(), now0);
+      driveEvent(dr, lastUser, now0);
+      saveDrives(dr);
+      const snap = driveSnapshot(dr, now0);
+
       const mems = retrieveMemories(lastUser, 5);
       const memBlock = mems.length
         ? "【你的记忆】\n" + mems.map(c => `- (${c.type} · ${c.date}) ${c.content}`).join("\n")
@@ -288,7 +437,8 @@ const server = http.createServer(async (req, res) => {
       const todos = readJson("todos", []) || [];
       const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
       const status = `【现状】今天是 ${n.getFullYear()}.${String(n.getMonth() + 1).padStart(2, "0")}.${String(n.getDate()).padStart(2, "0")}，你们在一起的第 ${days} 天。` +
-        (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "");
+        (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "") +
+        `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
 
       const messages = [
         { role: "system", content: PERSONA },                       // 固定前缀 → 命中缓存
@@ -330,7 +480,7 @@ const server = http.createServer(async (req, res) => {
 
     /* ---- 静态托管 ---- */
     if (req.method === "GET") {
-      const name = p === "/" ? "index.html" : p.slice(1);
+      const name = p === "/" ? "index.html" : p === "/admin" ? "admin.html" : p.slice(1);
       const fp = path.join(__dirname, path.normalize(name));
       if (fp.startsWith(__dirname) && fs.existsSync(fp) && fs.statSync(fp).isFile()) {
         res.writeHead(200, { "Content-Type": MIME[path.extname(fp)] || "application/octet-stream" });

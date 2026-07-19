@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>晤 · 管理台</title>
+<style>
+  :root {
+    --bg:#F4F6F9; --ink:#3C4557; --soft:#77839A; --faint:#A8B2C4;
+    --blue:#7E96B8; --line:rgba(168,178,196,.35); --card:#FBFCFE;
+    --serif:"New York",ui-serif,Georgia,"Songti SC",serif;
+    --sans:-apple-system,"PingFang SC","Noto Sans SC",sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:var(--sans); background:var(--bg); color:var(--ink); min-height:100vh; }
+  .wrap { max-width:1100px; margin:0 auto; padding:34px 28px 80px; }
+  h1 { font-family:var(--serif); font-size:26px; margin-bottom:4px; }
+  .sub { font-size:12px; color:var(--faint); margin-bottom:22px; }
+  .tabs { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .tab { border:1px solid var(--line); background:#fff; color:var(--soft); border-radius:999px;
+    padding:8px 18px; font-size:13px; cursor:pointer; }
+  .tab.on { background:var(--blue); border-color:var(--blue); color:#fff; }
+  .panel { display:none; }
+  .panel.on { display:block; }
+  .card { background:var(--card); border:1px solid rgba(255,255,255,.9); border-radius:16px;
+    padding:18px 20px; box-shadow:0 4px 18px rgba(90,110,140,.08); margin-bottom:16px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--faint); font-weight:normal; font-size:11px; padding:6px 8px;
+    border-bottom:1px solid var(--line); }
+  td { padding:7px 8px; border-bottom:1px dashed var(--line); vertical-align:middle; }
+  input, select, textarea { font-family:var(--sans); font-size:13px; color:var(--ink);
+    border:1px solid var(--line); border-radius:8px; padding:6px 9px; background:#fff; outline:none; width:100%; }
+  textarea { resize:vertical; }
+  input:focus, textarea:focus { border-color:var(--blue); }
+  button { border:none; border-radius:999px; padding:7px 16px; font-size:12.5px; cursor:pointer;
+    background:rgba(126,150,184,.12); color:var(--soft); }
+  button.pri { background:var(--blue); color:#fff; }
+  button.warn { background:rgba(217,119,87,.1); color:#C45; }
+  .bar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .bar .grow { flex:1; }
+  .hint { font-size:11px; color:var(--faint); margin-top:10px; line-height:1.8; }
+  .drive-row { display:flex; align-items:center; gap:14px; padding:10px 4px; border-bottom:1px dashed var(--line); }
+  .drive-row label { width:90px; font-size:14px; }
+  .drive-row input[type=range] { flex:1; padding:0; border:none; }
+  .drive-row output { width:44px; text-align:right; font-family:var(--serif); font-size:16px; color:var(--blue); }
+  .fresh { display:inline-block; width:70px; height:5px; border-radius:99px; background:rgba(168,178,196,.25); overflow:hidden; vertical-align:middle; }
+  .fresh i { display:block; height:100%; background:var(--blue); }
+  #gate { position:fixed; inset:0; background:var(--bg); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px; z-index:9; }
+  #gate h2 { font-family:var(--serif); font-size:28px; }
+  #gate input { width:200px; text-align:center; font-size:20px; letter-spacing:.4em; padding:10px; }
+  #toast { position:fixed; left:50%; bottom:30px; transform:translateX(-50%); background:rgba(60,69,87,.92);
+    color:#fff; font-size:13px; padding:9px 20px; border-radius:999px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast.on { opacity:1; }
+</style>
+</head>
+<body>
+<div id="gate">
+  <h2>Wu&rsquo;s home · 后门</h2>
+  <input type="password" id="gatePin" maxlength="4" placeholder="····" autofocus>
+  <div style="font-size:12px;color:var(--faint)">输入四位密码进入管理台</div>
+</div>
+
+<div class="wrap" id="app" style="display:none">
+  <h1>晤 · 管理台</h1>
+  <div class="sub" id="健康">·</div>
+  <div class="tabs">
+    <button class="tab on" data-p="mem">记忆</button>
+    <button class="tab" data-p="todo">清单</button>
+    <button class="tab" data-p="cd">倒数日</button>
+    <button class="tab" data-p="diary">日记</button>
+    <button class="tab" data-p="drive">内在驱动</button>
+    <button class="tab" data-p="raw">原始数据</button>
+  </div>
+
+  <!-- 记忆 -->
+  <div class="panel on" id="p-mem">
+    <div class="card">
+      <div class="bar">
+        <input id="mAdd" class="grow" placeholder="新记忆内容…">
+        <select id="mAddType" style="width:90px"><option>日常</option><option>事件</option><option>喜好</option><option>约定</option><option>情绪</option></select>
+        <select id="mAddImp" style="width:70px"><option value="1">1★</option><option value="2">2★</option><option value="3" selected>3★</option><option value="4">4★</option><option value="5">5★</option></select>
+        <button class="pri" onclick="memAdd()">添加</button>
+        <button onclick="memDream()">🌙 整理</button>
+      </div>
+      <table id="mTable">
+        <thead><tr><th style="width:70px">类型</th><th>内容</th><th style="width:130px">标签</th><th style="width:50px">重要</th><th style="width:90px">鲜度</th><th style="width:70px">来源</th><th style="width:110px">操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="hint">编辑行内内容后点「存」。删除是软删除（归档），文件仍在硬盘上。</div>
+    </div>
+  </div>
+
+  <!-- 清单 -->
+  <div class="panel" id="p-todo">
+    <div class="card">
+      <div class="bar">
+        <input id="tAdd" class="grow" placeholder="新事项…">
+        <input id="tAddTime" style="width:110px" placeholder="时间（如 7:30P）">
+        <button class="pri" onclick="todoAdd()">添加</button>
+      </div>
+      <table id="tTable"><thead><tr><th style="width:40px">完成</th><th>事项</th><th style="width:110px">时间</th><th style="width:60px">来源</th><th style="width:70px">操作</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- 倒数日 -->
+  <div class="panel" id="p-cd">
+    <div class="card">
+      <div class="bar">
+        <input id="cAdd" class="grow" placeholder="名称…">
+        <input id="cAddDate" type="date" style="width:160px">
+        <button class="pri" onclick="cdAdd()">添加</button>
+      </div>
+      <table id="cTable"><thead><tr><th>名称</th><th style="width:160px">日期</th><th style="width:80px">倒数</th><th style="width:70px">操作</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- 日记 -->
+  <div class="panel" id="p-diary">
+    <div class="card">
+      <div class="bar">
+        <button class="pri" onclick="diaryNew()">＋ 新日记</button>
+        <span class="hint">点击左侧标题编辑；日期格式 2026-07-19</span>
+      </div>
+      <div style="display:flex; gap:18px">
+        <div style="width:260px" id="dList"></div>
+        <div style="flex:1" id="dEditor" class="hidden">
+          <div class="bar"><input id="dDate" style="width:150px" placeholder="2026-07-19"><input id="dW" style="width:90px" placeholder="天气"><input id="dTitle" class="grow" placeholder="标题"></div>
+          <textarea id="dContent" rows="12" placeholder="正文…（空行分段）"></textarea>
+          <div class="bar" style="margin-top:10px">
+            <button class="pri" onclick="diarySave()">保存</button>
+            <button class="warn" onclick="diaryDel()">删除这篇</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 驱动 -->
+  <div class="panel" id="p-drive">
+    <div class="card">
+      <div class="bar"><b id="drTop" style="font-family:var(--serif)"></b><span class="grow"></span><button onclick="loadDrive()">刷新</button><button class="pri" onclick="saveDrive()">保存调整</button></div>
+      <div id="drRows"></div>
+      <div class="hint">拖动滑杆可以直接干预晤的内在状态（0-100）。日常无需干预，引擎会随时间与对话自动运转。</div>
+    </div>
+  </div>
+
+  <!-- 原始数据 -->
+  <div class="panel" id="p-raw">
+    <div class="card">
+      <div class="bar">
+        <select id="rawKey" style="width:180px">
+          <option value="todos">todos 清单</option>
+          <option value="countdowns">countdowns 倒数日</option>
+          <option value="diaries">diaries 日记</option>
+          <option value="letters">letters 信箱</option>
+          <option value="chat">chat 聊天记录</option>
+        </select>
+        <button onclick="rawLoad()">载入</button>
+        <button class="pri" onclick="rawSave()">保存</button>
+        <span class="hint">高级操作：直接编辑 JSON。改坏了就别点保存。</span>
+      </div>
+      <textarea id="rawText" rows="22" spellcheck="false" style="font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let toastT;
+function toast(m){ $("toast").textContent=m; $("toast").classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>$("toast").classList.remove("on"),1800); }
+async function api(path, opt){ const r = await fetch(path, opt); if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }
+const J = v => ({ headers:{"Content-Type":"application/json"}, body: JSON.stringify(v) });
+const esc = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+
+/* 门：与手机端一致的四位密码（默认 0527） */
+$("gatePin").addEventListener("input", () => {
+  if ($("gatePin").value.length === 4) {
+    if ($("gatePin").value === (localStorage.getItem("wu.pin") || "0527")) {
+      $("gate").style.display = "none"; $("app").style.display = "block"; boot();
+    } else { $("gatePin").value = ""; toast("密码不对哦"); }
+  }
+});
+
+/* tabs */
+document.querySelector(".tabs").addEventListener("click", e => {
+  const t = e.target.closest(".tab"); if (!t) return;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("on",x.id==="p-"+t.dataset.p));
+  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, drive:loadDrive, raw:rawLoad})[t.dataset.p]();
+});
+async function boot(){
+  try { const h = await api("api/health"); $("健康").textContent = `模型 ${h.model} · Key ${h.hasKey?"已配置":"未配置"} · 记忆 ${h.memories} 张 · 数据目录 ${h.dataDir}`; } catch { $("健康").textContent="⚠️ 连不上后端"; }
+  memLoad();
+}
+
+/* ===== 记忆 ===== */
+let mems = [];
+async function memLoad(){
+  try { mems = await api("api/memories"); } catch { toast("加载失败"); return; }
+  $("mTable").querySelector("tbody").innerHTML = mems.map((c,i)=>`
+    <tr>
+      <td><select data-i="${i}" data-f="type">${["日常","事件","喜好","约定","情绪"].map(t=>`<option ${t===c.type?"selected":""}>${t}</option>`).join("")}</select></td>
+      <td><input data-i="${i}" data-f="content" value="${esc(c.content)}"></td>
+      <td><input data-i="${i}" data-f="tags" value="${esc((c.tags||[]).join(" "))}"></td>
+      <td><select data-i="${i}" data-f="importance">${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==(c.importance||3)?"selected":""}>${n}★</option>`).join("")}</select></td>
+      <td><span class="fresh"><i style="width:${Math.round((c.eff??1)*100)}%"></i></span> ${Math.round((c.eff??1)*100)}%</td>
+      <td style="color:var(--faint)">${c.source==="distill"?"晤记的":c.source==="dream"?"梦整理":"手记"}</td>
+      <td><button onclick="memRowSave(${i})">存</button> <button class="warn" onclick="memRowDel(${i})">删</button></td>
+    </tr>`).join("");
+}
+function rowVal(i,f){ return document.querySelector(`[data-i="${i}"][data-f="${f}"]`).value; }
+async function memRowSave(i){
+  const c = mems[i];
+  await api("api/memories/"+c.id, { method:"PUT", ...J({ type:rowVal(i,"type"), content:rowVal(i,"content"), tags:rowVal(i,"tags").trim()?rowVal(i,"tags").trim().split(/\s+/):[], importance:+rowVal(i,"importance") }) }).catch(()=>toast("保存失败"));
+  toast("已保存"); memLoad();
+}
+async function memRowDel(i){ await api("api/memories/"+mems[i].id,{method:"DELETE"}).catch(()=>{}); toast("已归档"); memLoad(); }
+async function memAdd(){
+  const content = $("mAdd").value.trim(); if(!content){toast("写点内容");return;}
+  await api("api/memories",{method:"POST",...J({content,type:$("mAddType").value,importance:+$("mAddImp").value})}).catch(()=>toast("失败"));
+  $("mAdd").value=""; toast("已添加"); memLoad();
+}
+async function memDream(){ toast("整理中…"); const r = await api("api/memories/dream",{method:"POST"}).catch(()=>null); toast(r&&r.merged?`合并了 ${r.merged} 条`: (r&&r.note)||"暂无可整理"); memLoad(); }
+
+/* ===== 清单 ===== */
+let todos = [];
+async function todoLoad(){
+  const s = await api("api/state").catch(()=>({}));
+  todos = s.todos || [];
+  $("tTable").querySelector("tbody").innerHTML = todos.map((t,i)=>`
+    <tr>
+      <td><input type="checkbox" style="width:auto" ${t.done?"checked":""} onchange="todos[${i}].done=this.checked;todoPush()"></td>
+      <td><input value="${esc(t.text)}" onchange="todos[${i}].text=this.value;todoPush()"></td>
+      <td><input value="${esc(t.time||"")}" onchange="todos[${i}].time=this.value;todoPush()"></td>
+      <td style="color:var(--faint)">${t.byAI?"晤":"你"}</td>
+      <td><button class="warn" onclick="todos.splice(${i},1);todoPush();todoLoad()">删</button></td>
+    </tr>`).join("");
+}
+async function todoPush(){ await api("api/state/todos",{method:"PUT",...J(todos)}).catch(()=>toast("保存失败")); }
+async function todoAdd(){ if(!$("tAdd").value.trim())return; todos.push({text:$("tAdd").value.trim(),time:$("tAddTime").value.trim(),done:false}); $("tAdd").value=""; $("tAddTime").value=""; await todoPush(); todoLoad(); }
+
+/* ===== 倒数日 ===== */
+let cds = [];
+async function cdLoad(){
+  const s = await api("api/state").catch(()=>({}));
+  cds = s.countdowns || [];
+  const dleft = d => Math.round((new Date(d+"T00:00:00") - new Date().setHours(0,0,0,0))/86400000);
+  $("cTable").querySelector("tbody").innerHTML = cds.map((c,i)=>`
+    <tr>
+      <td><input value="${esc(c.name)}" onchange="cds[${i}].name=this.value;cdPush()"></td>
+      <td><input type="date" value="${esc(c.date)}" onchange="cds[${i}].date=this.value;cdPush();cdLoad()"></td>
+      <td style="font-family:var(--serif);color:var(--blue)">${dleft(c.date)>=0?"D-"+dleft(c.date):"+"+(-dleft(c.date))}</td>
+      <td><button class="warn" onclick="cds.splice(${i},1);cdPush();cdLoad()">删</button></td>
+    </tr>`).join("");
+}
+async function cdPush(){ await api("api/state/countdowns",{method:"PUT",...J(cds)}).catch(()=>toast("保存失败")); }
+async function cdAdd(){ if(!$("cAdd").value.trim()||!$("cAddDate").value)return; cds.push({name:$("cAdd").value.trim(),date:$("cAddDate").value}); $("cAdd").value=""; await cdPush(); cdLoad(); }
+
+/* ===== 日记 ===== */
+let diaries = [], dCur = -1;
+async function diaryLoad(){
+  const s = await api("api/state").catch(()=>({}));
+  diaries = s.diaries || [];
+  $("dList").innerHTML = diaries.map((d,i)=>`
+    <div style="padding:9px 6px;border-bottom:1px dashed var(--line);cursor:pointer;${i===dCur?"color:var(--blue)":""}" onclick="diaryEdit(${i})">
+      <div style="font-size:11px;color:var(--faint)">${esc(d.date)} · ${esc(d.w||"")}</div>
+      <div style="font-family:var(--serif)">${esc(d.title)}</div>
+    </div>`).join("") || '<div class="hint">还没有日记</div>';
+}
+function diaryEdit(i){ dCur=i; const d=diaries[i]; $("dEditor").style.display="block"; $("dDate").value=d.date; $("dW").value=d.w||""; $("dTitle").value=d.title; $("dContent").value=d.content||""; diaryLoad(); }
+function diaryNew(){ diaries.unshift({date:new Date().toISOString().slice(0,10),w:"",title:"新日记",content:""}); diaryEdit(0); }
+async function diarySave(){
+  if(dCur<0)return;
+  diaries[dCur]={date:$("dDate").value,w:$("dW").value,title:$("dTitle").value,content:$("dContent").value};
+  diaries.sort((a,b)=>b.date.localeCompare(a.date));
+  await api("api/state/diaries",{method:"PUT",...J(diaries)}).catch(()=>toast("保存失败"));
+  toast("已保存"); dCur=-1; $("dEditor").style.display="none"; diaryLoad();
+}
+async function diaryDel(){ if(dCur<0)return; diaries.splice(dCur,1); dCur=-1; $("dEditor").style.display="none"; await api("api/state/diaries",{method:"PUT",...J(diaries)}).catch(()=>{}); diaryLoad(); }
+
+/* ===== 驱动 ===== */
+let driveVals = {};
+async function loadDrive(){
+  const d = await api("api/drives").catch(()=>null);
+  if(!d){ $("drRows").innerHTML='<div class="hint">连不上后端</div>'; return; }
+  $("drTop").textContent = `此刻最想：${d.top.say}（${d.top.name} ${d.top.val}）` + (d.resting?" · 歇着中":"");
+  driveVals = {};
+  $("drRows").innerHTML = d.list.map(x=>{ driveVals[x.key]=x.val; return `
+    <div class="drive-row">
+      <label>${x.e} ${x.name}${x.gate?"（闸）":""}</label>
+      <input type="range" min="0" max="100" value="${x.val}" oninput="driveVals['${x.key}']=+this.value;this.nextElementSibling.value=this.value">
+      <output>${x.val}</output>
+      <span class="hint" style="width:220px">${x.tr} · ${esc(x.note)}</span>
+    </div>`;}).join("");
+}
+async function saveDrive(){ await api("api/drives",{method:"PUT",...J(driveVals)}).catch(()=>toast("失败")); toast("已调整"); loadDrive(); }
+
+/* ===== 原始数据 ===== */
+async function rawLoad(){
+  const s = await api("api/state").catch(()=>({}));
+  $("rawText").value = JSON.stringify(s[$("rawKey").value] ?? null, null, 2);
+}
+async function rawSave(){
+  let v; try { v = JSON.parse($("rawText").value); } catch { toast("JSON 格式不对"); return; }
+  await api("api/state/"+$("rawKey").value,{method:"PUT",...J(v)}).catch(()=>toast("保存失败"));
+  toast("已保存");
+}
+</script>
+</body>
+</html>

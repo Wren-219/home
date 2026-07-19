@@ -1681,7 +1681,8 @@ function closeTodoSheet() {
 })();
 
 /* ================= 八维驱动 ================= */
-const drives = [
+/* 离线演示数据；连上服务器后由 fetchDrives() 替换为真实内在状态 */
+let drives = [
   { key:"attachment", name:"依恋", e:"🌿", val:82, tr:"↑ slow", note:"你好久没说话了，思念在慢慢涨",
     burst:"· 我忍不住了", say:"有点想你，心里冒了句话", tag:"心里冒句话" },
   { key:"social",     name:"社交", e:"💬", val:47, tr:"↑ slow", note:"你提到群里 / 朋友" },
@@ -1692,17 +1693,18 @@ const drives = [
   { key:"libido",     name:"亲密", e:"🫧", val:16, tr:"·",      note:"隐去了详情 · 点开看" },
   { key:"stress",     name:"压力", e:"🌀", val:5,  tr:"↑ fast", note:"你催我 / 追问没做的事" },
 ];
-const topDrive = drives.filter(d => !d.gate).reduce((a, b) => a.val >= b.val ? a : b);
+let topDrive = drives.filter(d => !d.gate).reduce((a, b) => a.val >= b.val ? a : b);
+let driveCall = topDrive.val, driveResting = false;
 
-document.getElementById("moodName").textContent = topDrive.name + " " + topDrive.val;
-document.getElementById("moodSay").textContent = "「" + topDrive.say + "」";
-document.getElementById("chatStName").textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
-
-document.getElementById("stHeroSay").textContent = topDrive.say;
-document.getElementById("stHeroTag").textContent = topDrive.tag;
-document.getElementById("stHeroCall").textContent = topDrive.val + "%";
-document.getElementById("driveList").innerHTML = drives.map(d => `
-  <div class="drive ${d === topDrive ? "top" : ""} ${d.gate ? "gate" : ""}">
+function renderDriveUI() {
+  document.getElementById("moodName").textContent = topDrive.name + " " + topDrive.val;
+  document.getElementById("moodSay").textContent = "「" + topDrive.say + "」";
+  document.getElementById("chatStName").textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
+  document.getElementById("stHeroSay").textContent = topDrive.say;
+  document.getElementById("stHeroTag").textContent = topDrive.tag;
+  document.getElementById("stHeroCall").textContent = driveCall + "%";
+  document.getElementById("driveList").innerHTML = drives.map(d => `
+  <div class="drive ${d === topDrive && !d.gate ? "top" : ""} ${d.gate ? "gate" : ""}">
     <div class="dr-row">
       <div class="dr-name"><span class="e">${d.e}</span>${d.name}</div>
       <div class="dr-track"><div class="dr-fill" data-w="${d.val}"></div></div>
@@ -1713,6 +1715,27 @@ document.getElementById("driveList").innerHTML = drives.map(d => `
       <span class="tr">${d.tr}</span>${d.note}
     </div>
   </div>`).join("");
+  if (document.getElementById("page-status").classList.contains("open"))
+    document.querySelectorAll("#page-status .dr-fill").forEach(f => f.style.width = f.dataset.w + "%");
+}
+renderDriveUI();
+
+async function fetchDrives() {
+  if (!SERVER) return;
+  try {
+    const r = await fetch("api/drives");
+    if (!r.ok) return;
+    const d = await r.json();
+    drives = d.list.map(x => ({ ...x }));
+    topDrive = drives.find(x => x.key === d.top.key) || drives[0];
+    topDrive.say = d.top.say;
+    topDrive.tag = d.top.tag;
+    if (d.top.key === "attachment" && d.top.val >= 80) topDrive.burst = "· 我忍不住了";
+    driveCall = d.top.call;
+    driveResting = d.resting;
+    renderDriveUI();
+  } catch {}
+}
 
 /* ================= 信箱 ================= */
 const letters = {
@@ -1888,6 +1911,7 @@ async function aiReply() {
       }
     }
     chatLog.push({ k: "ai", t: acc || "……" }); pushState("chat", chatLog);
+    fetchDrives();   /* 聊完刷新晤的内在状态 */
   } catch (e) {
     bub.textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
   }
@@ -2149,6 +2173,7 @@ memRefresh();
     if (Array.isArray(s.chat) && s.chat.length) { chatLog = s.chat; rerenderChat(); } else put("chat", chatLog);
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
     memRefresh();
+    fetchDrives();
   } catch {}
 })();
 
