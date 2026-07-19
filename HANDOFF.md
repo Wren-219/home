@@ -111,10 +111,11 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
 2. ✅ Memory 页真实化（看/编辑记忆卡，v0.5）
 3. ✅ 聊天注入记忆（缓存友好顺序，已用 mock LLM 端到端验证）
 4. ✅ 真实照片/文件上传（/api/upload + /files，前端接系统选择器）
-5. ⬜ /admin 管理台（下一场）
-6. ⬜ 八维驱动引擎原生化（图纸在她手里的 desire_public_for_ai.pdf）
-7. ⬜ AI tool calling 打通写日记/写信/共同清单（里程碑 6b）
-8. ⬜ iOS 键盘两 bug、Gmail MCP 笔友
+5. ✅ /admin 管理台（记忆表格/清单/倒数日/日记编辑器/驱动滑杆/原始JSON，v0.6）
+6. ✅ 八维驱动引擎原生化（缓动/事件涨落/边际递减/频率折扣/回落/疲惫闸/趋势，
+   GET·PUT /api/drives，状态注入聊天，前端全接真数据；念头池 fixation 层未做，留作增强）
+7. ⬜ AI tool calling 打通写日记/写信/共同清单（里程碑 6b）——下一优先
+8. ⬜ iOS 键盘两 bug、Gmail MCP 笔友、看图翻译官（vision）
 
 **部署提醒**：她需要①确认 wu-home 挂了 Volume（wu-data → /app/data）
 ②Zeabur Redeploy ③Settings 页看到 v0.5 才算生效。蒸馏与 dream 需要
