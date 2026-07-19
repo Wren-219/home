@@ -9,8 +9,15 @@
 3. 在服务的 **Environment Variables** 里添加：
    | 变量 | 值 | 说明 |
    |---|---|---|
-   | `DEEPSEEK_API_KEY` | `sk-...` | 必填，DeepSeek 官方 Key |
-   | `DEEPSEEK_MODEL` | `deepseek-chat` | 选填，默认就是它 |
+   | `LLM_API_KEY` | `sk-...` | 必填，聊天模型 Key（旧名 `DEEPSEEK_API_KEY` 也认） |
+   | `LLM_BASE_URL` | `https://api.deepseek.com` | 选填，聊天模型接口（OpenAI 风格均可） |
+   | `LLM_MODEL` | `deepseek-chat` | 选填 |
+   | `WORKER_API_KEY` | `AIza...` | 选填，后台杂务模型 Key（不配则共用聊天模型） |
+   | `WORKER_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | 选填，例：Gemini 免费额度 |
+   | `WORKER_MODEL` | `gemini-2.5-flash-lite` | 选填 |
+
+   聊天（晤的"嘴"）与后台杂务（记忆蒸馏、dream 整理）可用不同模型：
+   贵的好模型聊天，便宜/免费模型干活。
 4. **Networking → Generate Domain** 生成一个 `xxx.zeabur.app` 域名
 5. iPhone Safari 打开这个域名 → 分享 → **添加到主屏幕** → 从主屏幕打开即是全屏 App（已适配灵动岛安全区）
 

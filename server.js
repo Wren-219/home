@@ -17,9 +17,16 @@ const path = require("path");
 const crypto = require("crypto");
 
 const PORT = process.env.PORT || 8080;
+/* 聊天模型（晤的“嘴”）：贵的好的放这里 */
 const API_KEY = process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY || "";
 const API_BASE = (process.env.LLM_BASE_URL || process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
 const MODEL = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-chat";
+/* 干活模型（蒸馏/整理等后台杂务）：便宜或免费的放这里，不配则共用聊天模型
+   例：Gemini 免费额度 → WORKER_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+       WORKER_MODEL=gemini-2.5-flash-lite  WORKER_API_KEY=AIza... */
+const WORKER_KEY = process.env.WORKER_API_KEY || API_KEY;
+const WORKER_BASE = (process.env.WORKER_BASE_URL || API_BASE).replace(/\/$/, "");
+const WORKER_MODEL = process.env.WORKER_MODEL || MODEL;
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync("/app/data") ? "/app/data" : path.join(__dirname, "data"));
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -222,12 +229,12 @@ function driveSnapshot(d, now) {
   };
 }
 
-/* ================= LLM 调用 ================= */
+/* ================= LLM 调用（后台杂务走便宜的干活模型） ================= */
 async function llm(messages, maxTokens = 800, temperature = 0.3) {
-  const resp = await fetch(API_BASE + "/chat/completions", {
+  const resp = await fetch(WORKER_BASE + "/chat/completions", {
     method: "POST",
-    headers: { Authorization: "Bearer " + API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, messages, temperature, max_tokens: maxTokens }),
+    headers: { Authorization: "Bearer " + WORKER_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: WORKER_MODEL, messages, temperature, max_tokens: maxTokens }),
   });
   if (!resp.ok) throw new Error("LLM HTTP " + resp.status);
   const j = await resp.json();
@@ -241,7 +248,7 @@ function extractJsonArray(text) {
 /* ================= 对话蒸馏（自动记忆） ================= */
 let distillTimer = null;
 function queueDistill(userText, aiText) {
-  if (!API_KEY || !userText) return;
+  if (!WORKER_KEY || !userText) return;
   const buf = readJson("distill_buf", []);
   buf.push({ u: userText.slice(0, 500), a: (aiText || "").slice(0, 500), t: Date.now() });
   writeJson("distill_buf", buf);
@@ -270,7 +277,7 @@ async function runDistill() {
 
 /* ================= dream 整理：合并陈旧碎片 ================= */
 async function runDream() {
-  if (!API_KEY) return { merged: 0, note: "未配置 Key" };
+  if (!WORKER_KEY) return { merged: 0, note: "未配置 Key" };
   const now = Date.now();
   const all = listMem();
   const old = all.filter(c => !c.archived && c.type !== "约定" && (c.importance || 3) <= 2 && effFreshness(c, now) < 0.3);
@@ -316,7 +323,11 @@ const server = http.createServer(async (req, res) => {
   try {
     /* ---- 健康检查 ---- */
     if (req.method === "GET" && p === "/api/health") {
-      sendJson(res, 200, { ok: true, hasKey: !!API_KEY, model: MODEL, dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length });
+      sendJson(res, 200, {
+        ok: true, hasKey: !!API_KEY, model: MODEL,
+        worker: WORKER_MODEL, workerSame: WORKER_BASE === API_BASE && WORKER_MODEL === MODEL,
+        dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
+      });
       return;
     }
 

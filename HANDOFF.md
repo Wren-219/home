@@ -114,6 +114,10 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
 5. ✅ /admin 管理台（记忆表格/清单/倒数日/日记编辑器/驱动滑杆/原始JSON，v0.6）
 6. ✅ 八维驱动引擎原生化（缓动/事件涨落/边际递减/频率折扣/回落/疲惫闸/趋势，
    GET·PUT /api/drives，状态注入聊天，前端全接真数据；念头池 fixation 层未做，留作增强）
+6.5 ✅ 聊天/杂务双模型分流（v0.7）：聊天走 LLM_*，蒸馏/dream 走 WORKER_*
+   （不配则共用）。Gemini 免费额度可作 worker：BASE_URL=
+   https://generativelanguage.googleapis.com/v1beta/openai，模型 gemini-2.5-flash-lite。
+   注意：Claude 官方 API 是 Anthropic 方言，接聊天需先加格式翻译层（未做）
 7. ⬜ AI tool calling 打通写日记/写信/共同清单（里程碑 6b）——下一优先
 8. ⬜ iOS 键盘两 bug、Gmail MCP 笔友、看图翻译官（vision）
 
