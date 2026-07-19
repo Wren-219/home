@@ -58,8 +58,18 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
    按此路径读写）。她可能已自行挂好——开工前先确认 Volumes 标签里有它。
    （已核实：旧 ob 的盘叫 my-data，挂 /app/buckets，仅用 43KB，费用可忽略，
    证明小容量 Volume 几乎不产生账单）
-2. **server.js 加 `/api/memories` CRUD**：记忆卡片 = {日期, 类型, 内容, 标签}，JSON 文件存
-   `/app/data`；顺势把日记/清单/倒数日也搬上服务器（解决跨设备同步）
+2. **server.js 加 `/api/memories` CRUD**——她明确要求做**精致版**（借鉴 ob 的灵魂），
+   记忆卡字段：{id, date, type(事件/喜好/约定/情绪/日常), content, tags[],
+   importance 1-5, emotion:{valence -1~1, arousal 0~1}, freshness, recalled_count,
+   last_recalled}。机制全套：
+   - **遗忘曲线**：freshness 随时间衰减，importance 越高衰减越慢；「约定」类不衰减
+   - **回忆强化**：被检索命中注入过的卡，freshness 回充、recalled_count+1
+   - **检索评分**：关键词/标签匹配 + freshness + importance + 情绪强度加权，取 top N
+   - **情绪打标**：蒸馏时由 LLM 顺手给 valence/arousal 打分
+   - **dream 整理**：每日把零散卡合并凝练成长期卡（可先做成手动按钮）
+   - 所有数值在 Memory 页/未来 /admin 可见——她想"看见系统在想什么"
+   （语义向量检索留作后续可选：需 embedding API，先用关键词+评分即可很好用）
+   JSON 文件存 `/app/data`；顺势把日记/清单/倒数日也搬上服务器（解决跨设备同步）
 3. **Memory 页**读写记忆卡（UI 已留占位）；聊天时服务器把相关记忆卡拼进 system prompt
 4. 修上面两个 iOS bug（次优先，她已确认可容忍）
 5. **八维驱动引擎原生化**：她手里有完整施工图纸 **`desire_public_for_ai.pdf`**（原作者
