@@ -1050,6 +1050,66 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    /* ---- 备份与恢复 ----
+       她的东西全在这台服务器上。服务器一停，Volume 里的数据就没了，
+       所以必须能一键打包带走，将来在任何地方十分钟就能原样长回来。 */
+    if (p === "/api/backup" && req.method === "GET") {
+      const withFiles = url.searchParams.get("files") === "1";
+      const out = { app: "wu-with-you", version: 2, at: new Date().toISOString(), data: {}, files: {} };
+      for (const f of fs.readdirSync(DATA_DIR)) {
+        if (!f.endsWith(".json")) continue;
+        try { out.data[f.replace(/\.json$/, "")] = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf8")); } catch {}
+      }
+      if (withFiles && fs.existsSync(UPLOAD_DIR)) {
+        for (const f of fs.readdirSync(UPLOAD_DIR)) {
+          try {
+            const fp = path.join(UPLOAD_DIR, f);
+            if (fs.statSync(fp).size > 8 * 1024 * 1024) continue;   // 单个超 8MB 的跳过
+            out.files[f] = fs.readFileSync(fp).toString("base64");
+          } catch {}
+        }
+      }
+      const body = JSON.stringify(out);
+      const name = "wu-backup-" + new Date().toISOString().slice(0, 10) + (withFiles ? "-full" : "") + ".json";
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="' + name + '"',
+        "Content-Length": Buffer.byteLength(body),
+      });
+      res.end(body);
+      return;
+    }
+    if (p === "/api/backup" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 200 * 1024 * 1024));
+      if (!body || body.app !== "wu-with-you" || !body.data) { sendJson(res, 400, { error: "这不像是「晤」的备份文件" }); return; }
+      let keys = 0, files = 0;
+      for (const [k, v] of Object.entries(body.data)) {
+        if (!/^[\w-]{1,40}$/.test(k)) continue;
+        writeJson(k, v); keys++;
+      }
+      for (const [name, b64] of Object.entries(body.files || {})) {
+        const safe = path.basename(String(name));
+        if (!safe || safe.startsWith(".")) continue;
+        try { fs.writeFileSync(path.join(UPLOAD_DIR, safe), Buffer.from(b64, "base64")); files++; } catch {}
+      }
+      /* 备份里带着 auth（密码），恢复后密码回到备份时那个，现在的登录会失效 —— 这是对的，要说清楚 */
+      sendJson(res, 200, { ok: true, keys, files, note: "恢复完了，要重新输一次密码（备份时用的那个）" });
+      return;
+    }
+    if (p === "/api/backup/size" && req.method === "GET") {
+      let jsonBytes = 0, fileBytes = 0, fileCount = 0;
+      for (const f of fs.readdirSync(DATA_DIR)) {
+        if (f.endsWith(".json")) { try { jsonBytes += fs.statSync(path.join(DATA_DIR, f)).size; } catch {} }
+      }
+      if (fs.existsSync(UPLOAD_DIR)) {
+        for (const f of fs.readdirSync(UPLOAD_DIR)) {
+          try { fileBytes += fs.statSync(path.join(UPLOAD_DIR, f)).size; fileCount++; } catch {}
+        }
+      }
+      sendJson(res, 200, { jsonBytes, fileBytes, fileCount });
+      return;
+    }
+
     /* ---- MCP 外部服务 ---- */
     if (p === "/api/mcp" && req.method === "GET") {
       sendJson(res, 200, mcpConf().map(s2 => ({

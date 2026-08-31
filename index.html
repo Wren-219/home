@@ -1031,6 +1031,22 @@
       <div class="set-pad">
         <div class="set-title">设置</div>
         <div class="set-card">
+          <div class="set-card-title">备份与搬家<span class="en">BACKUP</span></div>
+          <div class="set-line" id="bkSize">统计中…</div>
+          <div class="set-note" style="padding:10px 2px 0">
+            你的日记、信、聊天记录、记忆、照片全都只在这台服务器上。<b style="color:var(--coral)">服务器一停就没了</b>，
+            所以停用之前一定先下载一份。将来在任何地方重新部署，把这个文件传回去就原样长回来。<br>
+            ⚠️ 备份文件里含有你的密码和 API Key，请当成密码文件保管，别随便发给别人。<br>
+            恢复之后要重新输一次密码——用的是<b>备份那天的密码</b>。
+          </div>
+          <div class="btn-row" style="gap:8px">
+            <input type="file" id="bkPick" accept=".json" hidden>
+            <button class="btn ghost" onclick="document.getElementById('bkPick').click()">恢复</button>
+            <button class="btn ghost" onclick="doBackup(false)">下载（不含照片）</button>
+            <button class="btn" onclick="doBackup(true)">下载全部</button>
+          </div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
           <div class="set-line" id="setHealth">检查中…</div>
           <div class="set-line" id="setCtx" style="margin-top:2px"></div>
@@ -1078,7 +1094,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.4（长按浮窗贴着消息了 · 接得上 MCP 外部服务 · 晤知道几点了 · 连不上会说清楚原因）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.5（一键备份 / 搬家 · 修好登录过期变白屏 · 页面出错会自己说出来）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1592,6 +1608,22 @@
   global.PhotoStack = PhotoStack;
 })(window);
 
+/* ================= 出错自曝 =================
+   页面里任何一处报错都可能让后面的逻辑整段停掉，界面看起来就是"卡住不动"。
+   把错误直接写到设置页的连接栏上，出问题时一眼能看见、能截图发出来。 */
+var lastJsError = "";
+function noteError(where, e) {
+  const msg = (e && (e.message || e.reason && e.reason.message)) || String(e || "");
+  lastJsError = where + "：" + String(msg).slice(0, 160);
+  const el = document.getElementById("setHealth");
+  if (el) el.textContent = "⚠ 页面出错了　" + lastJsError + "\n把这行截图发我就行。";
+  const btn = document.getElementById("btnRetry");
+  if (btn) btn.style.display = "";
+  try { console.error(where, e); } catch {}
+}
+window.addEventListener("error", e => noteError("脚本", e.error || e));
+window.addEventListener("unhandledrejection", e => noteError("异步", e.reason || e));
+
 /* ================= 工具 ================= */
 var chatReady = false;   /* 聊天窗口数据是否已就绪（挡住早于它的渲染调用） */
 function pad(n){ return String(n).padStart(2,"0"); }
@@ -1719,17 +1751,20 @@ async function checkPin() {
     : "密码不对哦，再试一次";
   setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); pinBusy = false; }, 450);
 }
+let lockHideTimer = null;
 function unlockApp() {
   const lock = document.getElementById("lockScreen");
   document.getElementById("app").classList.add("ready");
   lock.classList.add("unlocked");
-  setTimeout(() => { lock.style.display = "none"; }, 600);
+  clearTimeout(lockHideTimer);
+  lockHideTimer = setTimeout(() => { lock.style.display = "none"; }, 600);
   bootData();
 }
 /* 把门重新关上（数据都在服务器上，锁上不会丢任何东西） */
 function appUnlocked() { return document.getElementById("app").classList.contains("ready"); }
 function showLock(hint) {
   const lock = document.getElementById("lockScreen");
+  clearTimeout(lockHideTimer);   /* 否则解锁时排的那个「600ms 后藏起来」会把刚弹回来的锁屏又藏掉 → 白屏 */
   lock.style.display = "";
   lock.classList.remove("unlocked");
   document.getElementById("app").classList.remove("ready");
@@ -1760,7 +1795,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -2639,7 +2674,7 @@ function checkHealth() { fetchT("api/health", {}, 12000).then(r => r.json()).the
     (j.docs ? "\n长期资料　" + j.docs.always + " 份常驻 · " + j.docs.ondemand + " 份备查" : "") +
     (j.tools ? "\n工具　　　自带 " + j.tools.own + " 件" + (j.tools.mcp ? " · 外部 " + j.tools.mcp + " 件" : "") : "");
   if (j.historyBudget) HISTORY_BUDGET = j.historyBudget;
-  renderCtxUsage();
+  try { renderCtxUsage(); } catch (e) { noteError("用量估算", e); }
 }).catch(e => {
   const el = document.getElementById("setHealth");
   if (!el) return;
@@ -3228,6 +3263,52 @@ async function usageClear() {
   renderCost(); toast("统计已清零");
 }
 
+/* ================= 备份与搬家 ================= */
+function humanBytes(n) {
+  if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
+  if (n > 1024) return Math.round(n / 1024) + " KB";
+  return n + " B";
+}
+async function renderBackupSize() {
+  const el = document.getElementById("bkSize");
+  if (!el) return;
+  if (!SERVER) { el.textContent = "连上服务器才能备份"; return; }
+  try {
+    const s2 = await (await fetchT("api/backup/size", {}, 10000)).json();
+    el.textContent = "文字部分　" + humanBytes(s2.jsonBytes) + "（日记 / 信 / 聊天 / 记忆 / 设置）\n"
+      + "照片文件　" + s2.fileCount + " 个 · " + humanBytes(s2.fileBytes);
+  } catch { el.textContent = "统计不出来（连不上服务器）"; }
+}
+async function doBackup(withFiles) {
+  if (!SERVER) { toast("连上服务器才能备份"); return; }
+  toast("正在打包…");
+  try {
+    const r = await fetch("api/backup?files=" + (withFiles ? "1" : "0"));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "wu-backup-" + new Date().toISOString().slice(0, 10) + (withFiles ? "-full" : "") + ".json";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    toast("下好了 · " + humanBytes(blob.size) + "，收好它");
+  } catch (e) { toast("备份失败：" + (e.message || "")); }
+}
+document.getElementById("bkPick").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  if (!confirm("用这份备份覆盖服务器上现在的数据？\n现在的内容会被替换掉，撤不回来。")) return;
+  toast("正在恢复…");
+  try {
+    const text = await f.text();
+    const r = await fetch("api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: text });
+    const j = await r.json();
+    if (!r.ok || j.error) { toast(j.error || "恢复失败"); return; }
+    toast("恢复了 " + j.keys + " 项" + (j.files ? " + " + j.files + " 张照片" : "") + "，要重新输密码…");
+    setTimeout(() => location.reload(), 2200);
+  } catch { toast("这个文件读不了"); }
+});
+
 /* ================= 外部服务 MCP ================= */
 let mcpList = [], mcpCur = null;
 async function mcpRefresh() {
@@ -3475,8 +3556,10 @@ async function refreshShared() {
 
 /* ================= 解锁后才从服务器拉取数据 ================= */
 function bootData() {
-  document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE);
-  checkHealth(); pullState();
+  const step = (name, fn) => { try { fn(); } catch (e) { noteError(name, e); } };
+  step("开关", () => document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE));
+  step("连接检查", checkHealth);
+  step("拉数据", pullState);
 }
 async function pullState() {
   try {
