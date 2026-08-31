@@ -16,7 +16,9 @@
 
 ## 架构与数据
 
-- **localStorage keys**：`wu.pin` / `wu.todos` / `wu.countdowns` / `wu.chat`（均为 JSON，`load()/save()` 两个助手函数）
+- **数据现在以服务器为准**（`/api/state`，存 `/app/data`）：`todos` / `countdowns` /
+  `diaries` / `letters` / `chat` / `photos`。localStorage 同名 `wu.*` 键只作断网兜底
+  （`load()/save()` 两个助手函数，`pushState()` 双写）
 - **后端**（server.js，Node 18+，无依赖）：
   - `GET /api/health` → `{ok, hasKey, model}`，前端以 `hasKey` 决定真聊天/演示模式
   - `POST /api/chat` `{messages}` → 流式转发 DeepSeek（SSE 原样透传）
@@ -34,7 +36,7 @@
    - 或把输入栏定位改为跟随 `visualViewport` 计算的绝对像素。
 2. **页面底部有时出现白色空块**。疑似 `height:100%` fixed body 与 Safari 工具栏收展/键盘收起后的视口残留。可尝试 `#frame { height: 100dvh; min-height: -webkit-fill-available; }`、或监听 visualViewport 后强制 reflow。
 
-调试技巧：Settings 页最底部有版本号（当前 v0.4）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
+调试技巧：Settings 页最底部有版本号（当前 v0.9）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
 
 ## 设计语言（请保持一致，她对审美很挑）
 
@@ -149,7 +151,7 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
 （顺带把聊天多窗口做成真的）。iOS 键盘两 bug 她已确认可以往后放。
 
 **部署提醒**：她需要①确认 wu-home 挂了 Volume（wu-data → /app/data）
-②Zeabur Redeploy ③Settings 页看到 v0.5 才算生效。蒸馏与 dream 需要
+②Zeabur Redeploy ③Settings 页看到当前版本号才算生效。蒸馏与 dream 需要
 LLM Key 生效（沿用 DEEPSEEK_API_KEY 即可，新名 LLM_API_KEY 也认）。
 - **长对话策略**：目前仅送最近 24 条。后续做"滚动摘要"——更早的对话由 LLM 压缩成
   摘要并入记忆系统，与记忆蒸馏（里程碑 6）是同一条流水线
