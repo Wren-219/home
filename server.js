@@ -237,6 +237,13 @@ function alwaysDocsBlock() {
   return "【你们的基本资料】\n" + on.map(d => "## " + d.name + "\n" + d.content).join("\n\n");
 }
 
+/* ================= 聊天窗口 =================
+   窗口内容存在前端的 chat 状态里（跟着 /api/state 上云）；
+   服务器只管一件事：晤的「状态」绑在哪个窗口上。
+   只有绑定窗口里的对话会推动八维驱动，别的窗口聊天不影响他的心情。 */
+function boundWindow() { return (readJson("windows", null) || {}).bound || null; }
+function setBoundWindow(id) { writeJson("windows", { bound: id || null, updated: new Date().toISOString() }); }
+
 /* ================= 记忆引擎 ================= */
 /* 记忆卡：{id, date, type(事件|喜好|约定|情绪|日常), content, tags[], importance 1-5,
    emotion:{valence -1~1, arousal 0~1}, freshness, recalled, last_recalled, created,
@@ -1003,6 +1010,18 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "DELETE") { all.splice(i, 1); saveDocs(all); sendJson(res, 200, { ok: true }); return; }
     }
 
+    /* ---- 晤的状态绑在哪个窗口 ---- */
+    if (p === "/api/windows/bound" && req.method === "GET") {
+      sendJson(res, 200, { bound: boundWindow() });
+      return;
+    }
+    if (p === "/api/windows/bound" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 4096));
+      setBoundWindow(body.bound ? String(body.bound).slice(0, 64) : null);
+      sendJson(res, 200, { ok: true, bound: boundWindow() });
+      return;
+    }
+
     /* ---- 八维驱动 ---- */
     if (p === "/api/drives" && req.method === "GET") {
       const now = Date.now();
@@ -1056,10 +1075,13 @@ const server = http.createServer(async (req, res) => {
       const history = budgetHistory(raw, HISTORY_BUDGET);
       const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
 
-      /* 驱动引擎：先响应事件与时间流逝，再把当前状态告诉晤 */
+      /* 驱动引擎：时间流逝对所有窗口都算，但只有绑定窗口里的话会推动他的心情 */
       const now0 = Date.now();
+      const bound = boundWindow();
+      const winId = payload.windowId ? String(payload.windowId) : null;
+      const isBound = !bound || !winId || bound === winId;   // 没设过绑定就一律算数
       const dr = tickDrives(loadDrives(), now0);
-      driveEvent(dr, lastUser, now0);
+      if (isBound) driveEvent(dr, lastUser, now0);
       saveDrives(dr);
       const snap = driveSnapshot(dr, now0);
 

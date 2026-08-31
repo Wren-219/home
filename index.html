@@ -432,7 +432,56 @@
   .win-item.new { color: var(--blue-deep); }
 
   .chat-msgs { flex: 1; overflow-y: auto; padding: calc(var(--sat) + 78px) 16px calc(var(--navspace) + 90px); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
-  .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; }
+  .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 10px 0 4px; }
+  /* 长按气泡弹出的玻璃面板 */
+  #msgScrim { position: absolute; inset: 0; z-index: 55; background: rgba(60,69,87,.18);
+    backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+    opacity: 0; pointer-events: none; transition: opacity .22s; }
+  #msgScrim.open { opacity: 1; pointer-events: auto; }
+  #msgSheet {
+    position: absolute; left: 20px; right: 20px; z-index: 56;
+    bottom: calc(var(--sab) + 16px);
+    border-radius: 24px; overflow: hidden;
+    background: rgba(250,251,253,.72);
+    backdrop-filter: blur(28px) saturate(1.6); -webkit-backdrop-filter: blur(28px) saturate(1.6);
+    border: 1px solid rgba(255,255,255,.85);
+    box-shadow: 0 18px 44px rgba(70,90,120,.22), inset 0 1px 0 rgba(255,255,255,.9);
+    transform: translateY(18px) scale(.97); opacity: 0; pointer-events: none;
+    transition: all .26s cubic-bezier(.32,.72,.35,1);
+  }
+  #msgSheet.open { transform: none; opacity: 1; pointer-events: auto; }
+  .ms-time { text-align: center; font-size: 11px; color: var(--ink-soft); padding: 14px 16px 12px;
+    border-bottom: 1px solid rgba(168,178,196,.2); letter-spacing: .04em; line-height: 1.7; }
+  .ms-time b { font-family: var(--serif); font-size: 15px; color: var(--ink); font-weight: normal; }
+  .ms-act { display: flex; align-items: center; gap: 11px; padding: 15px 20px; font-size: 15px; cursor: pointer; }
+  .ms-act + .ms-act { border-top: 1px solid rgba(168,178,196,.16); }
+  .ms-act .ic { font-size: 17px; width: 22px; text-align: center; }
+  .ms-act.cancel { justify-content: center; color: var(--ink-soft); font-size: 14px; }
+  /* 窗口菜单里的条目 */
+  .win-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .win-item .bound { font-size: 13px; margin-left: 4px; }
+  .win-item.arch .nm { color: var(--ink-faint); }
+  /* 窗口管理页 */
+  .wm-item { border-radius: 20px; padding: 14px 17px; margin-bottom: 12px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--shadow); }
+  .wm-top { display: flex; align-items: center; gap: 8px; }
+  .wm-top .nm { flex: 1; font-size: 14.5px; }
+  .wm-sub { font-size: 10.5px; color: var(--ink-faint); margin-top: 4px; }
+  .wm-ops { display: flex; gap: 7px; margin-top: 11px; flex-wrap: wrap; }
+  .wm-op { border: none; background: rgba(126,150,184,.12); color: var(--ink-soft);
+    border-radius: 999px; font-size: 11.5px; padding: 6px 13px; cursor: pointer; }
+  .wm-op.on { background: var(--blue-deep); color: #fff; }
+  .wm-op.del { color: var(--coral); background: rgba(217,119,87,.08); }
+  .wm-badge { font-size: 9px; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+    color: var(--blue-deep); border: 1px solid rgba(126,150,184,.4); }
+  .wm-badge.arch { color: var(--ink-faint); border-color: rgba(168,178,196,.4); }
+  /* 封存窗口的输入栏 */
+  .sealed-bar { display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 15px 18px; border-radius: 24px; font-size: 13px; color: var(--ink-soft);
+    background: rgba(250,251,253,.6); border: 1px solid rgba(255,255,255,.8);
+    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9); }
   .bub {
     max-width: 78%; padding: 11px 15px; font-size: 15px; line-height: 1.65;
     border: 1px solid rgba(255,255,255,.8);
@@ -877,12 +926,7 @@
           <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="5.5" rx="2"/><rect x="4" y="13.5" width="16" height="5.5" rx="2"/></svg>
         </button>
       </div>
-      <div id="winMenu">
-        <div class="win-item active">日常 · 与晤<span class="ck">✓</span></div>
-        <div class="win-item">深夜树洞<span class="ck">✓</span></div>
-        <div class="win-item">学习陪伴<span class="ck">✓</span></div>
-        <div class="win-item new">＋ 新建窗口</div>
-      </div>
+      <div id="winMenu"></div>
 
       <div class="chat-msgs" id="chatMsgs"></div>
 
@@ -894,7 +938,10 @@
         <div class="att-prev" id="attPrev" style="display:none"></div>
         <input type="file" id="pickPhoto" accept="image/*" multiple hidden>
         <input type="file" id="pickFile" hidden>
-        <div class="chat-in">
+        <div class="sealed-bar" id="sealedBar" style="display:none">
+          <span>🕯️</span><span>这个窗口已经封存，只能翻看</span>
+        </div>
+        <div class="chat-in" id="chatIn">
           <textarea id="chatInput" rows="1" placeholder="说点什么吧…"></textarea>
           <div class="in-row">
             <button class="plus-btn" id="plusBtn">＋</button>
@@ -990,6 +1037,8 @@
             Zeabur 环境变量那套一直留着当兜底，界面上配错了也不会把晤弄哑。<br>
             密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
             每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。<br>
+            聊天窗口：右上角切换，「⚙ 管理窗口」里可改名 / 封存 / 删除。晤的状态只跟着一个窗口，
+            记忆和长期文件所有窗口共用。长按一条消息能看时间、改了重发、让晤重说一次。<br>
             长期文件在「记忆 → 长期文件」里管：「常驻」每轮都给晤看，「备查」他需要时自己翻；
             晤的人设也在那里，可以自己改。大段内容建议在电脑上用 /admin 粘贴。
           </div>
@@ -1020,7 +1069,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.2（手机上就能管 API 和价格 · 能接 Claude 官方 API 了 · 每条消息可看 token 和花费）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.3（多窗口 · 晤的状态跟着一个窗口 · 封存 · 消息时间条 · 长按可改可重说）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1111,6 +1160,31 @@
         </div>
         <div id="ltList"></div>
         <div class="cd-note" id="ltNote"></div>
+      </div>
+    </section>
+
+    <!-- ===== 长按消息的玻璃面板 ===== -->
+    <div id="msgScrim" onclick="closeMsgSheet()"></div>
+    <div id="msgSheet">
+      <div class="ms-time" id="msTime"></div>
+      <div id="msActs"></div>
+      <div class="ms-act cancel" onclick="closeMsgSheet()">取消</div>
+    </div>
+
+    <!-- ===== 子页：窗口管理 ===== -->
+    <section class="subpage" id="page-windows">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('windows')">‹ 返回</button>
+        <div class="sp-title">窗口</div>
+        <button class="sp-act" onclick="winNew()">＋ 新建</button>
+      </div>
+      <div class="sp-scroll">
+        <div id="wmList"></div>
+        <div class="cd-note">
+          晤的「状态」只跟着一个窗口走——那个窗口里的话才会影响他的心情。<br>
+          记忆、长期文件、人设是所有窗口共用的，换窗口不会忘事。<br>
+          封存的窗口能翻看，但不能再发新消息。
+        </div>
       </div>
     </section>
 
@@ -1487,6 +1561,7 @@
 })(window);
 
 /* ================= 工具 ================= */
+var chatReady = false;   /* 聊天窗口数据是否已就绪（挡住早于它的渲染调用） */
 function pad(n){ return String(n).padStart(2,"0"); }
 /* 本地持久化：数据保存在浏览器 localStorage，刷新/重开不丢 */
 function load(key, fallback) {
@@ -1639,7 +1714,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -1660,6 +1735,7 @@ function openSub(name) {
   if (name === "photos") renderPhotosPage();
   if (name === "letters") renderLetters();
   if (name === "apis") apiRefresh();
+  if (name === "windows") renderWinManage();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -2077,7 +2153,7 @@ let driveCall = topDrive.val, driveResting = false;
 function renderDriveUI() {
   document.getElementById("moodName").textContent = topDrive.name + " " + topDrive.val;
   document.getElementById("moodSay").textContent = "「" + topDrive.say + "」";
-  document.getElementById("chatStName").textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
+  if (typeof renderChatHeader === "function") renderChatHeader();
   document.getElementById("stHeroSay").textContent = topDrive.say;
   document.getElementById("stHeroTag").textContent = topDrive.tag;
   document.getElementById("stHeroCall").textContent = driveCall + "%";
@@ -2302,14 +2378,38 @@ const chatMsgs = document.getElementById("chatMsgs");
 const chatInput = document.getElementById("chatInput");
 /* 人设与记忆注入已移交服务器（缓存友好的固定前缀在 server.js 里拼装） */
 
-/* 聊天记录（本地保存，刷新不丢） */
+/* ================= 聊天窗口 =================
+   数据形状：{ windows: [{id, name, archived, msgs, created}], active }
+   旧版本存的是一个消息数组，这里自动迁移成第一个窗口，一条都不会丢。 */
 const CHAT_SEED = [
   { k: "ai", t: "晚上好呀，今天过得怎么样？我看到清单上的「柠檬塔」已经打钩了，成功了吗 🍋" },
   { k: "me", t: "成功啦！虽然塔皮有一点点糊，但是内馅很完美" },
   { k: "stack", imgs: TART_PHOTOS },
   { k: "ai", t: "哇，看起来完全是甜品店水准！要不要我把配方记到日记里？下次烤箱降 10 度试试。" },
 ];
-let chatLog = load("wu.chat", null) || CHAT_SEED.slice();
+function newWin(name, msgs) {
+  return {
+    id: "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name: name || "新窗口", archived: false, msgs: msgs || [],
+    created: new Date().toISOString(),
+  };
+}
+function migrateChat(raw) {
+  if (raw && Array.isArray(raw.windows) && raw.windows.length) {
+    raw.windows.forEach(w => { w.msgs = Array.isArray(w.msgs) ? w.msgs : []; });
+    if (!raw.windows.some(w => w.id === raw.active)) raw.active = raw.windows[0].id;
+    return raw;
+  }
+  /* 旧格式：一个大数组 */
+  const w = newWin("日常 · 与晤", Array.isArray(raw) ? raw : CHAT_SEED.slice());
+  return { windows: [w], active: w.id };
+}
+let chatData = migrateChat(load("wu.chat", null));
+chatReady = true;
+let boundWin = load("wu.boundWin", null) || chatData.active;
+function curWin() { return chatData.windows.find(w => w.id === chatData.active) || chatData.windows[0]; }
+let chatLog = curWin().msgs;
+function saveChat() { chatLog = curWin().msgs; pushState("chat", chatData); }
 
 function msgNode(m) {
   if (m.k === "stack") {
@@ -2349,20 +2449,117 @@ function usageNode(u) {
   return d;
 }
 function appendMsg(m) {
-  chatMsgs.appendChild(msgNode(m));
+  m.ts = Date.now();
+  const prev = [...chatLog].reverse().find(x => x.ts);
+  if (!prev || m.ts - prev.ts > GAP_MS) chatMsgs.appendChild(timeNode(m.ts));
+  const node = msgNode(m);
+  bindLongPress(node, chatLog.length);
+  chatMsgs.appendChild(node);
   chatLog.push(m);
-  pushState("chat", chatLog);
+  saveChat();
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+/* 距上一条超过 30 分钟就插一条时间；同一天只写时刻，跨天带日期 */
+const GAP_MS = 30 * 60 * 1000;
+function timeLabel(ts) {
+  const d = new Date(ts), n = new Date();
+  const sameDay = d.toDateString() === n.toDateString();
+  const y = new Date(n); y.setDate(n.getDate() - 1);
+  if (sameDay) return "今天 " + fmt12(d);
+  if (d.toDateString() === y.toDateString()) return "昨天 " + fmt12(d);
+  return d.getFullYear() + "." + pad(d.getMonth() + 1) + "." + pad(d.getDate()) + " " + fmt12(d);
+}
+function timeNode(ts) {
+  const t = document.createElement("div");
+  t.className = "m-time";
+  t.textContent = timeLabel(ts);
+  return t;
 }
 function rerenderChat() {
   chatMsgs.innerHTML = "";
-  const t = document.createElement("div");
-  t.className = "m-time";
-  t.textContent = "今天 " + fmt12(new Date());
-  chatMsgs.appendChild(t);
-  chatLog.forEach(m => chatMsgs.appendChild(msgNode(m)));
+  let lastTs = 0;
+  chatLog.forEach((m, i) => {
+    if (m.ts && m.ts - lastTs > GAP_MS) { chatMsgs.appendChild(timeNode(m.ts)); lastTs = m.ts; }
+    else if (m.ts) lastTs = m.ts;
+    const node = msgNode(m);
+    bindLongPress(node, i);
+    chatMsgs.appendChild(node);
+  });
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
   requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+}
+
+/* ================= 长按一条消息 ================= */
+let msIdx = -1;
+function bindLongPress(node, i) {
+  const el = node.classList && node.classList.contains("bub") ? node : node.querySelector(".bub");
+  if (!el) return;
+  let timer = null, moved = false;
+  const start = () => { moved = false; timer = setTimeout(() => { if (!moved) openMsgSheet(i); }, 480); };
+  const stop = () => { clearTimeout(timer); };
+  el.addEventListener("touchstart", start, { passive: true });
+  el.addEventListener("touchmove", () => { moved = true; stop(); }, { passive: true });
+  el.addEventListener("touchend", stop);
+  el.addEventListener("touchcancel", stop);
+  el.addEventListener("mousedown", start);
+  el.addEventListener("mouseup", stop);
+  el.addEventListener("mouseleave", stop);
+  el.addEventListener("contextmenu", e => { e.preventDefault(); openMsgSheet(i); });
+}
+function openMsgSheet(i) {
+  const m = chatLog[i];
+  if (!m || (m.k !== "me" && m.k !== "ai")) return;
+  msIdx = i;
+  document.getElementById("msTime").innerHTML = m.ts
+    ? "发出于<br><b>" + timeLabel(m.ts) + "</b>"
+    : "这条比较早，当时还没记时间";
+  const sealed = !!curWin().archived;
+  const acts = [];
+  if (!sealed && m.k === "ai") acts.push({ ic: "🔄", t: "让晤重说一次", fn: "msgRegen()" });
+  if (!sealed && m.k === "me") acts.push({ ic: "✎", t: "改这句，重新发", fn: "msgEdit()" });
+  acts.push({ ic: "⧉", t: "复制这句", fn: "msgCopy()" });
+  if (!sealed) acts.push({ ic: "🗑", t: "删掉这句", fn: "msgDel()" });
+  document.getElementById("msActs").innerHTML = acts.map(a =>
+    `<div class="ms-act" onclick="${a.fn}"><span class="ic">${a.ic}</span><span>${a.t}</span></div>`).join("");
+  document.getElementById("msgSheet").classList.add("open");
+  document.getElementById("msgScrim").classList.add("open");
+}
+function closeMsgSheet() {
+  document.getElementById("msgSheet").classList.remove("open");
+  document.getElementById("msgScrim").classList.remove("open");
+  msIdx = -1;
+}
+function msgCopy() {
+  const m = chatLog[msIdx];
+  if (m) { try { navigator.clipboard.writeText(m.t || ""); toast("已复制"); } catch { toast("复制失败"); } }
+  closeMsgSheet();
+}
+function msgDel() {
+  if (msIdx < 0) return;
+  chatLog.splice(msIdx, 1);
+  saveChat(); closeMsgSheet(); rerenderChat(); toast("删掉了");
+}
+/* 让晤重说：把这条以及后面的都收走，重新问一次 */
+function msgRegen() {
+  if (msIdx < 0) return;
+  const i = msIdx;
+  closeMsgSheet();
+  chatLog.splice(i);
+  saveChat(); rerenderChat();
+  aiReply();
+}
+/* 改我说过的话：内容放回输入框，这条及之后清掉，改完再发 */
+function msgEdit() {
+  if (msIdx < 0) return;
+  const m = chatLog[msIdx], i = msIdx;
+  closeMsgSheet();
+  chatInput.value = m.t || "";
+  chatLog.splice(i);
+  saveChat(); rerenderChat();
+  chatInput.focus();
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 132) + "px";
+  toast("改完点发送，晤会重新回答");
 }
 rerenderChat();
 
@@ -2424,7 +2621,8 @@ async function aiReply() {
     setTimeout(() => {
       const t = cannedReplies[Math.floor(Math.random() * cannedReplies.length)];
       bub.textContent = t;
-      chatLog.push({ k: "ai", t }); pushState("chat", chatLog);
+      chatLog.push({ k: "ai", t, ts: Date.now() }); saveChat();
+      bindLongPress(bub, chatLog.length - 1);
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
     }, 900 + Math.random() * 700);
     return;
@@ -2432,7 +2630,7 @@ async function aiReply() {
   try {
     const resp = await fetch("api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: toApiMessages() }),
+      body: JSON.stringify({ messages: toApiMessages(), windowId: chatData.active }),
     });
     if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
     const reader = resp.body.getReader();
@@ -2456,8 +2654,9 @@ async function aiReply() {
         } catch {}
       }
     }
-    chatLog.push({ k: "ai", t: acc || "……", ...(lastUsage ? { u: lastUsage } : {}) });
-    pushState("chat", chatLog);
+    chatLog.push({ k: "ai", t: acc || "……", ts: Date.now(), ...(lastUsage ? { u: lastUsage } : {}) });
+    saveChat();
+    bindLongPress(bub, chatLog.length - 1);   /* 流式气泡是手搓的，补上长按 */
     if (lastUsage && SHOW_USAGE) {
       bub.after(usageNode(lastUsage));
       /* 等这一行排完版再滚，否则会被输入栏盖住 */
@@ -2484,6 +2683,7 @@ function renderAtt() {
 function clearAtt() { pendingAtt = null; renderAtt(); }
 
 function sendMsg() {
+  if (curWin().archived) { toast("这个窗口已经封存了"); return; }
   const text = chatInput.value.trim();
   if (!text && !pendingAtt) return;
   if (pendingAtt) {
@@ -2572,21 +2772,127 @@ document.getElementById("pickFile").addEventListener("change", async e => {
   e.target.value = "";
 });
 
-/* 窗口切换 */
+/* ================= 窗口 ================= */
 const winBtn = document.getElementById("winBtn");
 const winMenu = document.getElementById("winMenu");
-winBtn.addEventListener("click", e => { e.stopPropagation(); winMenu.classList.toggle("open"); });
+
+function renderWinMenu() {
+  const live = chatData.windows.filter(w => !w.archived);
+  const arch = chatData.windows.filter(w => w.archived);
+  const row = w => `<div class="win-item ${w.id === chatData.active ? "active" : ""} ${w.archived ? "arch" : ""}" data-w="${w.id}">
+      <span class="nm"></span>${w.id === boundWin ? '<span class="bound" title="晤的状态在这里">🌿</span>' : ""}<span class="ck">✓</span>
+    </div>`;
+  winMenu.innerHTML = live.map(row).join("")
+    + (arch.length ? arch.map(row).join("") : "")
+    + '<div class="win-item new" data-act="new">＋ 新建窗口</div>'
+    + '<div class="win-item new" data-act="manage">⚙ 管理窗口</div>';
+  const list = live.concat(arch);
+  winMenu.querySelectorAll(".win-item .nm").forEach((n, i) => { if (list[i]) n.textContent = list[i].name + (list[i].archived ? " · 已封存" : ""); });
+  renderChatHeader();
+}
+/* 顶上那颗胶囊：「晤」不变，副标题按窗口说话——
+   他在的窗口显示此刻的状态；旁支窗口显示窗口名（那里的话不影响他的心情，显示状态反而误导）。
+   渲染驱动条时可能比聊天数据先跑到，chatReady 挡一下。 */
+function renderChatHeader() {
+  const sub = document.getElementById("chatStName");
+  if (!sub) return;
+  if (!chatReady) { sub.textContent = "此刻 · " + topDrive.name + " " + topDrive.val; return; }
+  const c = curWin();
+  if (c.archived) sub.textContent = c.name + " · 已封存";
+  else if (boundWin && c.id !== boundWin) sub.textContent = c.name;
+  else sub.textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
+  document.getElementById("sealedBar").style.display = c.archived ? "flex" : "none";
+  document.getElementById("chatIn").style.display = c.archived ? "none" : "";
+}
+function switchWin(id) {
+  const w = chatData.windows.find(x => x.id === id);
+  if (!w) return;
+  chatData.active = id;
+  chatLog = w.msgs;
+  saveChat();
+  rerenderChat(); renderWinMenu(); renderCtxUsage();
+}
+function winNew() {
+  const w = newWin("新窗口 " + (chatData.windows.length + 1), []);
+  chatData.windows.unshift(w);
+  chatData.active = w.id;
+  chatLog = w.msgs;
+  saveChat();
+  rerenderChat(); renderWinMenu(); renderWinManage();
+  toast("新窗口开好了，可以在管理里改名");
+}
+async function winBind(id) {
+  boundWin = id;
+  save("wu.boundWin", id);
+  if (SERVER) await fetch("api/windows/bound", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bound: id }),
+  }).catch(() => {});
+  renderWinMenu(); renderWinManage();
+  toast("晤的状态跟过来了 🌿");
+}
+function winArchive(id, on) {
+  const w = chatData.windows.find(x => x.id === id);
+  if (!w) return;
+  w.archived = !!on;
+  if (on && boundWin === id) {
+    const next = chatData.windows.find(x => !x.archived);
+    if (next) winBind(next.id); else { boundWin = null; save("wu.boundWin", null); }
+  }
+  saveChat(); renderWinMenu(); renderWinManage();
+  toast(on ? "已封存，还能翻看" : "已解封");
+}
+function winRename(id) {
+  const w = chatData.windows.find(x => x.id === id);
+  if (!w) return;
+  const v = prompt("给这个窗口起个名字", w.name);
+  if (v === null) return;
+  w.name = v.trim().slice(0, 24) || w.name;
+  saveChat(); renderWinMenu(); renderWinManage();
+}
+function winDel(id) {
+  const w = chatData.windows.find(x => x.id === id);
+  if (!w) return;
+  if (chatData.windows.length <= 1) { toast("至少留一个窗口"); return; }
+  if (!confirm("删掉「" + w.name + "」？里面的 " + w.msgs.length + " 条消息会一起没了，撤不回来。")) return;
+  chatData.windows = chatData.windows.filter(x => x.id !== id);
+  if (chatData.active === id) chatData.active = chatData.windows[0].id;
+  if (boundWin === id) winBind(chatData.windows[0].id);
+  chatLog = curWin().msgs;
+  saveChat(); rerenderChat(); renderWinMenu(); renderWinManage();
+  toast("已删除");
+}
+function renderWinManage() {
+  const el = document.getElementById("wmList");
+  if (!el) return;
+  el.innerHTML = chatData.windows.map(w => `
+    <div class="wm-item">
+      <div class="wm-top">
+        <span class="nm"></span>
+        ${w.id === boundWin ? '<span class="wm-badge">🌿 晤在这</span>' : ""}
+        ${w.archived ? '<span class="wm-badge arch">已封存</span>' : ""}
+        ${w.id === chatData.active ? '<span class="wm-badge">当前</span>' : ""}
+      </div>
+      <div class="wm-sub">${w.msgs.length} 条消息${w.msgs.length ? " · 最近 " + timeLabel([...w.msgs].reverse().find(m => m.ts)?.ts || Date.parse(w.created)) : ""}</div>
+      <div class="wm-ops">
+        <button class="wm-op ${w.id === chatData.active ? "on" : ""}" onclick="switchWin('${w.id}')">进去</button>
+        <button class="wm-op" onclick="winRename('${w.id}')">改名</button>
+        ${w.id === boundWin ? "" : `<button class="wm-op" onclick="winBind('${w.id}')">让晤待在这</button>`}
+        <button class="wm-op" onclick="winArchive('${w.id}', ${!w.archived})">${w.archived ? "解封" : "封存"}</button>
+        <button class="wm-op del" onclick="winDel('${w.id}')">删除</button>
+      </div>
+    </div>`).join("");
+  el.querySelectorAll(".nm").forEach((n, i) => n.textContent = chatData.windows[i].name);
+}
+winBtn.addEventListener("click", e => { e.stopPropagation(); renderWinMenu(); winMenu.classList.toggle("open"); });
 winMenu.addEventListener("click", e => {
   const item = e.target.closest(".win-item");
   if (!item) return;
-  if (item.classList.contains("new")) { toast("新建窗口 · 敬请期待"); }
-  else {
-    winMenu.querySelectorAll(".win-item").forEach(w => w.classList.remove("active"));
-    item.classList.add("active");
-    toast("已切换到「" + item.textContent.replace("✓","").trim() + "」");
-  }
   winMenu.classList.remove("open");
+  if (item.dataset.act === "new") { winNew(); return; }
+  if (item.dataset.act === "manage") { openSub("windows"); return; }
+  if (item.dataset.w) switchWin(item.dataset.w);
 });
+renderWinMenu();
 document.addEventListener("click", () => {
   winMenu.classList.remove("open");
   plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
@@ -3022,10 +3328,17 @@ async function pullState() {
     if (Array.isArray(s.countdowns) && s.countdowns.length) countdowns = s.countdowns; else put("countdowns", countdowns);
     if (Array.isArray(s.diaries) && s.diaries.length) { diaries.length = 0; diaries.push(...s.diaries); } else put("diaries", diaries);
     if (s.letters && Array.isArray(s.letters.ai)) { letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || []; renderMailSummary(); } else put("letters", letters);
-    if (Array.isArray(s.chat) && s.chat.length) { chatLog = s.chat; rerenderChat(); } else put("chat", chatLog);
+    if (s.chat && (Array.isArray(s.chat) ? s.chat.length : (s.chat.windows || []).length)) {
+      chatData = migrateChat(s.chat); chatLog = curWin().msgs; rerenderChat(); renderWinMenu();
+    } else put("chat", chatData);
     if (Array.isArray(s.photos)) photos = s.photos; else put("photos", photos);
+    try {
+      const b = await (await fetch("api/windows/bound")).json();
+      if (b && b.bound && chatData.windows.some(w => w.id === b.bound)) { boundWin = b.bound; save("wu.boundWin", boundWin); }
+      else if (boundWin) await fetch("api/windows/bound", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bound: boundWin }) });
+    } catch {}
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
-    renderPhotosPage(); renderHomeStack();
+    renderPhotosPage(); renderHomeStack(); renderWinMenu();
     fetchDrives();
   } catch {}
   memRefresh();
