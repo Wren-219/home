@@ -884,9 +884,43 @@
       <div class="mem-pad2">
         <div class="mem-top">
           <div class="mem-title2">记忆<span class="en">MEMORY</span></div>
-          <button class="mem-btn" onclick="memDream()">🌙 整理</button>
-          <button class="mem-btn add" onclick="memShowForm()">＋ 记一笔</button>
+          <span id="memActs">
+            <button class="mem-btn" onclick="memDream()">🌙 整理</button>
+            <button class="mem-btn add" onclick="memShowForm()">＋ 记一笔</button>
+          </span>
+          <span id="docActs" style="display:none">
+            <button class="mem-btn" onclick="document.getElementById('docPick').click()">⬆ 导入</button>
+            <button class="mem-btn add" onclick="docNew()">＋ 新建</button>
+          </span>
         </div>
+        <div class="lt-tabs" id="memModeTabs">
+          <button class="lt-tab active" data-m="cards">记忆卡</button>
+          <button class="lt-tab" data-m="docs">长期文件</button>
+        </div>
+        <input type="file" id="docPick" accept=".txt,.md,.markdown,.json,.csv,.docx" hidden>
+
+        <div id="memDocs" style="display:none">
+          <div class="mem-stats" id="docStats"></div>
+          <div class="cd-form" id="docForm" style="display:none">
+            <div class="row"><input type="text" id="dcName" placeholder="名称，如：核心资料 / 时间线"></div>
+            <div class="row">
+              <select id="dcMode">
+                <option value="always">常驻 · 每轮都给晤看</option>
+                <option value="ondemand">备查 · 他需要时自己翻</option>
+              </select>
+            </div>
+            <div class="row"><textarea id="dcContent" rows="10" placeholder="内容…"></textarea></div>
+            <div class="ops">
+              <button class="btn ghost" id="dcDel" style="display:none" onclick="docDelCur()">删除</button>
+              <button class="btn ghost" onclick="docCancel()">取消</button>
+              <button class="btn" onclick="docSave()">保存</button>
+            </div>
+          </div>
+          <div id="docList"></div>
+          <div class="cd-note" id="docNote"></div>
+        </div>
+
+        <div id="memCards">
         <div class="mem-stats" id="memStats"></div>
         <div class="lt-tabs mem-tabs" id="memTabs">
           <button class="lt-tab active" data-t="全部">全部</button>
@@ -910,6 +944,7 @@
         </div>
         <div id="memList"></div>
         <div class="cd-note" id="memNote"></div>
+        </div>
       </div>
     </section>
 
@@ -925,7 +960,8 @@
             模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。<br>
             密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
             每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。<br>
-            长期文件在电脑上打开 /admin 管理：「常驻」每轮都给晤看，「备查」他需要时自己翻。
+            长期文件在「记忆 → 长期文件」里管：「常驻」每轮都给晤看，「备查」他需要时自己翻；
+            晤的人设也在那里，可以自己改。大段内容建议在电脑上用 /admin 粘贴。
           </div>
         </div>
         <div class="set-card">
@@ -934,7 +970,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.0（长期文件区 · 聊天历史从 24 条放宽到按额度算 · 修好了上下文缓存顺序）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.1（人设可以自己写了 · 长期文件手机上也能管 · 支持导入 txt/md/docx）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2559,6 +2595,148 @@ document.getElementById("memTabs").addEventListener("click", e => {
   memCur = t.dataset.t;
   document.querySelectorAll("#memTabs .lt-tab").forEach(x => x.classList.toggle("active", x === t));
   memRefresh();
+});
+
+/* ================= 长期文件（手机端） ================= */
+let memMode = "cards", docCache = [], dcCur = null, perFallback = "";
+
+document.getElementById("memModeTabs").addEventListener("click", e => {
+  const t = e.target.closest(".lt-tab");
+  if (!t) return;
+  memMode = t.dataset.m;
+  document.querySelectorAll("#memModeTabs .lt-tab").forEach(x => x.classList.toggle("active", x === t));
+  const isDocs = memMode === "docs";
+  document.getElementById("memCards").style.display = isDocs ? "none" : "";
+  document.getElementById("memDocs").style.display = isDocs ? "" : "none";
+  document.getElementById("memActs").style.display = isDocs ? "none" : "";
+  document.getElementById("docActs").style.display = isDocs ? "" : "none";
+  if (isDocs) docRefresh(); else memRefresh();
+});
+
+async function docRefresh() {
+  if (!SERVER) {
+    document.getElementById("docStats").textContent = "长期文件需要连接服务器";
+    document.getElementById("docList").innerHTML = "";
+    return;
+  }
+  let per = null;
+  try {
+    docCache = await (await fetch("api/docs")).json();
+    per = await (await fetch("api/persona")).json();
+  } catch { return; }
+  perFallback = per ? per.fallback : "";
+  const always = docCache.filter(d => d.mode === "always");
+  const tk = always.reduce((n, d) => n + d.tokens, 0) + (per ? per.tokens : 0);
+  document.getElementById("docStats").textContent =
+    "每轮都给晤看的：人设 + " + always.length + " 份常驻 · 约 " + tk.toLocaleString() + " token"
+    + (docCache.length - always.length ? " · 另有 " + (docCache.length - always.length) + " 份备查" : "");
+
+  const rows = [];
+  if (per) rows.push(`
+    <div class="mem-card" onclick="docEdit('persona')">
+      <div class="mc-head"><span class="mc-type">人设</span><span>晤是谁</span>
+        <span style="margin-left:auto">约 ${per.tokens} token</span></div>
+      <div class="mc-content"></div>
+    </div>`);
+  rows.push(...docCache.map(d => `
+    <div class="mem-card" onclick="docEdit('${d.id}')">
+      <div class="mc-head">
+        <span class="mc-type" style="${d.mode === "always" ? "" : "color:var(--ink-faint);background:rgba(168,178,196,.15)"}">${d.mode === "always" ? "常驻" : "备查"}</span>
+        <span class="dn"></span>
+        <span style="margin-left:auto">${d.size.toLocaleString()} 字 · 约 ${d.tokens.toLocaleString()} token</span>
+      </div>
+      <div class="mc-content"></div>
+    </div>`));
+  const el = document.getElementById("docList");
+  el.innerHTML = rows.join("");
+  /* 名称和内容用 textContent 填，她写的东西不会被当成 HTML */
+  const names = el.querySelectorAll(".dn"), bodies = el.querySelectorAll(".mc-content");
+  if (per) bodies[0].textContent = per.isDefault ? "还是默认那段，点开可以自己写" : per.text.slice(0, 80);
+  docCache.forEach((d, i) => {
+    if (names[i]) names[i].textContent = d.name;
+    const b = bodies[i + (per ? 1 : 0)];
+    if (b) b.textContent = (d.head || "").replace(/\n/g, " ") || "（空的）";
+  });
+  document.getElementById("docNote").textContent = docCache.length
+    ? "常驻＝每轮都给晤看，放最核心的；备查＝他想不起细节时自己去翻，不占每轮的额度。"
+    : "还没有长期文件。点右上角「＋ 新建」，或「⬆ 导入」一份 txt / md / docx。";
+}
+
+function docFormShow(isPersona) {
+  document.getElementById("dcName").parentElement.style.display = isPersona ? "none" : "";
+  document.getElementById("dcMode").parentElement.style.display = isPersona ? "none" : "";
+  document.getElementById("dcDel").style.display = (!isPersona && dcCur) ? "" : "none";
+  document.getElementById("docForm").style.display = "block";
+  document.getElementById("page-memory").scrollTop = 0;
+}
+function docNew() {
+  dcCur = null;
+  document.getElementById("dcName").value = "";
+  document.getElementById("dcMode").value = "ondemand";
+  document.getElementById("dcContent").value = "";
+  docFormShow(false);
+}
+async function docEdit(id) {
+  if (id === "persona") {
+    dcCur = "persona";
+    let p = {};
+    try { p = await (await fetch("api/persona")).json(); } catch {}
+    document.getElementById("dcContent").value = p.isDefault ? "" : (p.text || "");
+    document.getElementById("dcContent").placeholder = p.fallback || "晤是谁、怎么说话…";
+    docFormShow(true);
+    return;
+  }
+  let d;
+  try { d = await (await fetch("api/docs/" + id)).json(); } catch { toast("打不开"); return; }
+  dcCur = id;
+  document.getElementById("dcName").value = d.name;
+  document.getElementById("dcMode").value = d.mode;
+  document.getElementById("dcContent").value = d.content || "";
+  docFormShow(false);
+}
+function docCancel() { document.getElementById("docForm").style.display = "none"; dcCur = null; }
+async function docSave() {
+  const content = document.getElementById("dcContent").value;
+  try {
+    if (dcCur === "persona") {
+      await fetch("api/persona", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: content }) });
+      toast(content.trim() ? "人设已更新 ✓" : "已恢复默认人设");
+    } else {
+      const body = {
+        name: document.getElementById("dcName").value.trim() || "未命名",
+        mode: document.getElementById("dcMode").value, content,
+      };
+      const opt = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+      if (dcCur) await fetch("api/docs/" + dcCur, { method: "PUT", ...opt });
+      else await fetch("api/docs", { method: "POST", ...opt });
+      toast("已保存 ✓");
+    }
+  } catch { toast("保存失败"); return; }
+  docCancel(); docRefresh();
+}
+async function docDelCur() {
+  if (!dcCur || dcCur === "persona") return;
+  try { await fetch("api/docs/" + dcCur, { method: "DELETE" }); } catch {}
+  docCancel(); docRefresh(); toast("已删除");
+}
+/* 导入 txt / md / json / docx —— 服务器负责抠出正文 */
+document.getElementById("docPick").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  toast("读取中…");
+  try {
+    const b64 = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.readAsDataURL(f); });
+    const r = await fetch("api/extract", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: f.name, data: b64 }),
+    });
+    const j = await r.json();
+    if (!r.ok || j.error) { toast(j.error || "读不了这个文件"); return; }
+    docNew();
+    document.getElementById("dcName").value = f.name.replace(/\.[^.]+$/, "");
+    document.getElementById("dcContent").value = j.text;
+    toast("读出 " + j.chars.toLocaleString() + " 字 · 约 " + j.tokens.toLocaleString() + " token，确认后保存");
+  } catch { toast("导入失败"); }
 });
 
 /* 聊天后轻量同步：晤用工具改动的清单/日记/信箱回流到界面 */

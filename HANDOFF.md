@@ -170,6 +170,16 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
      `/admin` → 「长期文件」里管理，显示每份的字数与 token 估算。
      她的两万字记忆文件按这个拆：核心两三千字设常驻，时间线/大事记设备查。
 
+12. ✅ **人设可编辑 + 手机端文件区 + 文件导入（v1.1）**
+   - 人设原来写死在 `const PERSONA` 里，她根本改不了（只能改环境变量）——
+     她一直以为常驻文件就是人设。现在 `persona()` 读 `data/persona.json`，
+     `GET/PUT /api/persona`，清空即回落到 `PERSONA_DEFAULT`。手机和 /admin 都能改。
+   - 手机「记忆」页顶部加了「记忆卡 / 长期文件」切换：能看能改能新建能删，
+     人设作为列表第一张卡。大段粘贴仍建议用 /admin。
+   - `POST /api/extract` 把上传的文件转成文字：`.txt/.md/.json/.csv` 直接读，
+     **`.docx` 用 Node 自带 zlib 手写了个最小 zip 读取器**（找 EOCD → 走中央目录 →
+     inflateRaw `word/document.xml` → 剥标签），零依赖。PDF 未做（需要真正的解析器）。
+
 **下一步（与她商定的顺序）**：③ 晤能看图（vision 翻译官）→ ④ 长对话滚动摘要
 （顺带把聊天多窗口做成真的）。iOS 键盘两 bug 她已确认可以往后放。
 

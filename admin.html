@@ -141,7 +141,23 @@
   <div class="panel" id="p-docs">
     <div class="card">
       <div class="bar">
+        <b style="font-family:var(--serif);font-size:15px">晤的人设</b>
+        <span class="hint" id="perStat"></span>
+        <span class="grow"></span>
+        <button onclick="perReset()">恢复默认</button>
+        <button class="pri" onclick="perSave()">保存人设</button>
+      </div>
+      <textarea id="perText" rows="6" placeholder="晤是谁、怎么说话…"></textarea>
+      <div class="hint">
+        这段永远排在所有内容的最前面，定义晤「是谁」——写他的性格、说话方式、你们之间的称呼和分寸。<br>
+        清空并保存 = 恢复成代码里的默认那段。它和下面的常驻文件都属于稳定前缀，改动才会失效一次缓存。
+      </div>
+    </div>
+    <div class="card">
+      <div class="bar">
         <button class="pri" onclick="docNew()">＋ 新建一份</button>
+        <button onclick="document.getElementById('docFile').click()">⬆ 导入文件</button>
+        <input type="file" id="docFile" accept=".txt,.md,.markdown,.json,.csv,.docx" style="display:none">
         <span class="hint" id="docSummary"></span>
       </div>
       <div style="display:flex; gap:18px">
@@ -328,9 +344,48 @@ async function diarySave(){
 }
 async function diaryDel(){ if(dCur<0)return; diaries.splice(dCur,1); dCur=-1; $("dEditor").style.display="none"; await api("api/state/diaries",{method:"PUT",...J(diaries)}).catch(()=>{}); diaryLoad(); }
 
+/* ===== 晤的人设 ===== */
+let perFallback = "";
+async function perLoad(){
+  try {
+    const p = await api("api/persona");
+    perFallback = p.fallback;
+    $("perText").value = p.text;
+    $("perStat").textContent = (p.isDefault ? "（还是默认那段）· " : "") + "约 " + p.tokens + " token";
+  } catch {}
+}
+async function perSave(){
+  try { await api("api/persona", { method:"PUT", ...J({ text: $("perText").value }) }); }
+  catch { toast("保存失败"); return; }
+  toast("人设已更新"); perLoad();
+}
+function perReset(){ $("perText").value = ""; perSave(); }
+
+/* ===== 导入文件 ===== */
+async function fileToText(f){
+  const b64 = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.readAsDataURL(f); });
+  const r = await fetch("api/extract", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ name: f.name, data: b64 }) });
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error || "读不了这个文件");
+  return j;
+}
+document.addEventListener("change", async e => {
+  if (!e.target || e.target.id !== "docFile") return;
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  toast("读取中…");
+  let j; try { j = await fileToText(f); } catch (err) { toast(err.message); return; }
+  docNew();
+  $("docName").value = f.name.replace(/\.[^.]+$/, "");
+  $("docContent").value = j.text;
+  docStat();
+  toast("读出 " + j.chars.toLocaleString() + " 字（约 " + j.tokens.toLocaleString() + " token）· 确认后点保存");
+});
+
 /* ===== 长期文件 ===== */
 let docs = [], docCur = null;
 async function docLoad(){
+  perLoad();
   try { docs = await api("api/docs"); } catch { toast("加载失败"); return; }
   const always = docs.filter(d=>d.mode==="always");
   const tk = always.reduce((n,d)=>n+d.tokens,0);

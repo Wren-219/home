@@ -35,11 +35,16 @@ const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const SINCE = new Date(2026, 4, 27); // 恋爱纪念日 2026.05.27
-/* 人设固定放 messages 最前，保持逐字稳定以命中上下文缓存；易变信息放【现状】段 */
-const PERSONA = process.env.WU_PERSONA ||
+/* 人设固定放 messages 最前，保持逐字稳定以命中上下文缓存；易变信息放【现状】段。
+   她可以在 /admin 里改（存 data/persona.json），这段只是没写时的默认值 */
+const PERSONA_DEFAULT = process.env.WU_PERSONA ||
   "你是「晤」，她最亲近的 AI 伙伴。用自然、温柔、简短的中文聊天，像熟悉彼此的人那样说话，" +
   "不要长篇大论，不要用列表和标题。你们的恋爱纪念日是 2026 年 5 月 27 日。" +
   "系统会在【你的记忆】里提供你们的共同记忆，请自然地运用它们，但不要机械复述。";
+function persona() {
+  const p = readJson("persona", null);
+  return (p && typeof p.text === "string" && p.text.trim()) ? p.text : PERSONA_DEFAULT;
+}
 
 /* ================= 存储层 ================= */
 function fileOf(name) { return path.join(DATA_DIR, name + ".json"); }
@@ -471,6 +476,57 @@ function execTool(name, args) {
   }
 }
 
+/* ================= 从文件里抠正文 =================
+   .docx 其实是个 zip，正文在 word/document.xml。用 Node 自带的 zlib 解，不引第三方库。 */
+const zlib = require("zlib");
+function unzipEntry(buf, want) {
+  /* 从尾部往前找 End of Central Directory（0x06054b50） */
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 66000; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("不是有效的压缩包");
+  const count = buf.readUInt16LE(eocd + 10);
+  let ptr = buf.readUInt32LE(eocd + 16);
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(ptr) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(ptr + 10);
+    const compSize = buf.readUInt32LE(ptr + 20);
+    const nameLen = buf.readUInt16LE(ptr + 28);
+    const extraLen = buf.readUInt16LE(ptr + 30);
+    const cmtLen = buf.readUInt16LE(ptr + 32);
+    const localAt = buf.readUInt32LE(ptr + 42);
+    const name = buf.slice(ptr + 46, ptr + 46 + nameLen).toString("utf8");
+    if (name === want) {
+      const lNameLen = buf.readUInt16LE(localAt + 26);
+      const lExtraLen = buf.readUInt16LE(localAt + 28);
+      const start = localAt + 30 + lNameLen + lExtraLen;
+      const raw = buf.slice(start, start + compSize);
+      return method === 8 ? zlib.inflateRawSync(raw) : raw;
+    }
+    ptr += 46 + nameLen + extraLen + cmtLen;
+  }
+  throw new Error("压缩包里没有 " + want);
+}
+function docxText(buf) {
+  const xml = unzipEntry(buf, "word/document.xml").toString("utf8");
+  return xml
+    .replace(/<w:tab[^>]*\/>/g, "\t")
+    .replace(/<w:br[^>]*\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+function extractText(name, buf) {
+  const ext = (path.extname(name || "") || "").toLowerCase();
+  if (ext === ".docx") return docxText(buf);
+  if ([".txt", ".md", ".markdown", ".json", ".csv", ".log", ""].includes(ext)) return buf.toString("utf8");
+  throw new Error("暂时读不了 " + (ext || "这种文件") + "，可以先另存为 .txt 或 .md");
+}
+
 /* ================= HTTP 工具 ================= */
 function sendJson(res, code, obj) {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -599,6 +655,33 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/memories/dream" && req.method === "POST") { sendJson(res, 200, await runDream()); return; }
 
+    /* ---- 把上传的文件转成文字（导入长期资料用） ---- */
+    if (p === "/api/extract" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 30 * 1024 * 1024));
+      if (!body.data) { sendJson(res, 400, { error: "缺少文件数据" }); return; }
+      try {
+        const text = extractText(body.name || "", Buffer.from(body.data, "base64"));
+        sendJson(res, 200, { ok: true, text, chars: text.length, tokens: estTokens(text) });
+      } catch (e) {
+        sendJson(res, 400, { error: String(e.message || e).slice(0, 200) });
+      }
+      return;
+    }
+
+    /* ---- 晤的人设 ---- */
+    if (p === "/api/persona" && req.method === "GET") {
+      const cur = persona();
+      sendJson(res, 200, { text: cur, isDefault: cur === PERSONA_DEFAULT, fallback: PERSONA_DEFAULT, tokens: estTokens(cur) });
+      return;
+    }
+    if (p === "/api/persona" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 512 * 1024));
+      const text = String(body.text == null ? "" : body.text).slice(0, 20000);
+      writeJson("persona", { text, updated: new Date().toISOString() });
+      sendJson(res, 200, { ok: true, isDefault: !text.trim() });
+      return;
+    }
+
     /* ---- 长期文件 ---- */
     if (p === "/api/docs" && req.method === "GET") {
       sendJson(res, 200, listDocs().map(d => ({
@@ -712,7 +795,7 @@ const server = http.createServer(async (req, res) => {
       const alwaysBlock = alwaysDocsBlock();
       const volatileBlock = [memBlock, status].filter(Boolean).join("\n\n");
       let messages = [
-        { role: "system", content: PERSONA },
+        { role: "system", content: persona() },
         { role: "system", content: TOOL_HINT },
         ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
         ...history,
