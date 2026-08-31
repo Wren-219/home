@@ -99,6 +99,98 @@ function guarded(p) {
   return p.startsWith("/api/") || p.startsWith("/files/");
 }
 
+/* ================= API 配置 =================
+   可以存好几套（聊天用的、干活用的、以后看图用的），在界面上随时切换。
+   key 只存在服务器的 data/apis.json 里，接口永远只回 sk-••••后四位。
+   dialect: openai = 绝大多数（DeepSeek / 中转站 / Gemini 兼容层）
+            anthropic = Claude 官方 API，请求和流式格式都不一样，由本文件翻译 */
+function guessDialect(base) {
+  return /anthropic\.com/i.test(String(base || "")) ? "anthropic" : "openai";
+}
+function maskKey(k) {
+  k = String(k || "");
+  return k ? k.slice(0, Math.min(6, k.length)) + "••••" + k.slice(-4) : "";
+}
+const PRICE0 = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, unit: "元" };
+function apisConf() {
+  const a = readJson("apis", null);
+  return (a && Array.isArray(a.list)) ? a : { list: [], chat: null, worker: null };
+}
+function saveApis(a) { writeJson("apis", a); }
+function newApi(d, keep) {
+  const price = { ...PRICE0, ...(keep ? keep.price : {}), ...(d.price || {}) };
+  for (const k of ["in", "out", "cacheRead", "cacheWrite"]) price[k] = Math.max(0, +price[k] || 0);
+  price.unit = String(price.unit || "元").slice(0, 4);
+  return {
+    id: (keep && keep.id) || crypto.randomUUID(),
+    name: String(d.name || "未命名").slice(0, 40),
+    base: String(d.base || "").trim().replace(/\/$/, "").slice(0, 200),
+    /* 留空 = 不改动原来的 key */
+    key: (d.key && String(d.key).trim()) ? String(d.key).trim() : (keep ? keep.key : ""),
+    model: String(d.model || "").trim().slice(0, 80),
+    dialect: d.dialect === "anthropic" ? "anthropic" : (d.dialect === "openai" ? "openai" : guessDialect(d.base)),
+    price,
+    created: (keep && keep.created) || new Date().toISOString(),
+  };
+}
+/* 环境变量那套永远留着当兜底，界面上配错了也不会把晤弄哑 */
+function envApi(role) {
+  const isW = role === "worker";
+  return {
+    id: "env-" + role, name: "环境变量（Zeabur）", fromEnv: true,
+    base: isW ? WORKER_BASE : API_BASE,
+    key: isW ? WORKER_KEY : API_KEY,
+    model: isW ? WORKER_MODEL : MODEL,
+    dialect: guessDialect(isW ? WORKER_BASE : API_BASE),
+    price: { ...PRICE0 },
+  };
+}
+function activeApi(role) {
+  const conf = apisConf();
+  const hit = conf[role] && conf.list.find(x => x.id === conf[role]);
+  if (hit && hit.key && hit.base && hit.model) return hit;
+  return envApi(role);
+}
+function publicApi(a, conf) {
+  return {
+    id: a.id, name: a.name, base: a.base, model: a.model, dialect: a.dialect,
+    keyMask: maskKey(a.key), hasKey: !!a.key, price: a.price,
+    isChat: conf.chat === a.id, isWorker: conf.worker === a.id,
+  };
+}
+
+/* ================= 用量与花费 =================
+   每次对话记一笔，累计存 data/usage.json。价格按每百万 token 计，
+   缓存读通常远低于原价，所以分开算才准。 */
+function usageStore() {
+  const u = readJson("usage", null);
+  return (u && u.total) ? u : { total: {}, recent: [] };
+}
+function priceOf(api, u) {
+  const p = api.price || PRICE0;
+  const M = 1000000;
+  return (u.in - (u.cacheRead || 0) - (u.cacheWrite || 0)) / M * (p.in || 0)
+    + (u.cacheRead || 0) / M * (p.cacheRead || 0)
+    + (u.cacheWrite || 0) / M * (p.cacheWrite || 0)
+    + (u.out || 0) / M * (p.out || 0);
+}
+function recordUsage(api, role, u) {
+  if (!u || (!u.in && !u.out)) return null;
+  const cost = priceOf(api, u);
+  const st = usageStore();
+  const key = api.id;
+  const t = st.total[key] || { name: api.name, model: api.model, unit: (api.price || PRICE0).unit, calls: 0, in: 0, out: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+  t.name = api.name; t.model = api.model; t.unit = (api.price || PRICE0).unit;
+  t.calls++; t.in += u.in || 0; t.out += u.out || 0;
+  t.cacheRead += u.cacheRead || 0; t.cacheWrite += u.cacheWrite || 0;
+  t.cost += cost;
+  st.total[key] = t;
+  st.recent.unshift({ t: new Date().toISOString(), api: api.name, role, ...u, cost, unit: t.unit });
+  if (st.recent.length > 300) st.recent = st.recent.slice(0, 300);
+  writeJson("usage", st);
+  return { ...u, cost, unit: t.unit, estimated: !!u.estimated };
+}
+
 /* ================= 上下文额度 =================
    不按"最近 N 条"截断，按装了多少截断：短消息能留几百条，长消息自动少留几条。
    零依赖的粗估：中日韩字符约 1 token，其余约 3.5 个字符 1 token —— 只用来做预算，不求精确 */
@@ -324,15 +416,127 @@ function driveSnapshot(d, now) {
   };
 }
 
+/* ================= Anthropic 方言翻译 =================
+   Claude 官方 API 跟 OpenAI 格式差三件事：
+     1. system 不在 messages 里，是顶层单独一个字段
+     2. 工具定义叫 input_schema，工具结果是 user 消息里的 tool_result 块
+     3. 缓存要显式标记 cache_control，不像 DeepSeek 那样自动
+   我们内部一律用 OpenAI 格式，只在发出去之前翻译一次。 */
+function toAnthropic(msgs, api, tools) {
+  const sys = [];
+  const out = [];
+  let volatileText = null;      // 排在历史之后的那块（记忆 + 现状）
+  for (const m of msgs) {
+    if (m.role === "system") {
+      /* 打了 wuVolatile 标记的是每轮都变的那块（记忆 + 现状），其余是稳定前缀。
+         不能用"还没遇到非 system 消息"来判断——历史只有一条时那块排在它前面，会被误判进前缀 */
+      if (m.wuVolatile) volatileText = (volatileText ? volatileText + "\n\n" : "") + String(m.content);
+      else sys.push({ type: "text", text: String(m.content) });
+      continue;
+    }
+    if (m.role === "tool") {
+      const blk = { type: "tool_result", tool_use_id: m.tool_call_id, content: String(m.content) };
+      const last = out[out.length - 1];
+      if (last && last.role === "user" && Array.isArray(last.content)) last.content.push(blk);
+      else out.push({ role: "user", content: [blk] });
+      continue;
+    }
+    if (m.role === "assistant" && m.tool_calls) {
+      const content = [];
+      if (m.content) content.push({ type: "text", text: String(m.content) });
+      for (const tc of m.tool_calls) {
+        let input = {}; try { input = JSON.parse(tc.function.arguments || "{}"); } catch {}
+        content.push({ type: "tool_use", id: tc.id, name: tc.function.name, input });
+      }
+      out.push({ role: "assistant", content });
+      continue;
+    }
+    if (m.role === "user" && volatileText) {
+      /* 把每轮都变的那块并进她这条消息里：位置仍在历史之后，缓存前缀不受影响，
+         而且这样在所有 Claude 模型上都合法 */
+      out.push({ role: "user", content: [{ type: "text", text: volatileText }, { type: "text", text: String(m.content) }] });
+      volatileText = null;
+      continue;
+    }
+    out.push({ role: m.role, content: String(m.content) });
+  }
+  if (volatileText) out.push({ role: "user", content: [{ type: "text", text: volatileText }] });
+
+  /* 缓存断点（最多 4 个，这里用 2 个）：
+     ① 稳定前缀的末尾 —— 人设 + 工具说明 + 常驻资料，一定有个可读回的点
+     ② 历史的末尾（最后一条 assistant）—— 让聊天记录也进缓存，
+        但不包含后面那块每轮都变的内容，否则每轮都在为读不回来的字付写入费 */
+  if (sys.length) sys[sys.length - 1].cache_control = { type: "ephemeral" };
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i].role !== "assistant") continue;
+    if (typeof out[i].content === "string") {
+      out[i].content = [{ type: "text", text: out[i].content, cache_control: { type: "ephemeral" } }];
+    } else if (Array.isArray(out[i].content) && out[i].content.length) {
+      out[i].content[out[i].content.length - 1].cache_control = { type: "ephemeral" };
+    }
+    break;
+  }
+  return {
+    model: api.model, max_tokens: 1024, temperature: 0.8, stream: true,
+    ...(sys.length ? { system: sys } : {}),
+    messages: out,
+    ...(tools ? { tools: tools.map(t => ({
+      name: t.function.name, description: t.function.description, input_schema: t.function.parameters,
+    })) } : {}),
+  };
+}
+/* 一次上游请求的形状（两种方言共用同一个出口） */
+function upstreamReq(api, msgs, tools, stream) {
+  const anth = api.dialect === "anthropic";
+  if (anth) {
+    return {
+      url: api.base + "/v1/messages",
+      headers: { "x-api-key": api.key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: { ...toAnthropic(msgs, api, tools), stream: !!stream },
+    };
+  }
+  return {
+    url: api.base + "/chat/completions",
+    headers: { Authorization: "Bearer " + api.key, "Content-Type": "application/json" },
+    body: {
+      model: api.model,
+      messages: msgs.map(m => { const { wuVolatile, ...rest } = m; return rest; }),
+      temperature: 0.8, max_tokens: 1024,
+      ...(tools ? { tools } : {}),
+      ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
+    },
+  };
+}
+/* 把两种方言的 usage 归一成同一套字段 */
+function readUsage(dialect, u) {
+  if (!u) return null;
+  if (dialect === "anthropic") {
+    const cr = u.cache_read_input_tokens || 0, cw = u.cache_creation_input_tokens || 0;
+    return { in: (u.input_tokens || 0) + cr + cw, out: u.output_tokens || 0, cacheRead: cr, cacheWrite: cw };
+  }
+  const d = u.prompt_tokens_details || {};
+  return {
+    in: u.prompt_tokens || 0, out: u.completion_tokens || 0,
+    /* DeepSeek 用 prompt_cache_hit_tokens，OpenAI 风格用 prompt_tokens_details.cached_tokens */
+    cacheRead: u.prompt_cache_hit_tokens || d.cached_tokens || 0,
+    cacheWrite: 0,
+  };
+}
+
 /* ================= LLM 调用（后台杂务走便宜的干活模型） ================= */
 async function llm(messages, maxTokens = 800, temperature = 0.3) {
-  const resp = await fetch(WORKER_BASE + "/chat/completions", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + WORKER_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: WORKER_MODEL, messages, temperature, max_tokens: maxTokens }),
-  });
-  if (!resp.ok) throw new Error("LLM HTTP " + resp.status);
+  const api = activeApi("worker");
+  if (!api.key) throw new Error("没有可用的干活模型");
+  const req = upstreamReq(api, messages, null, false);
+  req.body.max_tokens = maxTokens;
+  req.body.temperature = temperature;
+  const resp = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
+  if (!resp.ok) throw new Error("LLM HTTP " + resp.status + "：" + (await resp.text()).slice(0, 160));
   const j = await resp.json();
+  recordUsage(api, "worker", readUsage(api.dialect, j.usage));
+  if (api.dialect === "anthropic") {
+    return (j.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "";
+  }
   return j.choices?.[0]?.message?.content || "";
 }
 function extractJsonArray(text) {
@@ -580,8 +784,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && p === "/api/health") {
       if (!authed(req)) { sendJson(res, 200, { ok: true, authed: false }); return; }
       sendJson(res, 200, {
-        ok: true, authed: true, hasKey: !!API_KEY, model: MODEL,
-        worker: WORKER_MODEL, workerSame: WORKER_BASE === API_BASE && WORKER_MODEL === MODEL,
+        ok: true, authed: true,
+        hasKey: !!activeApi("chat").key, model: activeApi("chat").model,
+        apiName: activeApi("chat").name, dialect: activeApi("chat").dialect,
+        worker: activeApi("worker").model, workerName: activeApi("worker").name,
+        workerSame: activeApi("worker").id === activeApi("chat").id,
         dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
         historyBudget: HISTORY_BUDGET,
         docs: {
@@ -597,9 +804,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && p === "/api/worker-test") {
       try {
         const r = await llm([{ role: "user", content: "请只回复两个字：正常" }], 10, 0);
-        sendJson(res, 200, { ok: true, worker: WORKER_MODEL, reply: r.slice(0, 50) });
+        sendJson(res, 200, { ok: true, worker: activeApi("worker").model, reply: r.slice(0, 50) });
       } catch (e) {
-        sendJson(res, 200, { ok: false, worker: WORKER_MODEL, error: String(e.message || e).slice(0, 200), hint: "若失败：去 aistudio.google.com 换一把 AIza 开头的 Key" });
+        sendJson(res, 200, { ok: false, worker: activeApi("worker").model, error: String(e.message || e).slice(0, 200), hint: "若失败：去设置里检查这套 API 的地址、Key 和模型名" });
       }
       return;
     }
@@ -654,6 +861,90 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (p === "/api/memories/dream" && req.method === "POST") { sendJson(res, 200, await runDream()); return; }
+
+    /* ---- API 配置：key 只进不出，接口永远只回打码后的 ---- */
+    if (p === "/api/apis" && req.method === "GET") {
+      const conf = apisConf();
+      sendJson(res, 200, {
+        list: conf.list.map(a => publicApi(a, conf)),
+        chat: conf.chat, worker: conf.worker,
+        env: { chat: publicApi(envApi("chat"), conf), worker: publicApi(envApi("worker"), conf) },
+        using: { chat: activeApi("chat").name, worker: activeApi("worker").name },
+      });
+      return;
+    }
+    if (p === "/api/apis" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 256 * 1024));
+      const conf = apisConf();
+      const a = newApi(body);
+      conf.list.push(a);
+      if (!conf.chat) conf.chat = a.id;
+      saveApis(conf);
+      sendJson(res, 200, { id: a.id });
+      return;
+    }
+    if (p === "/api/apis/use" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 4096));
+      const conf = apisConf();
+      for (const role of ["chat", "worker"]) {
+        if (!(role in body)) continue;
+        const v = body[role];
+        conf[role] = (v && conf.list.some(x => x.id === v)) ? v : null;   // null = 回落到环境变量
+      }
+      saveApis(conf);
+      sendJson(res, 200, { ok: true, using: { chat: activeApi("chat").name, worker: activeApi("worker").name } });
+      return;
+    }
+    if (p.startsWith("/api/apis/") && p.endsWith("/test") && req.method === "POST") {
+      const id = p.slice("/api/apis/".length, -"/test".length);
+      const conf = apisConf();
+      const a = conf.list.find(x => x.id === id);
+      if (!a) { sendJson(res, 404, { error: "没有这套配置" }); return; }
+      try {
+        const req2 = upstreamReq(a, [{ role: "user", content: "请只回复两个字：正常" }], null, false);
+        req2.body.max_tokens = 16;
+        const r = await fetch(req2.url, { method: "POST", headers: req2.headers, body: JSON.stringify(req2.body) });
+        const txt = await r.text();
+        if (!r.ok) { sendJson(res, 200, { ok: false, error: "HTTP " + r.status + "：" + txt.slice(0, 200) }); return; }
+        const j = JSON.parse(txt);
+        const reply = a.dialect === "anthropic"
+          ? (j.content || []).filter(b => b.type === "text").map(b => b.text).join("")
+          : (j.choices?.[0]?.message?.content || "");
+        sendJson(res, 200, { ok: true, reply: String(reply).slice(0, 60) });
+      } catch (e) {
+        sendJson(res, 200, { ok: false, error: String(e.message || e).slice(0, 200) });
+      }
+      return;
+    }
+    if (p.startsWith("/api/apis/") && (req.method === "PUT" || req.method === "DELETE")) {
+      const id = p.slice("/api/apis/".length);
+      const conf = apisConf();
+      const i = conf.list.findIndex(x => x.id === id);
+      if (i < 0) { sendJson(res, 404, { error: "没有这套配置" }); return; }
+      if (req.method === "DELETE") {
+        conf.list.splice(i, 1);
+        if (conf.chat === id) conf.chat = null;
+        if (conf.worker === id) conf.worker = null;
+      } else {
+        const body = JSON.parse(await readBody(req, 256 * 1024));
+        conf.list[i] = newApi({ ...conf.list[i], ...body }, conf.list[i]);
+      }
+      saveApis(conf);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    /* ---- 用量与花费 ---- */
+    if (p === "/api/usage" && req.method === "GET") {
+      const st = usageStore();
+      sendJson(res, 200, { total: st.total, recent: st.recent.slice(0, 40) });
+      return;
+    }
+    if (p === "/api/usage" && req.method === "DELETE") {
+      writeJson("usage", { total: {}, recent: [] });
+      sendJson(res, 200, { ok: true });
+      return;
+    }
 
     /* ---- 把上传的文件转成文字（导入长期资料用） ---- */
     if (p === "/api/extract" && req.method === "POST") {
@@ -756,7 +1047,8 @@ const server = http.createServer(async (req, res) => {
 
     /* ---- 聊天：服务器负责拼 persona + 记忆 + 现状（缓存友好顺序），流式转发 ---- */
     if (p === "/api/chat" && req.method === "POST") {
-      if (!API_KEY) { sendJson(res, 503, { error: "服务器未配置 LLM_API_KEY / DEEPSEEK_API_KEY" }); return; }
+      const chatApi = activeApi("chat");
+      if (!chatApi.key) { sendJson(res, 503, { error: "还没有配置聊天用的 API" }); return; }
       const payload = JSON.parse(await readBody(req, 4 * 1024 * 1024));
       const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"));
       if (!raw.length) { sendJson(res, 400, { error: "缺少消息" }); return; }
@@ -803,37 +1095,59 @@ const server = http.createServer(async (req, res) => {
       if (volatileBlock) {
         let at = messages.length;
         for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === "user") { at = i; break; }
-        messages.splice(at, 0, { role: "system", content: volatileBlock });
+        messages.splice(at, 0, { role: "system", content: volatileBlock, wuVolatile: true });
       }
 
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
-      /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls */
+      const usedTotal = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
+      /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls 与用量。
+         两种方言的事件形状不同，在这里各解析各的，对外形状一致。 */
       async function streamRound(msgs) {
-        const upstream = await fetch(API_BASE + "/chat/completions", {
-          method: "POST",
-          headers: { Authorization: "Bearer " + API_KEY, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: MODEL, messages: msgs, stream: true, temperature: 0.8, max_tokens: 1024, tools: TOOL_DEFS }),
-        });
+        const anth = chatApi.dialect === "anthropic";
+        const req = upstreamReq(chatApi, msgs, TOOL_DEFS, true);
+        const upstream = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
         if (!upstream.ok) throw new Error("上游 HTTP " + upstream.status + "：" + (await upstream.text()).slice(0, 200));
         let sseBuf = "", acc = "", finish = null;
         const calls = [];
+        const send = txt => res.write("data: " + JSON.stringify({ choices: [{ delta: { content: txt } }] }) + "\n\n");
         for await (const chunk of upstream.body) {
           sseBuf += dec.decode(chunk, { stream: true });
           const lines = sseBuf.split("\n"); sseBuf = lines.pop();
           for (const ln of lines) {
-            const s = ln.trim();
-            if (!s.startsWith("data:")) continue;
-            const d = s.slice(5).trim();
+            const t = ln.trim();
+            if (!t.startsWith("data:")) continue;
+            const d = t.slice(5).trim();
             if (d === "[DONE]") continue;
             let j; try { j = JSON.parse(d); } catch { continue; }
+
+            if (anth) {
+              /* Claude：message_start 带输入用量，content_block_* 带正文与工具调用 */
+              if (j.type === "message_start" && j.message?.usage) {
+                const u = readUsage("anthropic", j.message.usage);
+                usedTotal.in += u.in; usedTotal.cacheRead += u.cacheRead; usedTotal.cacheWrite += u.cacheWrite;
+              } else if (j.type === "content_block_start" && j.content_block?.type === "tool_use") {
+                calls[j.index] = { id: j.content_block.id, name: j.content_block.name, args: "" };
+              } else if (j.type === "content_block_delta") {
+                if (j.delta?.type === "text_delta" && j.delta.text) { acc += j.delta.text; send(j.delta.text); }
+                else if (j.delta?.type === "input_json_delta" && calls[j.index]) calls[j.index].args += j.delta.partial_json || "";
+              } else if (j.type === "message_delta") {
+                if (j.delta?.stop_reason) finish = j.delta.stop_reason === "tool_use" ? "tool_calls" : j.delta.stop_reason;
+                if (j.usage?.output_tokens) usedTotal.out += j.usage.output_tokens;
+              }
+              continue;
+            }
+
+            /* OpenAI 风格 */
+            if (j.usage) {
+              const u = readUsage("openai", j.usage);
+              usedTotal.in += u.in; usedTotal.out += u.out;
+              usedTotal.cacheRead += u.cacheRead; usedTotal.cacheWrite += u.cacheWrite;
+            }
             const ch = j.choices?.[0];
             if (!ch) continue;
             const delta = ch.delta || {};
-            if (delta.content) {
-              acc += delta.content;
-              res.write("data: " + JSON.stringify({ choices: [{ delta: { content: delta.content } }] }) + "\n\n");
-            }
+            if (delta.content) { acc += delta.content; send(delta.content); }
             if (delta.tool_calls) for (const tc of delta.tool_calls) {
               const i = tc.index || 0;
               calls[i] = calls[i] || { id: tc.id || "call_" + i, name: "", args: "" };
@@ -870,6 +1184,14 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         res.write("data: " + JSON.stringify({ choices: [{ delta: { content: "（晤这边卡了一下：" + String(e.message).slice(0, 120) + "）" } }] }) + "\n\n");
       }
+      /* 上游没给用量就用我们自己的估算，并标明是估的 */
+      if (!usedTotal.in && !usedTotal.out) {
+        usedTotal.in = messages.reduce((n, m) => n + estTokens(m.content), 0);
+        usedTotal.out = estTokens(fullAcc);
+        usedTotal.estimated = true;
+      }
+      const billed = recordUsage(chatApi, "chat", usedTotal);
+      if (billed) res.write("data: " + JSON.stringify({ wu_usage: billed }) + "\n\n");
       res.write("data: [DONE]\n\n");
       res.end();
       queueDistill(lastUser, fullAcc);

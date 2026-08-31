@@ -180,6 +180,28 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
      **`.docx` 用 Node 自带 zlib 手写了个最小 zip 读取器**（找 EOCD → 走中央目录 →
      inflateRaw `word/document.xml` → 剥标签），零依赖。PDF 未做（需要真正的解析器）。
 
+13. ✅ **API 配置 + Anthropic 方言 + 花费统计（v1.2）**
+   - `data/apis.json` = `{list:[{id,name,base,key,model,dialect,price}], chat, worker}`。
+     `activeApi(role)` 取当前那套，取不到就回落 `envApi(role)`（环境变量永远是兜底，
+     界面上配错不会把晤弄哑）。`publicApi()` 只吐 `keyMask`，**key 只进不出**；
+     PUT 时 key 留空 = 不改动。`POST /api/apis/:id/test` 打一次最小请求验连通。
+   - **Anthropic 方言翻译**（`toAnthropic`）：system 提到顶层、工具转 `input_schema`、
+     工具结果转 user 消息里的 `tool_result` 块、流式事件按 `message_start` /
+     `content_block_*` / `message_delta` 解析。显式打两个 `cache_control`：
+     稳定前缀末尾 + 历史最后一条 assistant（不含每轮变的尾巴，否则白付写入费）。
+     ⚠️ 采坑记录：原来靠"还没遇到非 system 消息"判断哪块是稳定前缀，
+     **历史只有一条时会把每轮变的那块误判进前缀**，缓存全废。现在用 `wuVolatile`
+     标记显式区分，发给 OpenAI 风格前再把这个内部字段摘掉。
+   - **用量与花费**：`readUsage()` 归一两种方言的字段（Anthropic 的 input_tokens
+     不含缓存部分，要加回去；DeepSeek 用 `prompt_cache_hit_tokens`，OpenAI 风格用
+     `prompt_tokens_details.cached_tokens`）。上游没给用量就用 `estTokens` 估算并标注。
+     价格随每套配置走（输入/输出/缓存读/缓存写/币种），存 `data/usage.json`。
+     流末尾多发一帧 `{wu_usage}` 给前端，聊天气泡下可显示，设置页有累计、
+     /admin 有缓存命中率。
+   - 手机端能完整管 API 了（子页 `page-apis`）。**之前说"手机上不能填 key"是错的**——
+     真正的规矩是 key 不能留在浏览器里，而不是哪个页面能填；现在都存服务器、
+     同一把锁，手机上填没有任何额外风险。
+
 **下一步（与她商定的顺序）**：③ 晤能看图（vision 翻译官）→ ④ 长对话滚动摘要
 （顺带把聊天多窗口做成真的）。iOS 键盘两 bug 她已确认可以往后放。
 

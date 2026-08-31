@@ -46,8 +46,14 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
 - 晤的人设可在界面上编辑（存 `data/persona.json`，清空即恢复代码里的默认值）
 - 上下文按 token 额度截断而不是固定条数，设置页能看到"这个窗口装了百分之几"
 - 八维驱动引擎：随时间与对话涨落，影响晤的语气
-- Chat 通过后端 `/api/chat` 流式转发，支持工具调用（写日记 / 加清单 / 写信…），
-  Key 只存在服务器
+- Chat 通过后端 `/api/chat` 流式转发，支持工具调用（写日记 / 加清单 / 写信…）
+- **多套 API 配置**（设置 → 管理 API，或 `/admin` → API 与花费）：地址 / Key / 模型 /
+  格式 / 价格一套一套存在服务器上，随时切换「聊天用哪套、干活用哪套」，不用重新部署。
+  Key 只进不出，接口永远只回打码后的后四位；没选中的角色自动回落到环境变量那套
+- **两种 API 格式**：`openai`（DeepSeek / 中转站 / 绝大多数）与 `anthropic`
+  （Claude 官方，server.js 内置格式翻译，并显式打上 `cache_control` 缓存标记）
+- **用量与花费**：每轮记录输入 / 输出 / 缓存命中的 token，按各套自填的价格算钱；
+  设置页可开「每条消息显示用量」，`/admin` 有累计表与缓存命中率
 - `/admin` 桌面管理台（同一个密码）
 - PhotoStack 照片堆（github.com/Wren036/PhotoStack，PolyForm Noncommercial）
 

@@ -431,7 +431,7 @@
   .win-item.active .ck { opacity: 1; }
   .win-item.new { color: var(--blue-deep); }
 
-  .chat-msgs { flex: 1; overflow-y: auto; padding: calc(var(--sat) + 78px) 16px calc(var(--navspace) + 62px); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: calc(var(--sat) + 78px) 16px calc(var(--navspace) + 90px); display: flex; flex-direction: column; gap: 11px; position: relative; z-index: 1; }
   .m-time { text-align: center; font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; margin: 6px 0; }
   .bub {
     max-width: 78%; padding: 11px 15px; font-size: 15px; line-height: 1.65;
@@ -699,6 +699,35 @@
   .btn.ghost { background: rgba(126,150,184,.12); color: var(--ink-soft); box-shadow: none; }
   .set-note { font-size: 11px; color: var(--ink-faint); line-height: 1.8; padding: 0 6px; }
   .set-line { font-size: 13px; line-height: 2.1; color: var(--ink-soft); white-space: pre-line; }
+  /* 开关 */
+  .sw-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .sw-row .lb { flex: 1; font-size: 13px; }
+  .sw { width: 44px; height: 26px; border-radius: 99px; background: rgba(168,178,196,.35); position: relative;
+    cursor: pointer; transition: background .2s; flex-shrink: 0; border: none; }
+  .sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: 0 2px 6px rgba(70,90,120,.25); transition: transform .2s; }
+  .sw.on { background: var(--blue-deep); }
+  .sw.on::after { transform: translateX(18px); }
+  /* 每条消息底下的用量 */
+  .bub-usage { font-size: 9.5px; color: var(--ink-faint); margin: -6px 0 2px 4px; align-self: flex-start; letter-spacing: .02em; }
+  /* 设置页里的下拉 */
+  .set-sel { width: 100%; padding: 10px 13px; border-radius: 14px; border: 1px solid rgba(168,178,196,.35);
+    background: rgba(255,255,255,.6); font-size: 15px; color: var(--ink); outline: none; font-family: var(--sans); }
+  /* 花费表 */
+  .cost-row { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; font-size: 12px; color: var(--ink-soft); }
+  .cost-row + .cost-row { border-top: 1px dashed rgba(168,178,196,.25); }
+  .cost-row .nm { flex: 1; color: var(--ink); font-size: 13px; }
+  .cost-row .amt { font-family: var(--serif); font-size: 15px; color: var(--blue-deep); }
+  /* API 列表 */
+  .api-item { border-radius: 18px; padding: 13px 16px; margin-bottom: 11px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px); box-shadow: var(--shadow); cursor: pointer; }
+  .api-item .top { display: flex; align-items: center; gap: 8px; }
+  .api-item .nm { font-size: 14.5px; flex: 1; }
+  .api-item .tag { font-size: 9px; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+    color: var(--blue-deep); border: 1px solid rgba(126,150,184,.4); }
+  .api-item .tag.w { color: #C08A44; border-color: rgba(192,138,68,.4); }
+  .api-item .sub { font-size: 10.5px; color: var(--ink-faint); margin-top: 4px; letter-spacing: .02em; }
 
   /* toast */
   #toast {
@@ -957,11 +986,32 @@
           <div class="set-line" id="setHealth">检查中…</div>
           <div class="set-line" id="setCtx" style="margin-top:2px"></div>
           <div class="set-note" style="padding:12px 2px 0">
-            模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。<br>
+            API Key 存在你自己的服务器上，页面里永远只显示后四位——手机丢了，钥匙也不会跟着走。
+            Zeabur 环境变量那套一直留着当兜底，界面上配错了也不会把晤弄哑。<br>
             密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
             每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。<br>
             长期文件在「记忆 → 长期文件」里管：「常驻」每轮都给晤看，「备查」他需要时自己翻；
             晤的人设也在那里，可以自己改。大段内容建议在电脑上用 /admin 粘贴。
+          </div>
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">模型与花费<span class="en">MODEL &amp; COST</span></div>
+          <div class="field">
+            <label>聊天用（晤的嘴）</label>
+            <select class="set-sel" id="selChat" onchange="apiUse('chat', this.value)"></select>
+          </div>
+          <div class="field">
+            <label>干活用（蒸馏记忆、整理）</label>
+            <select class="set-sel" id="selWorker" onchange="apiUse('worker', this.value)"></select>
+          </div>
+          <div class="sw-row">
+            <span class="lb">每条消息显示用量和花费</span>
+            <button class="sw" id="swUsage" onclick="toggleUsage()"></button>
+          </div>
+          <div id="costList" style="margin-top:6px"></div>
+          <div class="btn-row">
+            <button class="btn ghost" onclick="usageClear()">清零统计</button>
+            <button class="btn" onclick="openSub('apis')">管理 API</button>
           </div>
         </div>
         <div class="set-card">
@@ -970,7 +1020,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.1（人设可以自己写了 · 长期文件手机上也能管 · 支持导入 txt/md/docx）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.2（手机上就能管 API 和价格 · 能接 Claude 官方 API 了 · 每条消息可看 token 和花费）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1061,6 +1111,47 @@
         </div>
         <div id="ltList"></div>
         <div class="cd-note" id="ltNote"></div>
+      </div>
+    </section>
+
+    <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-apis">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('apis')">‹ 返回</button>
+        <div class="sp-title">API</div>
+        <button class="sp-act" onclick="apiNew()">＋ 新增</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="cd-form" id="apiForm" style="display:none">
+          <div class="row"><input type="text" id="afName" placeholder="起个名字，如：Claude 官方"></div>
+          <div class="row"><input type="text" id="afBase" placeholder="接口地址，如 https://api.deepseek.com" inputmode="url"></div>
+          <div class="row"><input type="password" id="afKey" placeholder="API Key" autocomplete="off"></div>
+          <div class="row"><input type="text" id="afModel" placeholder="模型名，如 deepseek-chat"></div>
+          <div class="row">
+            <select id="afDialect">
+              <option value="openai">OpenAI 格式（DeepSeek / 中转站 / 绝大多数）</option>
+              <option value="anthropic">Anthropic 格式（Claude 官方）</option>
+            </select>
+          </div>
+          <div style="font-size:11px;color:var(--ink-faint);margin:2px 2px 8px">价格（每百万 token，留空按 0 算）</div>
+          <div class="row">
+            <input type="text" id="afIn" placeholder="输入" inputmode="decimal">
+            <input type="text" id="afOut" placeholder="输出" inputmode="decimal">
+          </div>
+          <div class="row">
+            <input type="text" id="afCR" placeholder="缓存读" inputmode="decimal">
+            <input type="text" id="afCW" placeholder="缓存写" inputmode="decimal">
+            <input type="text" id="afUnit" placeholder="币种" style="max-width:70px">
+          </div>
+          <div class="ops">
+            <button class="btn ghost" id="afDel" style="display:none" onclick="apiDelCur()">删除</button>
+            <button class="btn ghost" onclick="apiTest()">测一下</button>
+            <button class="btn ghost" onclick="apiCancel()">取消</button>
+            <button class="btn" onclick="apiSave()">保存</button>
+          </div>
+        </div>
+        <div id="apiList"></div>
+        <div class="cd-note" id="apiNote"></div>
       </div>
     </section>
 
@@ -1548,7 +1639,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -1556,7 +1647,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings" && typeof renderCtxUsage === "function") renderCtxUsage();
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -1568,6 +1659,7 @@ function openSub(name) {
   if (name === "countdown") renderCdList();
   if (name === "photos") renderPhotosPage();
   if (name === "letters") renderLetters();
+  if (name === "apis") apiRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -2238,7 +2330,23 @@ function msgNode(m) {
   const b = document.createElement("div");
   b.className = "bub " + (m.k === "me" ? "me" : "ai");
   b.textContent = m.t;
+  if (m.k === "ai" && m.u && SHOW_USAGE) {
+    const wrap = document.createElement("div");
+    wrap.style.display = "contents";
+    wrap.appendChild(b);
+    wrap.appendChild(usageNode(m.u));
+    return wrap;
+  }
   return b;
+}
+function usageNode(u) {
+  const d = document.createElement("div");
+  d.className = "bub-usage";
+  d.textContent = "入 " + (u.in || 0).toLocaleString()
+    + (u.cacheRead ? "（缓存 " + u.cacheRead.toLocaleString() + "）" : "")
+    + " · 出 " + (u.out || 0).toLocaleString()
+    + " · " + fmtCost(u.cost, u.unit) + (u.estimated ? " · 估算" : "");
+  return d;
 }
 function appendMsg(m) {
   chatMsgs.appendChild(msgNode(m));
@@ -2254,6 +2362,7 @@ function rerenderChat() {
   chatMsgs.appendChild(t);
   chatLog.forEach(m => chatMsgs.appendChild(msgNode(m)));
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
 }
 rerenderChat();
 
@@ -2265,8 +2374,8 @@ function checkHealth() { fetch("api/health").then(r => r.json()).then(j => {
   if (!el || !j) return;
   el.textContent =
     "服务器　　" + (j.ok ? "已连接 ✓" : "连不上") + "\n" +
-    "聊天模型　" + (j.hasKey ? j.model : "未配置 Key（聊天走演示回复）") + "\n" +
-    "干活模型　" + (j.workerSame ? "与聊天模型相同" : j.worker) + "\n" +
+    "聊天模型　" + (j.hasKey ? j.model + "（" + (j.apiName || "") + "）" : "未配置 Key（聊天走演示回复）") + "\n" +
+    "干活模型　" + (j.workerSame ? "与聊天模型相同" : j.worker + "（" + (j.workerName || "") + "）") + "\n" +
     "记忆　　　" + (j.memories ?? 0) + " 张" +
     (j.docs ? "\n长期资料　" + j.docs.always + " 份常驻 · " + j.docs.ondemand + " 份备查" : "");
   if (j.historyBudget) HISTORY_BUDGET = j.historyBudget;
@@ -2328,7 +2437,7 @@ async function aiReply() {
     if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
-    let buf = "", acc = "";
+    let buf = "", acc = "", lastUsage = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -2340,14 +2449,23 @@ async function aiReply() {
         const d = s.slice(5).trim();
         if (d === "[DONE]") continue;
         try {
-          const delta = JSON.parse(d).choices?.[0]?.delta?.content;
+          const j = JSON.parse(d);
+          if (j.wu_usage) { lastUsage = j.wu_usage; continue; }
+          const delta = j.choices?.[0]?.delta?.content;
           if (delta) { acc += delta; bub.textContent = acc; chatMsgs.scrollTop = chatMsgs.scrollHeight; }
         } catch {}
       }
     }
-    chatLog.push({ k: "ai", t: acc || "……" }); pushState("chat", chatLog);
+    chatLog.push({ k: "ai", t: acc || "……", ...(lastUsage ? { u: lastUsage } : {}) });
+    pushState("chat", chatLog);
+    if (lastUsage && SHOW_USAGE) {
+      bub.after(usageNode(lastUsage));
+      /* 等这一行排完版再滚，否则会被输入栏盖住 */
+      requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+    }
     fetchDrives();      /* 聊完刷新晤的内在状态 */
     refreshShared();    /* 晤可能用工具改了清单/日记/信箱，同步回家里 */
+    renderCost();
   } catch (e) {
     bub.textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
   }
@@ -2597,6 +2715,137 @@ document.getElementById("memTabs").addEventListener("click", e => {
   memRefresh();
 });
 
+/* ================= API 与花费 ================= */
+let apiConf = { list: [], chat: null, worker: null }, afCur = null;
+let SHOW_USAGE = load("wu.showUsage", false);
+
+async function apiRefresh() {
+  if (!SERVER) { document.getElementById("apiNote").textContent = "需要连接服务器"; return; }
+  try { apiConf = await (await fetch("api/apis")).json(); } catch { return; }
+  const el = document.getElementById("apiList");
+  el.innerHTML = apiConf.list.map(a => `
+    <div class="api-item" onclick="apiEdit('${a.id}')">
+      <div class="top">
+        <span class="nm"></span>
+        ${a.isChat ? '<span class="tag">聊天</span>' : ""}
+        ${a.isWorker ? '<span class="tag w">干活</span>' : ""}
+      </div>
+      <div class="sub"><span class="mo"></span> · ${a.keyMask || "没填 Key"} · ${a.dialect === "anthropic" ? "Anthropic 格式" : "OpenAI 格式"}</div>
+      <div class="sub">入 ${a.price.in} / 出 ${a.price.out} / 缓存读 ${a.price.cacheRead}　${a.price.unit}每百万</div>
+    </div>`).join("");
+  el.querySelectorAll(".nm").forEach((n, i) => n.textContent = apiConf.list[i].name);
+  el.querySelectorAll(".mo").forEach((n, i) => n.textContent = apiConf.list[i].model || "没填模型名");
+  document.getElementById("apiNote").textContent = apiConf.list.length
+    ? "Key 只存在服务器上，这里永远只显示后四位。没有选中的角色会自动回落到 Zeabur 环境变量那套。"
+    : "还没有配置。点右上角「＋ 新增」，填好地址、Key 和模型名就能用了。\nKey 存在你自己的服务器上，不会留在手机里。";
+  renderApiSelects();
+}
+function renderApiSelects() {
+  const opts = (role) => ['<option value="">环境变量（Zeabur）· ' + (apiConf.env ? apiConf.env[role].model || "未配置" : "") + "</option>"]
+    .concat(apiConf.list.map(a => `<option value="${a.id}">${a.name.replace(/</g, "&lt;")} · ${(a.model || "").replace(/</g, "&lt;")}</option>`)).join("");
+  const sc = document.getElementById("selChat"), sw = document.getElementById("selWorker");
+  if (sc) { sc.innerHTML = opts("chat"); sc.value = apiConf.chat || ""; }
+  if (sw) { sw.innerHTML = opts("worker"); sw.value = apiConf.worker || ""; }
+}
+async function apiUse(role, id) {
+  try { await fetch("api/apis/use", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [role]: id || null }) }); }
+  catch { toast("切换失败"); return; }
+  toast((role === "chat" ? "聊天" : "干活") + "改用这套了");
+  apiRefresh(); checkHealth();
+}
+function apiFormShow() { document.getElementById("apiForm").style.display = "block"; document.querySelector("#page-apis .sp-scroll").scrollTop = 0; }
+function apiNew() {
+  afCur = null;
+  ["afName", "afBase", "afKey", "afModel", "afIn", "afOut", "afCR", "afCW"].forEach(i => document.getElementById(i).value = "");
+  document.getElementById("afUnit").value = "元";
+  document.getElementById("afDialect").value = "openai";
+  document.getElementById("afKey").placeholder = "API Key";
+  document.getElementById("afDel").style.display = "none";
+  apiFormShow();
+}
+function apiEdit(id) {
+  const a = apiConf.list.find(x => x.id === id);
+  if (!a) return;
+  afCur = id;
+  document.getElementById("afName").value = a.name;
+  document.getElementById("afBase").value = a.base;
+  document.getElementById("afKey").value = "";
+  document.getElementById("afKey").placeholder = "留空 = 不改动（当前 " + (a.keyMask || "未填") + "）";
+  document.getElementById("afModel").value = a.model;
+  document.getElementById("afDialect").value = a.dialect;
+  document.getElementById("afIn").value = a.price.in || "";
+  document.getElementById("afOut").value = a.price.out || "";
+  document.getElementById("afCR").value = a.price.cacheRead || "";
+  document.getElementById("afCW").value = a.price.cacheWrite || "";
+  document.getElementById("afUnit").value = a.price.unit || "元";
+  document.getElementById("afDel").style.display = "";
+  apiFormShow();
+}
+function apiCancel() { document.getElementById("apiForm").style.display = "none"; afCur = null; }
+function apiBody() {
+  const v = id => document.getElementById(id).value.trim();
+  return {
+    name: v("afName") || "未命名", base: v("afBase"), key: v("afKey"), model: v("afModel"),
+    dialect: document.getElementById("afDialect").value,
+    price: { in: +v("afIn") || 0, out: +v("afOut") || 0, cacheRead: +v("afCR") || 0, cacheWrite: +v("afCW") || 0, unit: v("afUnit") || "元" },
+  };
+}
+async function apiSave() {
+  const b = apiBody();
+  if (!b.base || !b.model) { toast("地址和模型名要填"); return; }
+  if (!afCur && !b.key) { toast("新增时要填 Key"); return; }
+  try {
+    const opt = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) };
+    if (afCur) await fetch("api/apis/" + afCur, { method: "PUT", ...opt });
+    else await fetch("api/apis", { method: "POST", ...opt });
+  } catch { toast("保存失败"); return; }
+  apiCancel(); apiRefresh(); checkHealth(); toast("已保存 ✓");
+}
+async function apiDelCur() {
+  if (!afCur) return;
+  try { await fetch("api/apis/" + afCur, { method: "DELETE" }); } catch {}
+  apiCancel(); apiRefresh(); checkHealth(); toast("已删除");
+}
+async function apiTest() {
+  if (!afCur) { toast("先保存再测"); return; }
+  toast("正在试着说句话…");
+  try {
+    const r = await (await fetch("api/apis/" + afCur + "/test", { method: "POST" })).json();
+    toast(r.ok ? "通了：" + (r.reply || "（空回复）") : "不通：" + (r.error || "").slice(0, 60));
+  } catch { toast("测试失败"); }
+}
+
+function toggleUsage() {
+  SHOW_USAGE = !SHOW_USAGE;
+  save("wu.showUsage", SHOW_USAGE);
+  document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE);
+  rerenderChat();
+}
+function fmtCost(c, unit) {
+  if (c == null) return "";
+  return (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) + " " + (unit || "元");
+}
+async function renderCost() {
+  if (!SERVER) return;
+  let u;
+  try { u = await (await fetch("api/usage")).json(); } catch { return; }
+  const rows = Object.values(u.total || {});
+  const el = document.getElementById("costList");
+  if (!el) return;
+  el.innerHTML = rows.length ? rows.map(t => `
+    <div class="cost-row">
+      <span class="nm"></span>
+      <span>${t.calls} 次 · 入 ${t.in.toLocaleString()}（缓存 ${t.cacheRead.toLocaleString()}）· 出 ${t.out.toLocaleString()}</span>
+      <span class="amt">${fmtCost(t.cost, t.unit)}</span>
+    </div>`).join("")
+    : '<div class="set-note" style="padding:6px 2px">还没有用量记录。聊一句就有了。</div>';
+  el.querySelectorAll(".nm").forEach((n, i) => n.textContent = rows[i].name);
+}
+async function usageClear() {
+  try { await fetch("api/usage", { method: "DELETE" }); } catch {}
+  renderCost(); toast("统计已清零");
+}
+
 /* ================= 长期文件（手机端） ================= */
 let memMode = "cards", docCache = [], dcCur = null, perFallback = "";
 
@@ -2754,7 +3003,10 @@ async function refreshShared() {
 }
 
 /* ================= 解锁后才从服务器拉取数据 ================= */
-function bootData() { checkHealth(); pullState(); }
+function bootData() {
+  document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE);
+  checkHealth(); pullState();
+}
 async function pullState() {
   try {
     const r = await fetch("api/state");

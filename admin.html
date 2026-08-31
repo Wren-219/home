@@ -70,6 +70,7 @@
     <button class="tab" data-p="cd">倒数日</button>
     <button class="tab" data-p="diary">日记</button>
     <button class="tab" data-p="docs">长期文件</button>
+    <button class="tab" data-p="api">API 与花费</button>
     <button class="tab" data-p="drive">内在驱动</button>
     <button class="tab" data-p="raw">原始数据</button>
   </div>
@@ -185,6 +186,68 @@
     </div>
   </div>
 
+  <!-- API 与花费 -->
+  <div class="panel" id="p-api">
+    <div class="card">
+      <div class="bar">
+        <b style="font-family:var(--serif);font-size:15px">API 配置</b>
+        <span class="hint" id="apiUsing"></span>
+        <span class="grow"></span>
+        <button class="pri" onclick="apiNew()">＋ 新增一套</button>
+      </div>
+      <table id="apiTable">
+        <thead><tr>
+          <th>名称</th><th style="width:210px">地址</th><th style="width:150px">模型</th>
+          <th style="width:130px">Key</th><th style="width:100px">格式</th>
+          <th style="width:210px">价格 / 百万 token</th><th style="width:190px">操作</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="hint">Key 只存在服务器的 data/apis.json 里，表格永远只显示后四位。编辑时 Key 留空 = 不改动。<br>
+        没有指定「聊天」或「干活」的角色时，自动回落到 Zeabur 环境变量那套，所以配错了也不会把晤弄哑。</div>
+    </div>
+
+    <div class="card" id="apiEditor" style="display:none">
+      <div class="bar">
+        <input id="aName" style="width:170px" placeholder="名称">
+        <input id="aBase" class="grow" placeholder="https://api.deepseek.com">
+        <input id="aKey" type="password" style="width:200px" placeholder="API Key（留空=不改）" autocomplete="off">
+        <input id="aModel" style="width:160px" placeholder="模型名">
+        <select id="aDialect" style="width:230px">
+          <option value="openai">OpenAI 格式（绝大多数）</option>
+          <option value="anthropic">Anthropic 格式（Claude 官方）</option>
+        </select>
+      </div>
+      <div class="bar">
+        <span class="hint" style="width:150px">价格 / 百万 token</span>
+        <input id="aIn" style="width:100px" placeholder="输入">
+        <input id="aOut" style="width:100px" placeholder="输出">
+        <input id="aCR" style="width:100px" placeholder="缓存读">
+        <input id="aCW" style="width:100px" placeholder="缓存写">
+        <input id="aUnit" style="width:70px" placeholder="币种">
+        <span class="grow"></span>
+        <button onclick="apiTest()">测一下</button>
+        <button class="warn" onclick="apiDel()">删除</button>
+        <button class="pri" onclick="apiSave()">保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="bar">
+        <b style="font-family:var(--serif);font-size:15px">累计花费</b>
+        <span class="grow"></span>
+        <button onclick="usageLoad()">刷新</button>
+        <button class="warn" onclick="usageClear()">清零</button>
+      </div>
+      <table id="usageTable">
+        <thead><tr><th>配置</th><th style="width:70px">次数</th><th style="width:130px">输入</th>
+          <th style="width:130px">其中缓存读</th><th style="width:110px">输出</th><th style="width:120px">花费</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="hint" id="usageHint"></div>
+    </div>
+  </div>
+
   <!-- 驱动 -->
   <div class="panel" id="p-drive">
     <div class="card">
@@ -247,7 +310,7 @@ document.querySelector(".tabs").addEventListener("click", e => {
   const t = e.target.closest(".tab"); if (!t) return;
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
   document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("on",x.id==="p-"+t.dataset.p));
-  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, docs:docLoad, drive:loadDrive, raw:rawLoad})[t.dataset.p]();
+  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, docs:docLoad, api:()=>{apiLoad();usageLoad();}, drive:loadDrive, raw:rawLoad})[t.dataset.p]();
 });
 async function boot(){
   try { const h = await api("api/health"); $("健康").textContent = `模型 ${h.model} · Key ${h.hasKey?"已配置":"未配置"} · 记忆 ${h.memories} 张` +
@@ -430,6 +493,97 @@ async function docDel(){
   try { await api("api/docs/"+docCur, { method:"DELETE" }); } catch {}
   docCur = null; $("docEditor").style.display = "none"; toast("已删除"); docLoad();
 }
+
+/* ===== API 配置 ===== */
+let apis = { list: [] }, aCur = null;
+async function apiLoad(){
+  try { apis = await api("api/apis"); } catch { toast("加载失败"); return; }
+  $("apiUsing").textContent = `聊天用「${apis.using.chat}」· 干活用「${apis.using.worker}」`;
+  const roleBtn = (a) => `
+    <button ${a.isChat?'class="pri"':""} onclick="apiUse('chat','${a.id}')">聊天</button>
+    <button ${a.isWorker?'class="pri"':""} onclick="apiUse('worker','${a.id}')">干活</button>
+    <button onclick="apiEdit('${a.id}')">改</button>`;
+  $("apiTable").querySelector("tbody").innerHTML = apis.list.map(a=>`
+    <tr>
+      <td>${esc(a.name)}</td>
+      <td style="font-size:11px;color:var(--faint);word-break:break-all">${esc(a.base)}</td>
+      <td>${esc(a.model)}</td>
+      <td style="font-family:ui-monospace,monospace;font-size:11px">${esc(a.keyMask)||"—"}</td>
+      <td>${a.dialect==="anthropic"?"Anthropic":"OpenAI"}</td>
+      <td style="font-size:11px">入 ${a.price.in} · 出 ${a.price.out}<br>缓存读 ${a.price.cacheRead} · 写 ${a.price.cacheWrite}　${esc(a.price.unit)}</td>
+      <td>${roleBtn(a)}</td>
+    </tr>`).join("") || '<tr><td colspan="7" class="hint">还没有配置，点「＋ 新增一套」</td></tr>';
+}
+async function apiUse(role, id){
+  await api("api/apis/use", { method:"PUT", ...J({ [role]: id }) }).catch(()=>toast("切换失败"));
+  toast((role==="chat"?"聊天":"干活")+"改用这套"); apiLoad(); boot();
+}
+function apiNew(){
+  aCur = null;
+  ["aName","aBase","aKey","aModel","aIn","aOut","aCR","aCW"].forEach(i=>$(i).value="");
+  $("aUnit").value="元"; $("aDialect").value="openai";
+  $("aKey").placeholder = "API Key";
+  $("apiEditor").style.display="block";
+}
+function apiEdit(id){
+  const a = apis.list.find(x=>x.id===id); if(!a) return;
+  aCur = id;
+  $("aName").value=a.name; $("aBase").value=a.base; $("aKey").value="";
+  $("aKey").placeholder = "留空=不改动（当前 "+(a.keyMask||"未填")+"）";
+  $("aModel").value=a.model; $("aDialect").value=a.dialect;
+  $("aIn").value=a.price.in||""; $("aOut").value=a.price.out||"";
+  $("aCR").value=a.price.cacheRead||""; $("aCW").value=a.price.cacheWrite||"";
+  $("aUnit").value=a.price.unit||"元";
+  $("apiEditor").style.display="block";
+}
+function apiBody(){
+  return {
+    name:$("aName").value.trim()||"未命名", base:$("aBase").value.trim(),
+    key:$("aKey").value.trim(), model:$("aModel").value.trim(), dialect:$("aDialect").value,
+    price:{ in:+$("aIn").value||0, out:+$("aOut").value||0, cacheRead:+$("aCR").value||0, cacheWrite:+$("aCW").value||0, unit:$("aUnit").value.trim()||"元" },
+  };
+}
+async function apiSave(){
+  const b = apiBody();
+  if(!b.base||!b.model){ toast("地址和模型名要填"); return; }
+  if(!aCur && !b.key){ toast("新增时要填 Key"); return; }
+  try {
+    if (aCur) await api("api/apis/"+aCur, { method:"PUT", ...J(b) });
+    else { const r = await api("api/apis", { method:"POST", ...J(b) }); aCur = r.id; }
+  } catch { toast("保存失败"); return; }
+  toast("已保存"); apiLoad(); boot();
+}
+async function apiDel(){
+  if(!aCur){ $("apiEditor").style.display="none"; return; }
+  await api("api/apis/"+aCur,{method:"DELETE"}).catch(()=>{});
+  aCur=null; $("apiEditor").style.display="none"; toast("已删除"); apiLoad(); boot();
+}
+async function apiTest(){
+  if(!aCur){ toast("先保存再测"); return; }
+  toast("正在试着说句话…");
+  const r = await api("api/apis/"+aCur+"/test",{method:"POST"}).catch(()=>null);
+  toast(r&&r.ok ? "通了："+(r.reply||"（空回复）") : "不通："+((r&&r.error)||"").slice(0,80));
+}
+
+/* ===== 用量与花费 ===== */
+async function usageLoad(){
+  const u = await api("api/usage").catch(()=>null);
+  if(!u) return;
+  const rows = Object.values(u.total||{});
+  $("usageTable").querySelector("tbody").innerHTML = rows.map(t=>`
+    <tr>
+      <td>${esc(t.name)}<div style="font-size:11px;color:var(--faint)">${esc(t.model)}</div></td>
+      <td>${t.calls}</td>
+      <td>${t.in.toLocaleString()}</td>
+      <td>${t.cacheRead.toLocaleString()}${t.in?`<span style="color:var(--faint)"> (${Math.round(t.cacheRead/t.in*100)}%)</span>`:""}</td>
+      <td>${t.out.toLocaleString()}</td>
+      <td style="font-family:var(--serif);font-size:15px;color:var(--blue)">${(t.cost<0.01?t.cost.toFixed(4):t.cost.toFixed(2))} ${esc(t.unit)}</td>
+    </tr>`).join("") || '<tr><td colspan="6" class="hint">还没有用量记录</td></tr>';
+  $("usageHint").textContent = rows.length
+    ? "「其中缓存读」那一栏的百分比就是缓存命中率——越高说明前缀越稳，越省钱。价格按你填的算，改价格只影响之后的记账。"
+    : "聊一句就有记录了。";
+}
+async function usageClear(){ await api("api/usage",{method:"DELETE"}).catch(()=>{}); toast("已清零"); usageLoad(); }
 
 /* ===== 驱动 ===== */
 let driveVals = {};
