@@ -390,32 +390,36 @@
   /* 顶部两块独立悬浮玻璃：窗口名胶囊 + 功能圆钮 */
   .chat-head {
     position: absolute; top: 0; left: 0; right: 0; z-index: 6;
-    padding: calc(var(--sat) + 10px) 14px 0;
-    display: flex; align-items: flex-start; justify-content: center;
+    padding: calc(var(--sat) + 10px) 16px 0;
+    display: flex; align-items: center; gap: 9px;
     pointer-events: none; background: none;
   }
-  .chat-name-btn {
-    pointer-events: auto; border: none; cursor: pointer; font-family: var(--serif); text-align: center;
-    padding: 8px 28px; border-radius: 999px;
-    background: rgba(250,251,253,.78); border: 1px solid rgba(255,255,255,.8);
+  .chat-head > * { pointer-events: auto; }
+  .chat-head .sp { flex: 1; pointer-events: none; }
+  /* 同一套玻璃：左边一颗窗口名胶囊，右边两颗圆钮，一条水平线上 */
+  .glasskey {
+    border: 1px solid rgba(255,255,255,.8); cursor: pointer;
+    background: rgba(250,251,253,.78);
     backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
     box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
+    color: var(--ink-soft); transition: transform .15s;
   }
-  .chat-name { font-size: 18px; letter-spacing: .4em; margin-left: .4em; color: var(--ink); }
-  .chat-status { margin-top: 2px; font-size: 10.5px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 4px; }
-  .chat-status .chev { color: var(--ink-faint); }
-  .win-btn {
-    pointer-events: auto; position: absolute; right: 16px; top: calc(var(--sat) + 12px);
-    width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,.8);
-    background: rgba(250,251,253,.78); cursor: pointer;
-    backdrop-filter: blur(24px) saturate(1.6); -webkit-backdrop-filter: blur(24px) saturate(1.6);
-    box-shadow: 0 12px 32px rgba(70,90,120,.16), inset 0 1px 0 rgba(255,255,255,.9);
-    display: flex; align-items: center; justify-content: center; color: var(--ink-soft);
+  .glasskey:active { transform: scale(.94); }
+  .win-cap {
+    height: 42px; border-radius: 999px; padding: 0 17px; max-width: 62%;
+    display: flex; align-items: center; gap: 7px;
   }
-  .win-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; }
+  .win-cap .wn { font-size: 14.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .win-cap .leaf { font-size: 12px; flex-shrink: 0; }
+  .win-cap .chev { color: var(--ink-faint); font-size: 12px; flex-shrink: 0; margin-left: 1px; }
+  .hd-btn {
+    width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .hd-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
   /* 窗口切换面板 */
   #winMenu {
-    position: absolute; right: 16px; top: calc(var(--sat) + 64px); z-index: 50;
+    position: absolute; right: 16px; top: calc(var(--sat) + 60px); z-index: 50;
     width: 190px; border-radius: 18px; overflow: hidden;
     background: rgba(252,253,255,.8);
     backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
@@ -920,11 +924,16 @@
     <!-- ===== CHAT ===== -->
     <section class="page" id="page-chat">
       <div class="chat-head">
-        <button class="chat-name-btn" onclick="openSub('status')">
-          <div class="chat-name">晤</div>
-          <div class="chat-status"><span id="chatStName"></span><span class="chev">›</span></div>
+        <button class="glasskey win-cap" onclick="openSub('status')" title="晤此刻的状态">
+          <span class="leaf" id="capLeaf">🌿</span>
+          <span class="wn" id="capName">日常 · 与晤</span>
+          <span class="chev">›</span>
         </button>
-        <button class="win-btn" id="winBtn" title="切换窗口">
+        <span class="sp"></span>
+        <button class="glasskey hd-btn" id="newWinBtn" title="开启新对话">
+          <svg viewBox="0 0 24 24"><path d="M4.5 18.5v-3.2A7.5 7.5 0 1 1 12 19.5H8l-3.5 2.2z"/><path d="M12 8.6v5.2M9.4 11.2h5.2"/></svg>
+        </button>
+        <button class="glasskey hd-btn" id="winBtn" title="窗口">
           <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="5.5" rx="2"/><rect x="4" y="13.5" width="16" height="5.5" rx="2"/></svg>
         </button>
       </div>
@@ -1094,7 +1103,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.5（一键备份 / 搬家 · 修好登录过期变白屏 · 页面出错会自己说出来）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.6（修好"连不上/卡住"的真正原因 · 聊天顶栏改成水平一排）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1614,7 +1623,10 @@
 var lastJsError = "";
 function noteError(where, e) {
   const msg = (e && (e.message || e.reason && e.reason.message)) || String(e || "");
-  lastJsError = where + "：" + String(msg).slice(0, 160);
+  const line = where + "：" + String(msg).slice(0, 160);
+  /* 留住第一条 —— 后面的多半是它引起的连锁反应，第一条才是病根 */
+  if (!lastJsError) lastJsError = line;
+  else if (!lastJsError.includes(line)) lastJsError += "｜后续：" + line;
   const el = document.getElementById("setHealth");
   if (el) el.textContent = "⚠ 页面出错了　" + lastJsError + "\n把这行截图发我就行。";
   const btn = document.getElementById("btnRetry");
@@ -1623,9 +1635,24 @@ function noteError(where, e) {
 }
 window.addEventListener("error", e => noteError("脚本", e.error || e));
 window.addEventListener("unhandledrejection", e => noteError("异步", e.reason || e));
+/* 顶层的每次初始化都包一层：某个小部件挂了，不该把整个页面带走 */
+function safe(name, fn) { try { return fn(); } catch (e) { noteError(name, e); } }
+
+/* ================= 全局状态 =================
+   ⚠️ 踩过两次的坑：这些变量原本散落在各自的段落里用 let 声明，
+   但前面的渲染函数会用到它们。let 在声明之前碰不得（TDZ），一碰就抛错，
+   整段脚本从那里断掉 —— 后面所有东西都不初始化，界面看起来像"卡住"或"连不上"。
+   一律用 var 提到最前面声明，各段里只负责赋值。新加全局状态请也放这儿。 */
+var chatReady = false;                                   /* 聊天窗口数据就绪没 */
+var SHOW_USAGE = false;                                  /* 每条消息显示用量 */
+var ONLINE = false;                                      /* 聊天模型可用 */
+var HISTORY_BUDGET = 30000;                              /* 每轮历史额度 */
+var CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;  /* 估 token 用 */
+var memCur = "全部", memEditId = null, memCache = [];      /* 记忆页 */
+var apiConf = { list: [], chat: null, worker: null }, afCur = null;  /* API 配置 */
+var mcpList = [], mcpCur = null;                         /* 外部服务 */
 
 /* ================= 工具 ================= */
-var chatReady = false;   /* 聊天窗口数据是否已就绪（挡住早于它的渲染调用） */
 function pad(n){ return String(n).padStart(2,"0"); }
 /* 本地持久化：数据保存在浏览器 localStorage，刷新/重开不丢 */
 function load(key, fallback) {
@@ -1914,7 +1941,7 @@ function cdSave() {
   pushState("countdowns", countdowns);
   cdCancel(); renderCdList(); toast("已保存");
 }
-renderCdHome();
+safe("倒数日", renderCdHome);
 
 /* ================= 日记数据 ================= */
 const diaries = [
@@ -1933,7 +1960,7 @@ function renderNotebook() {
     `<div class="nb-line"><small>${d.date.slice(5).replace("-", ".")}</small>${d.title}</div>`).join("");
   document.getElementById("nbLines").innerHTML = lines + `<div class="nb-line empty">查看全部 ›</div>`;
 }
-renderNotebook();
+safe("日记本", renderNotebook);
 
 /* 日记列表页 */
 function renderDiaryList() {
@@ -2042,7 +2069,7 @@ function renderWeek() {
   }
   document.getElementById("weekStrip").innerHTML = html;
 }
-renderWeek();
+safe("本周条", renderWeek);
 
 /* ================= 完整日历页 ================= */
 let calY = new Date().getFullYear(), calM = new Date().getMonth();
@@ -2154,7 +2181,7 @@ document.getElementById("todoClear").addEventListener("click", () => {
   pushState("todos", todos); renderTodos();
   toast("收走了 " + n + " 项 ✓");
 });
-renderTodos();
+safe("清单", renderTodos);
 (function(){
   const n = new Date();
   const ds = n.getFullYear() + "." + pad(n.getMonth()+1) + "." + pad(n.getDate());
@@ -2227,7 +2254,7 @@ let driveCall = topDrive.val, driveResting = false;
 function renderDriveUI() {
   document.getElementById("moodName").textContent = topDrive.name + " " + topDrive.val;
   document.getElementById("moodSay").textContent = "「" + topDrive.say + "」";
-  if (typeof renderChatHeader === "function") renderChatHeader();
+  /* 顶栏不再显示状态数值，改成点左边那颗胶囊进去看 */
   document.getElementById("stHeroSay").textContent = topDrive.say;
   document.getElementById("stHeroTag").textContent = topDrive.tag;
   document.getElementById("stHeroCall").textContent = driveCall + "%";
@@ -2246,7 +2273,7 @@ function renderDriveUI() {
   if (document.getElementById("page-status").classList.contains("open"))
     document.querySelectorAll("#page-status .dr-fill").forEach(f => f.style.width = f.dataset.w + "%");
 }
-renderDriveUI();
+safe("状态条", renderDriveUI);
 
 async function fetchDrives() {
   if (!SERVER) return;
@@ -2353,7 +2380,7 @@ function renderMailSummary() {
     unread > 0 ? unread + " 封未拆的信" : "暂无新信件";
   document.querySelector(".mail-entry .l-new").style.display = unread > 0 ? "" : "none";
 }
-renderMailSummary();
+safe("信箱摘要", renderMailSummary);
 
 /* ================= 照片堆 & 相册 =================
    photos = [{url, date}]；相册为空时先用占位图撑住版面 */
@@ -2387,7 +2414,7 @@ function renderHomeStack() {
     onTap: () => openSub("photos"),
   });
 }
-renderHomeStack();
+safe("照片堆", renderHomeStack);
 
 /* ── 添加照片到相册 ── */
 async function addPhotosToAlbum(files) {
@@ -2480,6 +2507,7 @@ function migrateChat(raw) {
 }
 let chatData = migrateChat(load("wu.chat", null));
 chatReady = true;
+SHOW_USAGE = load("wu.showUsage", false);   /* msgNode 会用到，必须早于第一次渲染 */
 let boundWin = load("wu.boundWin", null) || chatData.active;
 function curWin() { return chatData.windows.find(w => w.id === chatData.active) || chatData.windows[0]; }
 let chatLog = curWin().msgs;
@@ -2658,10 +2686,9 @@ function msgEdit() {
   chatInput.style.height = Math.min(chatInput.scrollHeight, 132) + "px";
   toast("改完点发送，晤会重新回答");
 }
-rerenderChat();
+safe("聊天渲染", rerenderChat);
 
 /* 后端探测：部署后有服务器 + Key 就走真 DeepSeek，否则本地演示回复 */
-let ONLINE = false;
 function checkHealth() { fetchT("api/health", {}, 12000).then(r => r.json()).then(j => {
   ONLINE = !!(j && j.hasKey);
   const el = document.getElementById("setHealth");
@@ -2703,14 +2730,12 @@ function renderCtxUsage() {
 
 const cannedReplies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
 /* 粗估 token（跟服务器同一套算法）：中日韩字符约 1 个，其余约 3.5 个字符 1 个 */
-const CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;
 function estTokens(s) {
   s = String(s == null ? "" : s);
   let cjk = 0;
   for (const ch of s) if (CJK_RE.test(ch)) cjk++;
   return Math.ceil(cjk + (s.length - cjk) / 3.5);
 }
-let HISTORY_BUDGET = 30000;
 function toApiMessages() {
   const msgs = [];
   /* 送足够多，具体留多少由服务器按额度决定 */
@@ -2895,7 +2920,6 @@ function renderWinMenu() {
     </div>`;
   winMenu.innerHTML = live.map(row).join("")
     + (arch.length ? arch.map(row).join("") : "")
-    + '<div class="win-item new" data-act="new">＋ 新建窗口</div>'
     + '<div class="win-item new" data-act="manage">⚙ 管理窗口</div>';
   const list = live.concat(arch);
   winMenu.querySelectorAll(".win-item .nm").forEach((n, i) => { if (list[i]) n.textContent = list[i].name + (list[i].archived ? " · 已封存" : ""); });
@@ -2905,13 +2929,13 @@ function renderWinMenu() {
    他在的窗口显示此刻的状态；旁支窗口显示窗口名（那里的话不影响他的心情，显示状态反而误导）。
    渲染驱动条时可能比聊天数据先跑到，chatReady 挡一下。 */
 function renderChatHeader() {
-  const sub = document.getElementById("chatStName");
-  if (!sub) return;
-  if (!chatReady) { sub.textContent = "此刻 · " + topDrive.name + " " + topDrive.val; return; }
+  const cap = document.getElementById("capName");
+  if (!cap || !chatReady) return;
   const c = curWin();
-  if (c.archived) sub.textContent = c.name + " · 已封存";
-  else if (boundWin && c.id !== boundWin) sub.textContent = c.name;
-  else sub.textContent = "此刻 · " + topDrive.name + " " + topDrive.val;
+  cap.textContent = c.name + (c.archived ? " · 已封存" : "");
+  /* 晤待在这个窗口时才有那片叶子；点胶囊进去看他此刻的状态 */
+  const leaf = document.getElementById("capLeaf");
+  if (leaf) leaf.style.display = (boundWin && c.id === boundWin) ? "" : "none";
   document.getElementById("sealedBar").style.display = c.archived ? "flex" : "none";
   document.getElementById("chatIn").style.display = c.archived ? "none" : "";
 }
@@ -2995,6 +3019,7 @@ function renderWinManage() {
   el.querySelectorAll(".nm").forEach((n, i) => n.textContent = chatData.windows[i].name);
 }
 winBtn.addEventListener("click", e => { e.stopPropagation(); renderWinMenu(); winMenu.classList.toggle("open"); });
+document.getElementById("newWinBtn").addEventListener("click", e => { e.stopPropagation(); winMenu.classList.remove("open"); winNew(); });
 winMenu.addEventListener("click", e => {
   const item = e.target.closest(".win-item");
   if (!item) return;
@@ -3003,14 +3028,13 @@ winMenu.addEventListener("click", e => {
   if (item.dataset.act === "manage") { openSub("windows"); return; }
   if (item.dataset.w) switchWin(item.dataset.w);
 });
-renderWinMenu();
+safe("窗口菜单", renderWinMenu);
 document.addEventListener("click", () => {
   winMenu.classList.remove("open");
   plusMenu.classList.remove("open"); plusBtn.classList.remove("open");
 });
 
 /* ================= 记忆页 ================= */
-let memCur = "全部", memEditId = null, memCache = [];
 function memHalfLife(imp) { return 7 * Math.pow(Math.max(1, imp || 3), 1.5); }
 function memEffLocal(c) {
   if (c.type === "约定") return 1;
@@ -3133,8 +3157,7 @@ document.getElementById("memTabs").addEventListener("click", e => {
 });
 
 /* ================= API 与花费 ================= */
-let apiConf = { list: [], chat: null, worker: null }, afCur = null;
-let SHOW_USAGE = load("wu.showUsage", false);
+SHOW_USAGE = load("wu.showUsage", false);
 
 async function apiRefresh() {
   if (!SERVER) { document.getElementById("apiNote").textContent = "需要连接服务器"; return; }
@@ -3310,7 +3333,6 @@ document.getElementById("bkPick").addEventListener("change", async e => {
 });
 
 /* ================= 外部服务 MCP ================= */
-let mcpList = [], mcpCur = null;
 async function mcpRefresh() {
   if (!SERVER) return;
   try { mcpList = await (await fetch("api/mcp")).json(); } catch { return; }
