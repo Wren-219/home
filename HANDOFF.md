@@ -6,7 +6,7 @@
 ## 项目是什么
 
 用户（她）和 AI 伙伴「晤」的私人移动端网页应用。单文件前端 `index.html` + 零依赖后端 `server.js`。
-已部署：Zeabur，域名 `wu-home.zeabur.app`。开发分支 `claude/ai-chat-frontend-ui-5bgjx8`（仓库现名 Wren-219/home）。
+已部署：Zeabur，域名 `wu-home.zeabur.app`。当前开发分支 `claude/read-handoff-md-es8ql0`（仓库 Wren-219/home）。
 
 - 页面密码默认 **0527**（可在设置里改，存 localStorage `wu.pin`）
 - 恋爱纪念日 **2026.05.27**（天数由此自动计算，别改）
@@ -16,7 +16,9 @@
 
 ## 架构与数据
 
-- **localStorage keys**：`wu.pin` / `wu.todos` / `wu.countdowns` / `wu.chat`（均为 JSON，`load()/save()` 两个助手函数）
+- **数据现在以服务器为准**（`/api/state`，存 `/app/data`）：`todos` / `countdowns` /
+  `diaries` / `letters` / `chat` / `photos`。localStorage 同名 `wu.*` 键只作断网兜底
+  （`load()/save()` 两个助手函数，`pushState()` 双写）
 - **后端**（server.js，Node 18+，无依赖）：
   - `GET /api/health` → `{ok, hasKey, model}`，前端以 `hasKey` 决定真聊天/演示模式
   - `POST /api/chat` `{messages}` → 流式转发 DeepSeek（SSE 原样透传）
@@ -34,7 +36,7 @@
    - 或把输入栏定位改为跟随 `visualViewport` 计算的绝对像素。
 2. **页面底部有时出现白色空块**。疑似 `height:100%` fixed body 与 Safari 工具栏收展/键盘收起后的视口残留。可尝试 `#frame { height: 100dvh; min-height: -webkit-fill-available; }`、或监听 visualViewport 后强制 reflow。
 
-调试技巧：Settings 页最底部有版本号（当前 v0.4）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
+调试技巧：Settings 页最底部有版本号（当前 v0.9）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
 
 ## 设计语言（请保持一致，她对审美很挑）
 
@@ -125,8 +127,37 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
    /api/worker-test 可自检干活模型连通性
 8. ⬜ iOS 键盘两 bug、Gmail MCP 笔友、看图翻译官（vision）、滚动摘要、fixation 念头池
 
+### 施工进度（2026.08.31 场）
+9. ✅ **她也能自己写了（v0.9）**：之前只有晤能写、她只能看，三处假按钮做成真的——
+   小票抽屉里直接加待办 / 划掉 / 一键清走已结清；日记「✎ 写一篇」新建、详情页
+   可编辑可删除、日历上点空白的一天直接开写；相册新增 `photos` 数据键（存服务器），
+   「＋ 添加」上传真照片、聊天里发的照片自动入册、点开是可翻页可删的全屏查看器，
+   Home 照片堆改读真照片（相册为空时仍用占位图撑版面）。
+   顺手删了设置页「API 接口 / MCP 接口」两张假卡片——那个 API Key 输入框会诱导
+   她把钥匙填进网页，与纪律冲突；换成只读的连接状态。状态页/倒数日页过期文案清掉。
+10. ✅ **数据加了真锁**：之前 0527 只是前端 localStorage 的挡板，
+   `/api/state`、`/api/memories`、`/admin` 全裸奔——知道域名就能读走她全部日记和信。
+   现在 `POST /api/login` 用四位密码换一年期 HttpOnly cookie（token = sha256(pin:salt)），
+   `/api/*` 与 `/files/*` 未登录一律 401；改密码换新 salt → 其他设备旧登录立刻失效；
+   新增环境变量 `WU_PIN`（设了以它为准，是忘记密码时的找回入口）。
+   前端把拉数据推迟到解锁之后，401 自动退回锁屏、重输即可继续，数据不丢。
+   **服务器是密码的唯一真相**，本机 localStorage 只做断网兜底。
+
+   **离开 5 分钟自动上锁**：手机息屏或切去别的 App 超过 5 分钟，回来要重输密码
+   （常量 `AUTO_LOCK_MS` 在 index.html 里，想改时长改这一个数）。短暂切出去不打断；
+   锁上只是把界面藏起来，写到一半的日记草稿和数据都不丢。
+   注意：她每次「重新打开网页」本来就会走锁屏——通行证 cookie 管的是服务器认不认
+   这台设备，跟锁屏是两层，别混起来。
+
+   ⚠️ 部署后第一次打开需要重新输一次 0527（cookie 是新的），这是正常的。
+   如果她之前在设置里改过密码，服务器还不认——锁屏会提示"先用 0527 进去，
+   再到设置里改一次"，照做即可。
+
+**下一步（与她商定的顺序）**：③ 晤能看图（vision 翻译官）→ ④ 长对话滚动摘要
+（顺带把聊天多窗口做成真的）。iOS 键盘两 bug 她已确认可以往后放。
+
 **部署提醒**：她需要①确认 wu-home 挂了 Volume（wu-data → /app/data）
-②Zeabur Redeploy ③Settings 页看到 v0.5 才算生效。蒸馏与 dream 需要
+②Zeabur Redeploy ③Settings 页看到当前版本号才算生效。蒸馏与 dream 需要
 LLM Key 生效（沿用 DEEPSEEK_API_KEY 即可，新名 LLM_API_KEY 也认）。
 - **长对话策略**：目前仅送最近 24 条。后续做"滚动摘要"——更早的对话由 LLM 压缩成
   摘要并入记忆系统，与记忆蒸馏（里程碑 6）是同一条流水线

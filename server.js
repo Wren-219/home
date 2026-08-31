@@ -8,6 +8,8 @@
  *   LLM_BASE_URL / DEEPSEEK_BASE_URL   选填，默认 https://api.deepseek.com（OpenAI 风格）
  *   LLM_MODEL / DEEPSEEK_MODEL         选填，默认 deepseek-chat
  *   WU_PERSONA                         选填，晤的人设（覆盖默认）
+ *   WU_PIN                             选填，四位页面密码；设了就以它为准（忘记密码时的后门），
+ *                                      不设则用 data/auth.json 里的，默认 0527
  *   DATA_DIR                           选填，数据目录；Zeabur 挂载 /app/data 时自动使用
  *   PORT                               选填，默认 8080
  */
@@ -48,7 +50,48 @@ function writeJson(name, obj) {
   fs.writeFileSync(tmp, JSON.stringify(obj));
   fs.renameSync(tmp, fp);
 }
-const STATE_KEYS = ["todos", "countdowns", "diaries", "letters", "chat"];
+const STATE_KEYS = ["todos", "countdowns", "diaries", "letters", "chat", "photos"];
+
+/* ================= 门锁 =================
+   她的日记、信、聊天记录、记忆都在这台服务器上，不能谁知道域名就能读。
+   四位密码 → 一个长期 cookie；改密码会换 salt，旧 cookie 立刻作废。 */
+const ENV_PIN = (process.env.WU_PIN || "").trim();
+function authFile() {
+  const a = readJson("auth", null);
+  if (a && a.salt) return a;
+  const fresh = { pin: "0527", salt: crypto.randomBytes(16).toString("hex") };
+  writeJson("auth", fresh);
+  return fresh;
+}
+function currentPin() { return ENV_PIN || authFile().pin || "0527"; }
+function tokenOf() {
+  return crypto.createHash("sha256").update(currentPin() + ":" + authFile().salt).digest("hex");
+}
+function cookieOf(req, name) {
+  const raw = req.headers.cookie || "";
+  for (const part of raw.split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return null;
+}
+function authed(req) {
+  const got = cookieOf(req, "wu");
+  if (!got) return false;
+  const a = Buffer.from(got), b = Buffer.from(tokenOf());
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function setAuthCookie(req, res) {
+  const secure = String(req.headers["x-forwarded-proto"] || "").includes("https");
+  res.setHeader("Set-Cookie",
+    "wu=" + tokenOf() + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" + (secure ? "; Secure" : ""));
+}
+/* 公开：健康检查（不带细节）与登录本身；页面文件本身不含数据，也放行 */
+const PUBLIC_PATHS = new Set(["/api/health", "/api/login"]);
+function guarded(p) {
+  if (PUBLIC_PATHS.has(p)) return false;
+  return p.startsWith("/api/") || p.startsWith("/files/");
+}
 
 /* ================= 记忆引擎 ================= */
 /* 记忆卡：{id, date, type(事件|喜好|约定|情绪|日常), content, tags[], importance 1-5,
@@ -391,10 +434,34 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const p = url.pathname;
   try {
-    /* ---- 健康检查 ---- */
+    /* ---- 门卫：数据接口与上传的文件都要先登录 ---- */
+    if (guarded(p) && !authed(req)) { sendJson(res, 401, { error: "请先输入密码" }); return; }
+
+    /* ---- 登录：四位密码换一个长期 cookie ---- */
+    if (p === "/api/login" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 4096));
+      if (String(body.pin || "") !== currentPin()) { sendJson(res, 403, { error: "密码不对" }); return; }
+      setAuthCookie(req, res);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    /* ---- 改密码：换 salt，其他设备上的旧 cookie 立刻失效 ---- */
+    if (p === "/api/pin" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 4096));
+      if (ENV_PIN) { sendJson(res, 400, { error: "密码由服务器的 WU_PIN 固定，请在 Zeabur 改" }); return; }
+      if (String(body.cur || "") !== currentPin()) { sendJson(res, 403, { error: "当前密码不对" }); return; }
+      if (!/^\d{4}$/.test(String(body.next || ""))) { sendJson(res, 400, { error: "新密码要是四位数字" }); return; }
+      writeJson("auth", { pin: String(body.next), salt: crypto.randomBytes(16).toString("hex") });
+      setAuthCookie(req, res);          // 这台设备继续用，别把自己锁在外面
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    /* ---- 健康检查（登录后才给细节） ---- */
     if (req.method === "GET" && p === "/api/health") {
+      if (!authed(req)) { sendJson(res, 200, { ok: true, authed: false }); return; }
       sendJson(res, 200, {
-        ok: true, hasKey: !!API_KEY, model: MODEL,
+        ok: true, authed: true, hasKey: !!API_KEY, model: MODEL,
         worker: WORKER_MODEL, workerSame: WORKER_BASE === API_BASE && WORKER_MODEL === MODEL,
         dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
       });

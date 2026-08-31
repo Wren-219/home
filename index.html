@@ -274,6 +274,38 @@
     opacity: .75;
   }
   .rc-no { font-size: 8px; color: rgba(75,85,103,.45); letter-spacing: .2em; }
+  /* 小票上手写一笔：输入行也长成票据的样子 */
+  .rc-item .rm { flex-shrink: 0; color: rgba(75,85,103,.3); padding: 0 2px 0 6px; font-size: 13px; }
+  .rc-form { display: flex; align-items: baseline; gap: 8px; padding: 6px 0 2px; }
+  .rc-form input {
+    border: none; border-bottom: 1px dashed rgba(75,85,103,.4); background: none; outline: none;
+    font-family: var(--mono); font-size: 13px; color: var(--paper-ink); padding: 3px 2px;
+  }
+  .rc-form input::placeholder { color: rgba(75,85,103,.35); }
+  .rc-form .f-tx { flex: 1; min-width: 0; }
+  .rc-form .f-tm { width: 64px; flex-shrink: 0; }
+  .rc-form button {
+    border: 1px solid rgba(75,85,103,.35); background: none; color: var(--paper-ink);
+    font-family: var(--mono); font-size: 11px; padding: 4px 10px; border-radius: 3px; cursor: pointer; flex-shrink: 0;
+  }
+  .rc-clear { text-align: center; font-size: 9.5px; color: rgba(75,85,103,.5); padding: 6px 0 0; cursor: pointer; letter-spacing: .06em; }
+
+  /* ── 照片查看器 ── */
+  #viewer {
+    position: absolute; inset: 0; z-index: 80; background: rgba(28,33,44,.96);
+    display: none; flex-direction: column; opacity: 0; transition: opacity .25s;
+  }
+  #viewer.open { display: flex; opacity: 1; }
+  .vw-top { flex-shrink: 0; display: flex; align-items: center; padding: calc(var(--sat) + 14px) 18px 6px; color: rgba(255,255,255,.75); }
+  .vw-top .n { font-size: 12px; letter-spacing: .1em; }
+  .vw-top .ops { margin-left: auto; display: flex; gap: 6px; }
+  .vw-top button { border: none; background: rgba(255,255,255,.12); color: rgba(255,255,255,.8);
+    border-radius: 999px; padding: 7px 15px; font-size: 12px; cursor: pointer; }
+  .vw-top button.del { color: #F0A48B; }
+  .vw-body { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px 14px; min-height: 0; }
+  .vw-body img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; }
+  .vw-foot { flex-shrink: 0; text-align: center; color: rgba(255,255,255,.4); font-size: 11px;
+    padding: 8px 0 calc(var(--sab) + 18px); letter-spacing: .08em; }
 
   /* ── 日记本 ── */
   .notebook {
@@ -666,6 +698,7 @@
   .btn:active { transform: scale(.95); }
   .btn.ghost { background: rgba(126,150,184,.12); color: var(--ink-soft); box-shadow: none; }
   .set-note { font-size: 11px; color: var(--ink-faint); line-height: 1.8; padding: 0 6px; }
+  .set-line { font-size: 13px; line-height: 2.1; color: var(--ink-soft); white-space: pre-line; }
 
   /* toast */
   #toast {
@@ -885,15 +918,13 @@
       <div class="set-pad">
         <div class="set-title">设置</div>
         <div class="set-card">
-          <div class="set-card-title">API 接口<span class="en">API CONNECTION</span></div>
-          <div class="field"><label>API 地址</label><input type="text" placeholder="https://api.example.com/v1"></div>
-          <div class="field"><label>API Key</label><input type="password" placeholder="sk-••••••••••••••••"></div>
-          <div class="btn-row"><button class="btn" onclick="toast('已保存（预览版暂不生效）')">保存</button></div>
-        </div>
-        <div class="set-card">
-          <div class="set-card-title">MCP 接口<span class="en">MCP CONNECTION</span></div>
-          <div class="field"><label>MCP 服务器地址</label><input type="text" placeholder="mcp://localhost:3000"></div>
-          <div class="btn-row"><button class="btn" onclick="toast('已保存（预览版暂不生效）')">保存</button></div>
+          <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
+          <div class="set-line" id="setHealth">检查中…</div>
+          <div class="set-note" style="padding:12px 2px 0">
+            模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。<br>
+            密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
+            每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。
+          </div>
         </div>
         <div class="set-card">
           <div class="set-card-title">页面密码<span class="en">PASSCODE</span></div>
@@ -901,7 +932,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 页面密码修改已生效（保存在本机浏览器）。聊天的 DeepSeek Key 配置在服务器环境变量里，不填在页面上；MCP 接口待接入。清单 / 倒数日 / 聊天记录已支持本地保存。<br>版本 v0.8.1（你也能写信给晤了；修复管理台日记覆盖）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v0.9（清单能自己加了 · 日记能写能改 · 相册接了真照片 · 服务器加了锁 · 离开 5 分钟自动上锁）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -924,7 +955,7 @@
         <div id="driveList"></div>
         <div class="st-foot">
           疲惫是闸，不是欲望——不参与召唤力排序，过阈值就去歇着。<br>
-          · 静态预览 · 数据为示例，待接入驱动引擎 ·
+          这些数值随时间自己涨落，也会被你们的对话推动。
         </div>
       </div>
     </section>
@@ -946,7 +977,7 @@
           </div>
         </div>
         <div id="cdList"></div>
-        <div class="cd-note">倒数日与日历互通 · 目标日期会在日历中以 ♥ 标记<br>· 静态预览 · 数据保存在本页内存中 ·</div>
+        <div class="cd-note">倒数日与日历互通 · 目标日期会在日历中以 ♥ 标记</div>
       </div>
     </section>
 
@@ -1000,7 +1031,9 @@
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('photos')">‹ 返回</button>
         <div class="sp-title">照片</div>
+        <button class="sp-act" onclick="document.getElementById('pickAlbum').click()">＋ 添加</button>
       </div>
+      <input type="file" id="pickAlbum" accept="image/*" multiple hidden>
       <div class="sp-scroll">
         <div class="pg-count" id="pgCount"></div>
         <div class="pg-grid" id="pgGrid"></div>
@@ -1012,8 +1045,24 @@
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('diary')">‹ 返回</button>
         <div class="sp-title">日记</div>
+        <button class="sp-act" onclick="diaryNew()">✎ 写一篇</button>
       </div>
-      <div class="sp-scroll" id="diaryList"></div>
+      <div class="sp-scroll">
+        <div class="cd-form" id="diaryForm" style="display:none">
+          <div class="row">
+            <input type="date" id="dfDate">
+            <input type="text" id="dfW" placeholder="天气" style="max-width:96px">
+          </div>
+          <div class="row"><input type="text" id="dfTitle" placeholder="给今天起个标题…"></div>
+          <div class="row"><textarea id="dfContent" rows="8" placeholder="今天发生了什么…（空行分段）"></textarea></div>
+          <div class="ops">
+            <button class="btn ghost" id="dfDel" style="display:none" onclick="diaryDelCur()">删除这篇</button>
+            <button class="btn ghost" onclick="diaryCancel()">取消</button>
+            <button class="btn" onclick="diarySave()">保存</button>
+          </div>
+        </div>
+        <div id="diaryList"></div>
+      </div>
     </section>
 
     <!-- ===== 子页：日记详情 ===== -->
@@ -1021,6 +1070,7 @@
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('diaryDetail')">‹ 返回</button>
         <div class="sp-title" id="ddHeadTitle">日记</div>
+        <button class="sp-act" id="ddEditBtn" onclick="diaryEditCur()">编辑</button>
       </div>
       <div class="sp-scroll">
         <div class="dd-paper">
@@ -1042,12 +1092,18 @@
         </div>
         <hr class="rc-dash">
         <div id="todoList"></div>
-        <div class="rc-add" onclick="toast('新增一项 · 敬请期待')">＋ 新增一项</div>
+        <div class="rc-add" id="todoAddBtn">＋ 新增一项</div>
+        <div class="rc-form" id="todoForm" style="display:none">
+          <input type="text" class="f-tx" id="tfText" placeholder="要做的事…">
+          <input type="text" class="f-tm" id="tfTime" placeholder="时间">
+          <button id="tfOk">记上</button>
+        </div>
         <hr class="rc-dash">
         <div class="rc-prog" id="todoProg"></div>
+        <div class="rc-clear" id="todoClear">清走已结清的 ›</div>
         <hr class="rc-dash">
         <div class="rc-foot">
-          <div class="th">— 今天也辛苦了 · 零点后未结清的会自动清零 —</div>
+          <div class="th">— 今天也辛苦了 · 结清的可以随时收走 —</div>
           <div><span class="paid-stamp">PAID · 谢谢</span></div>
           <div class="rc-barcode"></div>
           <div class="rc-no">NO.0527</div>
@@ -1075,6 +1131,19 @@
       </button>
     </nav>
 
+  </div>
+
+  <!-- ===== 照片查看器 ===== -->
+  <div id="viewer">
+    <div class="vw-top">
+      <span class="n" id="vwDate"></span>
+      <div class="ops">
+        <button class="del" id="vwDel">删除</button>
+        <button onclick="closeViewer()">关闭</button>
+      </div>
+    </div>
+    <div class="vw-body" id="vwBody"><img id="vwImg" alt=""></div>
+    <div class="vw-foot" id="vwFoot"></div>
   </div>
 
   <div id="toast"></div>
@@ -1305,7 +1374,7 @@ function pushState(key, val) {
   if (SERVER) fetch("api/state/" + key, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(val),
-  }).catch(() => {});
+  }).then(r => { if (r.status === 401) relock(); }).catch(() => {});
 }
 function fmt12(d) {
   let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
@@ -1338,15 +1407,28 @@ const TART_PHOTOS = [
 /* ================= 密码锁 ================= */
 let PIN = "0527";
 try { PIN = localStorage.getItem("wu.pin") || "0527"; } catch {}
-function changePin() {
+async function changePin() {
   const cur = document.getElementById("pwCur");
   const nw = document.getElementById("pwNew");
-  if (cur.value !== PIN) { toast("当前密码不对哦"); return; }
   if (!/^\d{4}$/.test(nw.value)) { toast("新密码需为四位数字"); return; }
+  if (SERVER) {
+    /* 服务器是密码的唯一真相；改完其他设备要重新输入 */
+    let j = {};
+    try {
+      const r = await fetch("api/pin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cur: cur.value, next: nw.value }),
+      });
+      j = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(j.error || "改不了，稍后再试"); return; }
+    } catch { toast("连不上服务器，改不了"); return; }
+  } else if (cur.value !== PIN) {
+    toast("当前密码不对哦"); return;
+  }
   PIN = nw.value;
   try { localStorage.setItem("wu.pin", PIN); } catch {}
   cur.value = ""; nw.value = "";
-  toast("密码已修改 ✓");
+  toast(SERVER ? "密码已修改 ✓ 其他设备要重新输入" : "密码已修改 ✓");
 }
 let pinBuf = "";
 const pinDots = document.getElementById("pinDots");
@@ -1368,20 +1450,64 @@ document.addEventListener("keydown", e => {
 function renderPin() {
   [...pinDots.children].forEach((d, i) => d.classList.toggle("filled", i < pinBuf.length));
 }
-function checkPin() {
-  setTimeout(() => {
-    if (pinBuf === PIN) {
-      const lock = document.getElementById("lockScreen");
-      document.getElementById("app").classList.add("ready");
-      lock.classList.add("unlocked");
-      setTimeout(() => lock.style.display = "none", 600);
-    } else {
-      pinDots.classList.add("shake", "error");
-      document.getElementById("lockHint").textContent = "密码不对哦，再试一次";
-      setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); }, 450);
-    }
-  }, 150);
+/* 密码交给服务器验：认了才发数据 cookie。连不上服务器时用本机密码兜底 */
+let pinBusy = false;
+async function checkPin() {
+  if (pinBusy) return;
+  pinBusy = true;
+  const hint = document.getElementById("lockHint");
+  hint.textContent = "";
+  let ok = null;                        /* true=服务器认了 false=不认 null=连不上 */
+  try {
+    const r = await fetch("api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: pinBuf }),
+    });
+    ok = r.ok;
+  } catch { ok = null; }
+  if (ok === true) {
+    PIN = pinBuf;                       /* 服务器说对，本机也记下来 */
+    try { localStorage.setItem("wu.pin", PIN); } catch {}
+    pinBusy = false; unlockApp(); return;
+  }
+  if (ok === null && pinBuf === PIN) { pinBusy = false; unlockApp(); return; }
+  pinDots.classList.add("shake", "error");
+  hint.textContent = (ok === false && pinBuf === PIN)
+    ? "服务器还不认这个密码，先用 0527 进去，再到设置里改一次"
+    : "密码不对哦，再试一次";
+  setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); pinBusy = false; }, 450);
 }
+function unlockApp() {
+  const lock = document.getElementById("lockScreen");
+  document.getElementById("app").classList.add("ready");
+  lock.classList.add("unlocked");
+  setTimeout(() => { lock.style.display = "none"; }, 600);
+  bootData();
+}
+/* 把门重新关上（数据都在服务器上，锁上不会丢任何东西） */
+function appUnlocked() { return document.getElementById("app").classList.contains("ready"); }
+function showLock(hint) {
+  const lock = document.getElementById("lockScreen");
+  lock.style.display = "";
+  lock.classList.remove("unlocked");
+  document.getElementById("app").classList.remove("ready");
+  pinBuf = ""; renderPin();
+  document.getElementById("lockHint").textContent = hint || "";
+}
+/* cookie 过期 / 在别处改了密码 */
+function relock() { SERVER = false; showLock("登录过期了，再输一次密码"); }
+
+/* ── 离开超过 5 分钟自动上锁 ──
+   手机息屏、切去别的 App 都算「离开」。别人拿到手机时的第二道门；
+   短暂切出去复制个东西再回来不会被打断 */
+const AUTO_LOCK_MS = 5 * 60 * 1000;
+let awayAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { awayAt = Date.now(); return; }
+  const away = awayAt ? Date.now() - awayAt : 0;
+  awayAt = 0;
+  if (appUnlocked() && away > AUTO_LOCK_MS) showLock("离开一会儿了，再输一次密码");
+});
 
 /* ================= 导航 & 子页 ================= */
 const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters"];
@@ -1530,20 +1656,94 @@ renderNotebook();
 
 /* 日记列表页 */
 function renderDiaryList() {
-  document.getElementById("diaryList").innerHTML = diaries.map((d, i) => `
+  const el = document.getElementById("diaryList");
+  if (!diaries.length) {
+    el.innerHTML = '<div class="mem-empty">还没有日记。<br>点右上角「✎ 写一篇」记下今天；<br>晤有时也会替你们写一篇。</div>';
+    return;
+  }
+  el.innerHTML = diaries.map((d, i) => `
     <div class="di-item" onclick="openDiary(${i})">
-      <div class="di-date">${d.date.replaceAll("-", ".")} · ${d.w}</div>
-      <div class="di-title">${d.title}</div>
-      <div class="di-ex">${d.content.split("\n")[0]}</div>
+      <div class="di-date">${(d.date || "").replaceAll("-", ".")}${d.w ? " · " + d.w : ""}</div>
+      <div class="di-title"></div>
+      <div class="di-ex"></div>
     </div>`).join("");
+  /* 标题与摘要用 textContent 填，避免她写的内容被当成 HTML */
+  const titles = el.querySelectorAll(".di-title"), exs = el.querySelectorAll(".di-ex");
+  diaries.forEach((d, i) => {
+    if (titles[i]) titles[i].textContent = d.title || "（无标题）";
+    if (exs[i]) exs[i].textContent = (d.content || "").split("\n")[0];
+  });
 }
+let ddCur = -1;    /* 详情页当前这篇日记的下标；看信时为 -1 */
 function openDiary(i) {
   const d = diaries[i];
+  ddCur = i;
   document.getElementById("ddHeadTitle").textContent = "日记";
-  document.getElementById("ddDate").textContent = d.date.replaceAll("-", ".") + " · " + d.w;
-  document.getElementById("ddTitle").textContent = d.title;
-  document.getElementById("ddBody").innerHTML = d.content.split("\n").filter(Boolean).map(p => `<p>${p}</p>`).join("");
+  document.getElementById("ddEditBtn").style.display = "";
+  document.getElementById("ddDate").textContent = (d.date || "").replaceAll("-", ".") + (d.w ? " · " + d.w : "");
+  document.getElementById("ddTitle").textContent = d.title || "";
+  document.getElementById("ddBody").innerHTML = "";
+  (d.content || "").split("\n").filter(Boolean).forEach(p => {
+    const el = document.createElement("p"); el.textContent = p;
+    document.getElementById("ddBody").appendChild(el);
+  });
   openSub("diaryDetail");
+}
+
+/* ── 她自己写日记：新建 / 编辑 / 删除 ── */
+let dfEditIdx = -1;
+function diaryNew(dateStr) {
+  dfEditIdx = -1;
+  const n = new Date();
+  document.getElementById("dfDate").value = dateStr || (n.getFullYear() + "-" + pad(n.getMonth() + 1) + "-" + pad(n.getDate()));
+  document.getElementById("dfW").value = "";
+  document.getElementById("dfTitle").value = "";
+  document.getElementById("dfContent").value = "";
+  document.getElementById("dfDel").style.display = "none";
+  document.getElementById("diaryForm").style.display = "block";
+  if (!document.getElementById("page-diary").classList.contains("open")) openSub("diary");
+  document.querySelector("#page-diary .sp-scroll").scrollTop = 0;
+}
+function diaryCancel() { document.getElementById("diaryForm").style.display = "none"; dfEditIdx = -1; }
+function diarySave() {
+  const date = document.getElementById("dfDate").value;
+  const title = document.getElementById("dfTitle").value.trim();
+  const content = document.getElementById("dfContent").value.trim();
+  if (!date) { toast("挑一个日期吧"); return; }
+  if (!title && !content) { toast("写点什么再保存嘛"); return; }
+  const entry = { date, w: document.getElementById("dfW").value.trim(), title: title || "无题", content };
+  if (dfEditIdx >= 0) diaries[dfEditIdx] = entry;
+  else diaries.unshift(entry);
+  diaries.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  pushState("diaries", diaries);
+  diaryCancel();
+  renderDiaryList(); renderNotebook(); renderWeek();
+  if (document.getElementById("page-calendar").classList.contains("open")) renderCal();
+  toast("已收进日记本 ✓");
+}
+/* 从详情页进入编辑 */
+function diaryEditCur() {
+  if (ddCur < 0) return;
+  const d = diaries[ddCur];
+  dfEditIdx = ddCur;
+  document.getElementById("dfDate").value = d.date || "";
+  document.getElementById("dfW").value = d.w || "";
+  document.getElementById("dfTitle").value = d.title || "";
+  document.getElementById("dfContent").value = d.content || "";
+  document.getElementById("dfDel").style.display = "";
+  document.getElementById("diaryForm").style.display = "block";
+  closeSub("diaryDetail");
+  if (!document.getElementById("page-diary").classList.contains("open")) openSub("diary");
+  document.querySelector("#page-diary .sp-scroll").scrollTop = 0;
+}
+function diaryDelCur() {
+  if (dfEditIdx < 0) return;
+  diaries.splice(dfEditIdx, 1);
+  pushState("diaries", diaries);
+  diaryCancel();
+  renderDiaryList(); renderNotebook(); renderWeek();
+  if (document.getElementById("page-calendar").classList.contains("open")) renderCal();
+  toast("已删除");
 }
 
 /* ================= 本周日历条 ================= */
@@ -1595,7 +1795,9 @@ document.getElementById("calGrid").addEventListener("click", e => {
   if (idx >= 0) { openDiary(idx); return; }
   const cd = countdowns.find(c => c.date === key);
   if (cd) { toast("♥ " + cd.name + " · " + key.replaceAll("-", ".")); return; }
-  toast(key.replaceAll("-", ".") + " · 这一天还没有日记");
+  /* 这天还空着 → 直接替她翻开这一页 */
+  closeSub("calendar");
+  diaryNew(key);
 });
 
 /* ================= 票据 To-do ================= */
@@ -1612,13 +1814,17 @@ function renderTodos() {
     <div class="rc-item ${t.done ? "done" : ""}" data-i="${i}">
       <span class="bx">[${t.done ? "✓" : "&nbsp;"}]</span>
       <span class="tx">${t.text}${t.byAI ? ' <span class="by">晤</span>' : ""}</span>
-      <span class="tm">${t.time}</span>
+      <span class="tm">${t.time || ""}</span>
+      <span class="rm" data-del="${i}">×</span>
     </div>`).join("");
   const doneN = todos.filter(t => t.done).length, total = todos.length;
-  const filled = Math.round(doneN / total * 10);
-  const prog = "█".repeat(filled) + "░".repeat(10 - filled) + " " + doneN + "/" + total;
-  document.getElementById("todoProg").textContent =
-    "小计 " + total + " 项 · 已结清 " + doneN + " · 未结清 " + (total - doneN) + "\n" + prog;
+  const filled = total ? Math.round(doneN / total * 10) : 0;
+  const prog = total
+    ? "█".repeat(filled) + "░".repeat(10 - filled) + " " + doneN + "/" + total
+    : "今天还是一张白票";
+  document.getElementById("todoProg").textContent = total
+    ? "小计 " + total + " 项 · 已结清 " + doneN + " · 未结清 " + (total - doneN) + "\n" + prog
+    : prog;
   /* Home 折叠小票摘要：只露前两条未完成 */
   const pending = todos.filter(t => !t.done).slice(0, 2);
   document.getElementById("rmItems").innerHTML = pending.length
@@ -1629,11 +1835,43 @@ function renderTodos() {
   document.getElementById("rmProg").textContent = prog;
 }
 document.getElementById("todoList").addEventListener("click", e => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    todos.splice(+del.dataset.del, 1);
+    pushState("todos", todos); renderTodos(); toast("已划掉");
+    return;
+  }
   const item = e.target.closest(".rc-item");
   if (!item) return;
   todos[item.dataset.i].done = !todos[item.dataset.i].done;
   pushState("todos", todos);
   renderTodos();
+});
+/* 她自己往小票上添一笔 */
+const todoForm = document.getElementById("todoForm");
+document.getElementById("todoAddBtn").addEventListener("click", () => {
+  const open = todoForm.style.display === "flex";
+  todoForm.style.display = open ? "none" : "flex";
+  if (!open) document.getElementById("tfText").focus();
+});
+function todoAdd() {
+  const tx = document.getElementById("tfText");
+  const tm = document.getElementById("tfTime");
+  const text = tx.value.trim();
+  if (!text) { tx.focus(); return; }
+  todos.push({ text, time: tm.value.trim(), done: false });
+  tx.value = ""; tm.value = "";
+  pushState("todos", todos); renderTodos();
+  tx.focus();
+}
+document.getElementById("tfOk").addEventListener("click", todoAdd);
+todoForm.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); todoAdd(); } });
+document.getElementById("todoClear").addEventListener("click", () => {
+  const n = todos.filter(t => t.done).length;
+  if (!n) { toast("还没有结清的事项"); return; }
+  for (let i = todos.length - 1; i >= 0; i--) if (todos[i].done) todos.splice(i, 1);
+  pushState("todos", todos); renderTodos();
+  toast("收走了 " + n + " 项 ✓");
 });
 renderTodos();
 (function(){
@@ -1806,6 +2044,8 @@ function ltSave() {
 function readLetter(cat, i) {
   const l = letters[cat][i];
   if (!l.content) { toast("这封信还没有正文"); return; }
+  ddCur = -1;
+  document.getElementById("ddEditBtn").style.display = "none";
   document.getElementById("ddHeadTitle").textContent = "信";
   document.getElementById("ddDate").textContent = l.d + " · " + l.s;
   document.getElementById("ddTitle").textContent = l.t;
@@ -1834,22 +2074,96 @@ function renderMailSummary() {
 }
 renderMailSummary();
 
-/* ================= 照片堆 & 照片页 ================= */
-const ALL_PHOTOS = [
+/* ================= 照片堆 & 相册 =================
+   photos = [{url, date}]；相册为空时先用占位图撑住版面 */
+const PLACEHOLDER_PHOTOS = [
   ...PHOTOS, ...TART_PHOTOS,
   phImg("#D9E4EE", "#8FA8C4", "🎡"),
   phImg("#E4E9DC", "#A3B18A", "🍃"),
   phImg("#EFE2E4", "#C39BA4", "🌸"),
   phImg("#E2E6EF", "#94A3C0", "☁️"),
 ];
+let photos = load("wu.photos", []);
+const hasPhotos = () => photos.length > 0;
+function photoSrcs() { return hasPhotos() ? photos.map(p => p.url) : PLACEHOLDER_PHOTOS; }
+function todayStr() { const n = new Date(); return n.getFullYear() + "-" + pad(n.getMonth() + 1) + "-" + pad(n.getDate()); }
+
 function renderPhotosPage() {
-  document.getElementById("pgCount").textContent = ALL_PHOTOS.length + " PHOTOS · 共同的相册";
+  document.getElementById("pgCount").textContent = hasPhotos()
+    ? photos.length + " PHOTOS · 共同的相册"
+    : "相册还空着 · 点右上角「＋ 添加」放第一张进来";
   document.getElementById("pgGrid").innerHTML =
-    ALL_PHOTOS.map(s => `<img src="${s}" onclick="toast('照片查看器 · 敬请期待')">`).join("");
+    photoSrcs().map((s, i) => `<img src="${s}" loading="lazy" onclick="openViewer(${i})">`).join("");
 }
-new PhotoStack("#homeStack", PHOTOS, {
-  width: 138, height: 178, counter: true,
-  onTap: () => openSub("photos"),
+/* Home 上的照片堆：数据变了要重建 */
+let homeStack = null;
+function renderHomeStack() {
+  const box = document.getElementById("homeStack");
+  if (homeStack) { homeStack.destroy(); homeStack = null; }
+  box.innerHTML = "";
+  homeStack = new PhotoStack(box, photoSrcs().slice(0, 6), {
+    width: 138, height: 178, counter: true,
+    onTap: () => openSub("photos"),
+  });
+}
+renderHomeStack();
+
+/* ── 添加照片到相册 ── */
+async function addPhotosToAlbum(files) {
+  if (!files.length) return;
+  toast(SERVER ? "上传中…" : "处理中…");
+  let added = 0;
+  for (const f of files.slice(0, 9)) {
+    const url = (await uploadFile(f)) || (await fileToDataURL(f));
+    if (!url) continue;
+    photos.unshift({ url, date: todayStr() });
+    added++;
+  }
+  if (!added) { toast("没能存下来，再试一次？"); return; }
+  pushState("photos", photos);
+  renderPhotosPage(); renderHomeStack();
+  toast("收进相册 " + added + " 张 ✓");
+}
+document.getElementById("pickAlbum").addEventListener("change", async e => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  await addPhotosToAlbum(files);
+});
+
+/* ── 照片查看器 ── */
+let vwIdx = 0;
+function openViewer(i) {
+  const srcs = photoSrcs();
+  if (!srcs.length) return;
+  vwIdx = Math.max(0, Math.min(srcs.length - 1, i));
+  renderViewer();
+  document.getElementById("viewer").classList.add("open");
+}
+function renderViewer() {
+  const srcs = photoSrcs();
+  document.getElementById("vwImg").src = srcs[vwIdx];
+  document.getElementById("vwFoot").textContent = (vwIdx + 1) + " / " + srcs.length + " · 点两边翻页";
+  document.getElementById("vwDate").textContent = hasPhotos() ? (photos[vwIdx].date || "").replaceAll("-", ".") : "示例照片";
+  document.getElementById("vwDel").style.display = hasPhotos() ? "" : "none";
+}
+function closeViewer() { document.getElementById("viewer").classList.remove("open"); }
+document.getElementById("vwBody").addEventListener("click", e => {
+  const r = e.currentTarget.getBoundingClientRect();
+  const srcs = photoSrcs();
+  if (e.clientX < r.left + r.width * 0.35) vwIdx = (vwIdx - 1 + srcs.length) % srcs.length;
+  else if (e.clientX > r.left + r.width * 0.65) vwIdx = (vwIdx + 1) % srcs.length;
+  else return;
+  renderViewer();
+});
+document.getElementById("vwDel").addEventListener("click", () => {
+  if (!hasPhotos()) return;
+  photos.splice(vwIdx, 1);
+  pushState("photos", photos);
+  renderPhotosPage(); renderHomeStack();
+  if (!photos.length) { closeViewer(); toast("相册空了"); return; }
+  vwIdx = Math.min(vwIdx, photos.length - 1);
+  renderViewer();
+  toast("已移出相册");
 });
 
 /* ================= 聊天 ================= */
@@ -1906,7 +2220,19 @@ rerenderChat();
 
 /* 后端探测：部署后有服务器 + Key 就走真 DeepSeek，否则本地演示回复 */
 let ONLINE = false;
-fetch("api/health").then(r => r.json()).then(j => { ONLINE = !!(j && j.hasKey); }).catch(() => {});
+function checkHealth() { fetch("api/health").then(r => r.json()).then(j => {
+  ONLINE = !!(j && j.hasKey);
+  const el = document.getElementById("setHealth");
+  if (!el || !j) return;
+  el.textContent =
+    "服务器　　" + (j.ok ? "已连接 ✓" : "连不上") + "\n" +
+    "聊天模型　" + (j.hasKey ? j.model : "未配置 Key（聊天走演示回复）") + "\n" +
+    "干活模型　" + (j.workerSame ? "与聊天模型相同" : j.worker) + "\n" +
+    "记忆　　　" + (j.memories ?? 0) + " 张";
+}).catch(() => {
+  const el = document.getElementById("setHealth");
+  if (el) el.textContent = "服务器　　连不上（本地模式，数据只存在这台手机上）";
+}); }
 
 const cannedReplies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
 function toApiMessages() {
@@ -2050,6 +2376,13 @@ document.getElementById("pickPhoto").addEventListener("change", async e => {
   pendingAtt = { type: "photo", imgs };
   renderAtt();
   e.target.value = "";
+  /* 聊天里发的真照片同时收进相册（本地兜底的 dataURL 太大，不入册） */
+  const real = imgs.filter(u => typeof u === "string" && u.startsWith("/files/"));
+  if (real.length) {
+    real.forEach(url => photos.unshift({ url, date: todayStr() }));
+    pushState("photos", photos);
+    renderPhotosPage(); renderHomeStack();
+  }
 });
 document.getElementById("pickFile").addEventListener("change", async e => {
   const f = e.target.files[0];
@@ -2203,7 +2536,6 @@ document.getElementById("memTabs").addEventListener("click", e => {
   document.querySelectorAll("#memTabs .lt-tab").forEach(x => x.classList.toggle("active", x === t));
   memRefresh();
 });
-memRefresh();
 
 /* 聊天后轻量同步：晤用工具改动的清单/日记/信箱回流到界面 */
 async function refreshShared() {
@@ -2211,7 +2543,7 @@ async function refreshShared() {
   try {
     const s = await (await fetch("api/state")).json();
     if (Array.isArray(s.todos)) { todos.length = 0; todos.push(...s.todos); renderTodos(); }
-    if (Array.isArray(s.diaries)) { diaries.length = 0; diaries.push(...s.diaries); renderNotebook(); }
+    if (Array.isArray(s.diaries)) { diaries.length = 0; diaries.push(...s.diaries); renderNotebook(); renderWeek(); renderDiaryList(); }
     if (s.letters && Array.isArray(s.letters.ai)) {
       letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || [];
       renderMailSummary();
@@ -2219,10 +2551,12 @@ async function refreshShared() {
   } catch {}
 }
 
-/* ================= 启动时从服务器拉取数据 ================= */
-(async function pullState() {
+/* ================= 解锁后才从服务器拉取数据 ================= */
+function bootData() { checkHealth(); pullState(); }
+async function pullState() {
   try {
     const r = await fetch("api/state");
+    if (r.status === 401) { relock(); return; }
     if (!r.ok) throw 0;
     const s = await r.json();
     SERVER = true;
@@ -2235,11 +2569,13 @@ async function refreshShared() {
     if (Array.isArray(s.diaries) && s.diaries.length) { diaries.length = 0; diaries.push(...s.diaries); } else put("diaries", diaries);
     if (s.letters && Array.isArray(s.letters.ai)) { letters.ai = s.letters.ai; letters.mine = s.letters.mine || []; letters.pen = s.letters.pen || []; renderMailSummary(); } else put("letters", letters);
     if (Array.isArray(s.chat) && s.chat.length) { chatLog = s.chat; rerenderChat(); } else put("chat", chatLog);
+    if (Array.isArray(s.photos)) photos = s.photos; else put("photos", photos);
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
-    memRefresh();
+    renderPhotosPage(); renderHomeStack();
     fetchDrives();
   } catch {}
-})();
+  memRefresh();
+}
 
 /* ================= iOS 键盘适配 =================
    键盘弹出 → 隐藏底部导航（藏到键盘下面）、输入栏贴紧键盘 */
