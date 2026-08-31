@@ -48,7 +48,7 @@ function writeJson(name, obj) {
   fs.writeFileSync(tmp, JSON.stringify(obj));
   fs.renameSync(tmp, fp);
 }
-const STATE_KEYS = ["todos", "countdowns", "diaries", "letters", "chat"];
+const STATE_KEYS = ["todos", "countdowns", "diaries", "letters", "chat", "photos"];
 
 /* ================= 记忆引擎 ================= */
 /* 记忆卡：{id, date, type(事件|喜好|约定|情绪|日常), content, tags[], importance 1-5,
