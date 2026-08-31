@@ -438,25 +438,27 @@
     backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
     opacity: 0; pointer-events: none; transition: opacity .22s; }
   #msgScrim.open { opacity: 1; pointer-events: auto; }
+  /* 贴着那条消息浮出来的小玻璃窗 */
   #msgSheet {
-    position: absolute; left: 20px; right: 20px; z-index: 56;
-    bottom: calc(var(--sab) + 16px);
-    border-radius: 24px; overflow: hidden;
-    background: rgba(250,251,253,.72);
+    position: absolute; z-index: 56; width: 182px;
+    border-radius: 20px; overflow: hidden;
+    background: rgba(250,251,253,.78);
     backdrop-filter: blur(28px) saturate(1.6); -webkit-backdrop-filter: blur(28px) saturate(1.6);
-    border: 1px solid rgba(255,255,255,.85);
-    box-shadow: 0 18px 44px rgba(70,90,120,.22), inset 0 1px 0 rgba(255,255,255,.9);
-    transform: translateY(18px) scale(.97); opacity: 0; pointer-events: none;
-    transition: all .26s cubic-bezier(.32,.72,.35,1);
+    border: 1px solid rgba(255,255,255,.88);
+    box-shadow: 0 16px 40px rgba(70,90,120,.22), inset 0 1px 0 rgba(255,255,255,.9);
+    opacity: 0; transform: scale(.92); pointer-events: none; visibility: hidden;
+    transition: opacity .17s ease, transform .19s cubic-bezier(.32,.72,.35,1);
   }
-  #msgSheet.open { transform: none; opacity: 1; pointer-events: auto; }
-  .ms-time { text-align: center; font-size: 11px; color: var(--ink-soft); padding: 14px 16px 12px;
-    border-bottom: 1px solid rgba(168,178,196,.2); letter-spacing: .04em; line-height: 1.7; }
-  .ms-time b { font-family: var(--serif); font-size: 15px; color: var(--ink); font-weight: normal; }
-  .ms-act { display: flex; align-items: center; gap: 11px; padding: 15px 20px; font-size: 15px; cursor: pointer; }
-  .ms-act + .ms-act { border-top: 1px solid rgba(168,178,196,.16); }
-  .ms-act .ic { font-size: 17px; width: 22px; text-align: center; }
-  .ms-act.cancel { justify-content: center; color: var(--ink-soft); font-size: 14px; }
+  #msgSheet.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; }
+  .ms-time { text-align: center; font-size: 11.5px; color: var(--ink-soft); padding: 10px 12px 9px;
+    border-bottom: 1px solid rgba(168,178,196,.18); letter-spacing: .03em; font-family: var(--mono); }
+  .ms-act { display: flex; align-items: center; gap: 10px; padding: 12px 15px; font-size: 14px; cursor: pointer; }
+  .ms-act + .ms-act { border-top: 1px solid rgba(168,178,196,.14); }
+  .ms-act:active { background: rgba(126,150,184,.10); }
+  .ms-act .ic { font-size: 15px; width: 18px; text-align: center; color: var(--ink-soft); }
+  .ms-act.danger { color: var(--coral); }
+  /* 被长按的那条抬一下，视觉上"被选中" */
+  .bub.picked { box-shadow: 0 8px 26px rgba(110,130,160,.22); transform: scale(1.015); transition: all .18s; }
   /* 窗口菜单里的条目 */
   .win-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .win-item .bound { font-size: 13px; margin-left: 4px; }
@@ -1032,11 +1034,13 @@
           <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
           <div class="set-line" id="setHealth">检查中…</div>
           <div class="set-line" id="setCtx" style="margin-top:2px"></div>
+          <div class="btn-row" style="margin-top:8px"><button class="btn ghost" id="btnRetry" style="display:none" onclick="retryConnect()">重新连接</button></div>
           <div class="set-note" style="padding:12px 2px 0">
             API Key 存在你自己的服务器上，页面里永远只显示后四位——手机丢了，钥匙也不会跟着走。
             Zeabur 环境变量那套一直留着当兜底，界面上配错了也不会把晤弄哑。<br>
             密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
             每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。<br>
+            外部服务（MCP）：填好地址和令牌、点「连一下」抓工具清单、再打开开关，晤就能用它做事。<br>
             聊天窗口：右上角切换，「⚙ 管理窗口」里可改名 / 封存 / 删除。晤的状态只跟着一个窗口，
             记忆和长期文件所有窗口共用。长按一条消息能看时间、改了重发、让晤重说一次。<br>
             长期文件在「记忆 → 长期文件」里管：「常驻」每轮都给晤看，「备查」他需要时自己翻；
@@ -1064,12 +1068,17 @@
           </div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">外部服务<span class="en">MCP</span></div>
+          <div id="mcpList"></div>
+          <div class="btn-row"><button class="btn" onclick="openSub('mcp')">管理外部服务</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">页面密码<span class="en">PASSCODE</span></div>
           <div class="field"><label>当前密码</label><input type="password" id="pwCur" placeholder="••••" maxlength="4"></div>
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.3（多窗口 · 晤的状态跟着一个窗口 · 封存 · 消息时间条 · 长按可改可重说）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.4（长按浮窗贴着消息了 · 接得上 MCP 外部服务 · 晤知道几点了 · 连不上会说清楚原因）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1168,7 +1177,6 @@
     <div id="msgSheet">
       <div class="ms-time" id="msTime"></div>
       <div id="msActs"></div>
-      <div class="ms-act cancel" onclick="closeMsgSheet()">取消</div>
     </div>
 
     <!-- ===== 子页：窗口管理 ===== -->
@@ -1226,6 +1234,30 @@
         </div>
         <div id="apiList"></div>
         <div class="cd-note" id="apiNote"></div>
+      </div>
+    </section>
+
+    <!-- ===== 子页：外部服务 MCP ===== -->
+    <section class="subpage" id="page-mcp">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('mcp')">‹ 返回</button>
+        <div class="sp-title">外部服务</div>
+        <button class="sp-act" onclick="mcpNew()">＋ 新增</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="cd-form" id="mcpForm" style="display:none">
+          <div class="row"><input type="text" id="mfName" placeholder="名字，如：Gmail"></div>
+          <div class="row"><input type="text" id="mfUrl" placeholder="MCP 服务地址 https://…" inputmode="url"></div>
+          <div class="row"><input type="password" id="mfToken" placeholder="访问令牌（有就填）" autocomplete="off"></div>
+          <div class="ops">
+            <button class="btn ghost" id="mfDel" style="display:none" onclick="mcpDelCur()">删除</button>
+            <button class="btn ghost" onclick="mcpConnectCur()">连一下</button>
+            <button class="btn ghost" onclick="mcpCancel()">取消</button>
+            <button class="btn" onclick="mcpSave()">保存</button>
+          </div>
+        </div>
+        <div id="mcpFull"></div>
+        <div class="cd-note" id="mcpNote"></div>
       </div>
     </section>
 
@@ -1573,6 +1605,12 @@ function save(key, val) {
 }
 /* 服务器同步：连上后端时数据以服务器为准，本地 localStorage 兜底 */
 let SERVER = false;
+/* 带超时的 fetch —— 服务器起着但不响应时，不能让界面一直停在「检查中…」 */
+function fetchT(url, opt, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms || 12000);
+  return fetch(url, { ...(opt || {}), signal: ctl.signal }).finally(() => clearTimeout(timer));
+}
 function pushState(key, val) {
   save("wu." + key, val);
   if (SERVER) fetch("api/state/" + key, {
@@ -1714,7 +1752,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -1722,7 +1760,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -1736,6 +1774,7 @@ function openSub(name) {
   if (name === "letters") renderLetters();
   if (name === "apis") apiRefresh();
   if (name === "windows") renderWinManage();
+  if (name === "mcp") mcpRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -2495,7 +2534,7 @@ function bindLongPress(node, i) {
   const el = node.classList && node.classList.contains("bub") ? node : node.querySelector(".bub");
   if (!el) return;
   let timer = null, moved = false;
-  const start = () => { moved = false; timer = setTimeout(() => { if (!moved) openMsgSheet(i); }, 480); };
+  const start = () => { moved = false; timer = setTimeout(() => { if (!moved) openMsgSheet(i, el); }, 480); };
   const stop = () => { clearTimeout(timer); };
   el.addEventListener("touchstart", start, { passive: true });
   el.addEventListener("touchmove", () => { moved = true; stop(); }, { passive: true });
@@ -2504,29 +2543,52 @@ function bindLongPress(node, i) {
   el.addEventListener("mousedown", start);
   el.addEventListener("mouseup", stop);
   el.addEventListener("mouseleave", stop);
-  el.addEventListener("contextmenu", e => { e.preventDefault(); openMsgSheet(i); });
+  el.addEventListener("contextmenu", e => { e.preventDefault(); openMsgSheet(i, el); });
 }
-function openMsgSheet(i) {
+let msPicked = null;
+function openMsgSheet(i, el) {
   const m = chatLog[i];
   if (!m || (m.k !== "me" && m.k !== "ai")) return;
   msIdx = i;
-  document.getElementById("msTime").innerHTML = m.ts
-    ? "发出于<br><b>" + timeLabel(m.ts) + "</b>"
-    : "这条比较早，当时还没记时间";
+  const sheet = document.getElementById("msgSheet");
+  document.getElementById("msTime").textContent = m.ts ? timeLabel(m.ts) : "这条比较早，没记时间";
   const sealed = !!curWin().archived;
   const acts = [];
-  if (!sealed && m.k === "ai") acts.push({ ic: "🔄", t: "让晤重说一次", fn: "msgRegen()" });
-  if (!sealed && m.k === "me") acts.push({ ic: "✎", t: "改这句，重新发", fn: "msgEdit()" });
-  acts.push({ ic: "⧉", t: "复制这句", fn: "msgCopy()" });
-  if (!sealed) acts.push({ ic: "🗑", t: "删掉这句", fn: "msgDel()" });
+  if (!sealed && m.k === "ai") acts.push({ ic: "↻", t: "重说一次", fn: "msgRegen()" });
+  if (!sealed && m.k === "me") acts.push({ ic: "✎", t: "改了重发", fn: "msgEdit()" });
+  acts.push({ ic: "⧉", t: "复制", fn: "msgCopy()" });
+  if (!sealed) acts.push({ ic: "🗑", t: "删掉", fn: "msgDel()", cls: " danger" });
   document.getElementById("msActs").innerHTML = acts.map(a =>
-    `<div class="ms-act" onclick="${a.fn}"><span class="ic">${a.ic}</span><span>${a.t}</span></div>`).join("");
-  document.getElementById("msgSheet").classList.add("open");
+    `<div class="ms-act${a.cls || ""}" onclick="${a.fn}"><span class="ic">${a.ic}</span><span>${a.t}</span></div>`).join("");
+
+  /* 先量尺寸再定位：优先浮在这条上面，上面放不下就翻到下面；
+     我说的话靠右，晤说的话靠左，跟气泡对齐 */
+  sheet.style.visibility = "hidden";
+  sheet.classList.add("open");
+  const frame = document.getElementById("frame");
+  const f = frame.getBoundingClientRect();
+  const r = (el || document.querySelector(".bub")).getBoundingClientRect();
+  const pw = sheet.offsetWidth, ph = sheet.offsetHeight;
+  let top = r.top - f.top - ph - 8;
+  let origin = "bottom";
+  if (top < 10) { top = r.bottom - f.top + 8; origin = "top"; }
+  if (top + ph > f.height - 10) top = Math.max(10, f.height - ph - 10);
+  let left = m.k === "me" ? (r.right - f.left - pw) : (r.left - f.left);
+  left = Math.max(12, Math.min(f.width - pw - 12, left));
+  sheet.style.top = Math.round(top) + "px";
+  sheet.style.left = Math.round(left) + "px";
+  sheet.style.transformOrigin = origin + " " + (m.k === "me" ? "right" : "left");
+  sheet.style.visibility = "";
+
+  if (msPicked) msPicked.classList.remove("picked");
+  msPicked = el || null;
+  if (msPicked) msPicked.classList.add("picked");
   document.getElementById("msgScrim").classList.add("open");
 }
 function closeMsgSheet() {
   document.getElementById("msgSheet").classList.remove("open");
   document.getElementById("msgScrim").classList.remove("open");
+  if (msPicked) { msPicked.classList.remove("picked"); msPicked = null; }
   msIdx = -1;
 }
 function msgCopy() {
@@ -2565,7 +2627,7 @@ rerenderChat();
 
 /* 后端探测：部署后有服务器 + Key 就走真 DeepSeek，否则本地演示回复 */
 let ONLINE = false;
-function checkHealth() { fetch("api/health").then(r => r.json()).then(j => {
+function checkHealth() { fetchT("api/health", {}, 12000).then(r => r.json()).then(j => {
   ONLINE = !!(j && j.hasKey);
   const el = document.getElementById("setHealth");
   if (!el || !j) return;
@@ -2574,13 +2636,27 @@ function checkHealth() { fetch("api/health").then(r => r.json()).then(j => {
     "聊天模型　" + (j.hasKey ? j.model + "（" + (j.apiName || "") + "）" : "未配置 Key（聊天走演示回复）") + "\n" +
     "干活模型　" + (j.workerSame ? "与聊天模型相同" : j.worker + "（" + (j.workerName || "") + "）") + "\n" +
     "记忆　　　" + (j.memories ?? 0) + " 张" +
-    (j.docs ? "\n长期资料　" + j.docs.always + " 份常驻 · " + j.docs.ondemand + " 份备查" : "");
+    (j.docs ? "\n长期资料　" + j.docs.always + " 份常驻 · " + j.docs.ondemand + " 份备查" : "") +
+    (j.tools ? "\n工具　　　自带 " + j.tools.own + " 件" + (j.tools.mcp ? " · 外部 " + j.tools.mcp + " 件" : "") : "");
   if (j.historyBudget) HISTORY_BUDGET = j.historyBudget;
   renderCtxUsage();
-}).catch(() => {
+}).catch(e => {
   const el = document.getElementById("setHealth");
-  if (el) el.textContent = "服务器　　连不上（本地模式，数据只存在这台手机上）";
+  if (!el) return;
+  const why = e && e.name === "AbortError"
+    ? "服务器没回应（超过 12 秒）——多半是那边卡住或正在重启"
+    : "连不上服务器（网络断了，或服务没起来）";
+  el.textContent = "服务器　　⚠ " + why + "\n现在是本地模式：能看能改，但只存在这台手机上，连上之后会自动同步回去。";
+  const btn = document.getElementById("btnRetry");
+  if (btn) btn.style.display = "";
 }); }
+function retryConnect() {
+  const el = document.getElementById("setHealth");
+  if (el) el.textContent = "重新连接中…";
+  const btn = document.getElementById("btnRetry");
+  if (btn) btn.style.display = "none";
+  checkHealth(); pullState();
+}
 /* 这个聊天窗口装了多少 —— 装满之前，一句话都不会被丢掉 */
 function renderCtxUsage() {
   const el = document.getElementById("setCtx");
@@ -3152,6 +3228,95 @@ async function usageClear() {
   renderCost(); toast("统计已清零");
 }
 
+/* ================= 外部服务 MCP ================= */
+let mcpList = [], mcpCur = null;
+async function mcpRefresh() {
+  if (!SERVER) return;
+  try { mcpList = await (await fetch("api/mcp")).json(); } catch { return; }
+  /* 设置页里的小开关 */
+  const brief = document.getElementById("mcpList");
+  if (brief) {
+    brief.innerHTML = mcpList.length ? mcpList.map(m => `
+      <div class="sw-row">
+        <span class="lb"><span class="mn"></span><span style="color:var(--ink-faint);font-size:11px">
+          ${m.tools.length ? " · " + m.tools.length + " 件工具" : " · 还没连上"}</span></span>
+        <button class="sw ${m.enabled ? "on" : ""}" onclick="mcpToggle('${m.id}', ${!m.enabled})"></button>
+      </div>`).join("")
+      : '<div class="set-note" style="padding:4px 2px">还没接外部服务。接上之后晤就能收发邮件、查日历这些。</div>';
+    brief.querySelectorAll(".mn").forEach((n, i) => n.textContent = mcpList[i].name);
+  }
+  /* 管理页里的完整列表 */
+  const full = document.getElementById("mcpFull");
+  if (full) {
+    full.innerHTML = mcpList.map(m => `
+      <div class="api-item" onclick="mcpEdit('${m.id}')">
+        <div class="top">
+          <span class="nm"></span>
+          <span class="tag" style="${m.enabled ? "" : "color:var(--ink-faint);border-color:rgba(168,178,196,.4)"}">${m.enabled ? "开着" : "关着"}</span>
+        </div>
+        <div class="sub"><span class="uu"></span></div>
+        <div class="sub">${m.tools.length ? "工具：" + m.tools.map(t => t.name).join("、") : (m.lastError ? "⚠ " + m.lastError.slice(0, 60) : "还没连过，点开「连一下」")}</div>
+      </div>`).join("");
+    full.querySelectorAll(".nm").forEach((n, i) => n.textContent = mcpList[i].name);
+    full.querySelectorAll(".uu").forEach((n, i) => n.textContent = mcpList[i].url + (mcpList[i].tokenMask ? " · " + mcpList[i].tokenMask : ""));
+    document.getElementById("mcpNote").textContent = mcpList.length
+      ? "工具清单只在你点「连一下」时抓取并存下来，聊天时用存下来的那份——这样缓存前缀才是稳的。换了服务器功能记得重连一次。"
+      : "MCP 是让晤连上外部服务（邮箱、日历…）的口子。填好地址和令牌，点「连一下」抓工具清单，再打开开关。";
+  }
+}
+async function mcpToggle(id, on) {
+  try { await fetch("api/mcp/" + id, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: on }) }); }
+  catch { toast("改不了"); return; }
+  toast(on ? "开了，晤能用它了" : "关了");
+  mcpRefresh(); checkHealth();
+}
+function mcpFormShow() { document.getElementById("mcpForm").style.display = "block"; document.querySelector("#page-mcp .sp-scroll").scrollTop = 0; }
+function mcpNew() {
+  mcpCur = null;
+  ["mfName", "mfUrl", "mfToken"].forEach(i => document.getElementById(i).value = "");
+  document.getElementById("mfToken").placeholder = "访问令牌（有就填）";
+  document.getElementById("mfDel").style.display = "none";
+  mcpFormShow();
+}
+function mcpEdit(id) {
+  const m = mcpList.find(x => x.id === id);
+  if (!m) return;
+  mcpCur = id;
+  document.getElementById("mfName").value = m.name;
+  document.getElementById("mfUrl").value = m.url;
+  document.getElementById("mfToken").value = "";
+  document.getElementById("mfToken").placeholder = m.tokenMask ? "留空 = 不改动（当前 " + m.tokenMask + "）" : "访问令牌（有就填）";
+  document.getElementById("mfDel").style.display = "";
+  mcpFormShow();
+}
+function mcpCancel() { document.getElementById("mcpForm").style.display = "none"; mcpCur = null; }
+async function mcpSave() {
+  const v = id => document.getElementById(id).value.trim();
+  if (!v("mfUrl")) { toast("要填服务地址"); return; }
+  const body = { name: v("mfName") || "外部服务", url: v("mfUrl"), token: v("mfToken") };
+  try {
+    const opt = { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    if (mcpCur) await fetch("api/mcp/" + mcpCur, { method: "PUT", ...opt });
+    else { const r = await (await fetch("api/mcp", { method: "POST", ...opt })).json(); mcpCur = r.id; }
+  } catch { toast("保存失败"); return; }
+  await mcpRefresh();
+  toast("存好了，点「连一下」抓工具清单");
+}
+async function mcpConnectCur() {
+  if (!mcpCur) { toast("先保存再连"); return; }
+  toast("正在握手…");
+  try {
+    const r = await (await fetch("api/mcp/" + mcpCur + "/connect", { method: "POST" })).json();
+    toast(r.ok ? "连上了，抓到 " + r.count + " 件工具" : "连不上：" + (r.error || "").slice(0, 60));
+  } catch { toast("连接失败"); }
+  mcpRefresh();
+}
+async function mcpDelCur() {
+  if (!mcpCur) return;
+  try { await fetch("api/mcp/" + mcpCur, { method: "DELETE" }); } catch {}
+  mcpCancel(); mcpRefresh(); checkHealth(); toast("已删除");
+}
+
 /* ================= 长期文件（手机端） ================= */
 let memMode = "cards", docCache = [], dcCur = null, perFallback = "";
 
@@ -3315,9 +3480,9 @@ function bootData() {
 }
 async function pullState() {
   try {
-    const r = await fetch("api/state");
+    const r = await fetchT("api/state", {}, 15000);
     if (r.status === 401) { relock(); return; }
-    if (!r.ok) throw 0;
+    if (!r.ok) throw new Error("HTTP " + r.status);
     const s = await r.json();
     SERVER = true;
     const put = (k, v) => fetch("api/state/" + k, {
@@ -3340,7 +3505,10 @@ async function pullState() {
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
     renderPhotosPage(); renderHomeStack(); renderWinMenu();
     fetchDrives();
-  } catch {}
+  } catch (e) {
+    SERVER = false;
+    console.warn("拉数据失败：", e && e.message);
+  }
   memRefresh();
 }
 

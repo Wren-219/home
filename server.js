@@ -423,6 +423,112 @@ function driveSnapshot(d, now) {
   };
 }
 
+/* ================= MCP 客户端 =================
+   模型本身不"讲 MCP"，讲 MCP 的是中间人程序——这里 server.js 就是那个中间人。
+   走 JSON-RPC over HTTP：initialize → tools/list → tools/call。
+   ⚠️ 工具清单是缓存前缀的第一块，一变整条缓存作废。所以清单只在她点「连一下」时
+   抓取并**存下来**，聊天时一律用存下来的那份，不每轮去问。 */
+function mcpConf() { return readJson("mcp", []) || []; }
+function saveMcp(list) { writeJson("mcp", list); }
+function newMcp(d, keep) {
+  return {
+    id: (keep && keep.id) || crypto.randomUUID(),
+    name: String(d.name || "未命名").slice(0, 40),
+    url: String(d.url || "").trim().slice(0, 300),
+    token: (d.token && String(d.token).trim()) ? String(d.token).trim() : (keep ? keep.token : ""),
+    enabled: d.enabled === undefined ? (keep ? keep.enabled : false) : !!d.enabled,
+    tools: Array.isArray(d.tools) ? d.tools : (keep ? keep.tools || [] : []),
+    session: keep ? keep.session : null,
+    lastError: keep ? keep.lastError : "",
+    created: (keep && keep.created) || new Date().toISOString(),
+  };
+}
+let mcpSeq = 0;
+async function mcpRpc(srv, method, params) {
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+  };
+  if (srv.token) headers.Authorization = "Bearer " + srv.token;
+  if (srv.session) headers["Mcp-Session-Id"] = srv.session;
+  const r = await fetch(srv.url, {
+    method: "POST", headers,
+    body: JSON.stringify({ jsonrpc: "2.0", id: ++mcpSeq, method, params: params || {} }),
+  });
+  const sid = r.headers.get("mcp-session-id");
+  if (sid) srv.session = sid;
+  const text = await r.text();
+  if (!r.ok) throw new Error("HTTP " + r.status + "：" + text.slice(0, 160));
+  /* 可能回纯 JSON，也可能回 SSE（streamable HTTP） */
+  let payload = null;
+  if (text.trim().startsWith("{")) payload = JSON.parse(text);
+  else {
+    for (const ln of text.split("\n")) {
+      const t = ln.trim();
+      if (!t.startsWith("data:")) continue;
+      try { const j = JSON.parse(t.slice(5).trim()); if (j.result || j.error) payload = j; } catch {}
+    }
+  }
+  if (!payload) throw new Error("没读懂对方的回复");
+  if (payload.error) throw new Error(payload.error.message || JSON.stringify(payload.error).slice(0, 160));
+  return payload.result;
+}
+/* 握手 + 抓工具清单，抓完存盘 */
+async function mcpConnect(srv) {
+  srv.session = null;
+  await mcpRpc(srv, "initialize", {
+    protocolVersion: "2025-06-18",
+    capabilities: {},
+    clientInfo: { name: "wu-with-you", version: "1.4" },
+  });
+  try { await mcpRpc(srv, "notifications/initialized", {}); } catch {}
+  const res = await mcpRpc(srv, "tools/list", {});
+  const tools = (res.tools || []).slice(0, 30).map(t => ({
+    name: String(t.name).slice(0, 60),
+    description: String(t.description || "").slice(0, 300),
+    input_schema: t.inputSchema || t.input_schema || { type: "object", properties: {} },
+  }));
+  srv.tools = tools;
+  srv.lastError = "";
+  return tools;
+}
+/* 开着的 MCP 工具，按 服务器名__工具名 挂进晤的工具箱 */
+function mcpToolDefs() {
+  const out = [];
+  for (const s of mcpConf()) {
+    if (!s.enabled) continue;
+    for (const t of (s.tools || [])) {
+      out.push({ type: "function", function: {
+        name: mcpKey(s, t.name),
+        description: "[" + s.name + "] " + t.description,
+        parameters: t.input_schema,
+      } });
+    }
+  }
+  return out;
+}
+function mcpKey(s, name) {
+  return (s.name.replace(/[^\w]/g, "").slice(0, 12) || "mcp") + "__" + String(name).replace(/[^\w.-]/g, "_");
+}
+function mcpFind(fullName) {
+  for (const s of mcpConf()) {
+    if (!s.enabled) continue;
+    for (const t of (s.tools || [])) if (mcpKey(s, t.name) === fullName) return { srv: s, tool: t.name };
+  }
+  return null;
+}
+async function mcpInvoke(fullName, args) {
+  const hit = mcpFind(fullName);
+  if (!hit) return "没有这个工具";
+  try {
+    const res = await mcpRpc(hit.srv, "tools/call", { name: hit.tool, arguments: args || {} });
+    const parts = (res.content || []).map(c => c.type === "text" ? c.text : "[" + c.type + "]").join("\n");
+    return (parts || JSON.stringify(res)).slice(0, 4000);
+  } catch (e) {
+    return "调用失败：" + String(e.message || e).slice(0, 200);
+  }
+}
+
 /* ================= Anthropic 方言翻译 =================
    Claude 官方 API 跟 OpenAI 格式差三件事：
      1. system 不在 messages 里，是顶层单独一个字段
@@ -623,7 +729,8 @@ const TOOL_DEFS = [
   { type: "function", function: { name: "remember", description: "主动记住一件重要的事（存入记忆卡）",
     parameters: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } } },
 ];
-function execTool(name, args) {
+async function execTool(name, args) {
+  if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = new Date().toISOString().slice(0, 10);
     if (name === "add_todo") {
@@ -798,6 +905,8 @@ const server = http.createServer(async (req, res) => {
         workerSame: activeApi("worker").id === activeApi("chat").id,
         dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
         historyBudget: HISTORY_BUDGET,
+        tools: { own: TOOL_DEFS.length, mcp: mcpToolDefs().length },
+        mcp: mcpConf().map(s2 => ({ name: s2.name, enabled: s2.enabled, tools: (s2.tools || []).length })),
         docs: {
           always: listDocs().filter(d => d.mode === "always").length,
           ondemand: listDocs().filter(d => d.mode === "ondemand").length,
@@ -937,6 +1046,52 @@ const server = http.createServer(async (req, res) => {
         conf.list[i] = newApi({ ...conf.list[i], ...body }, conf.list[i]);
       }
       saveApis(conf);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    /* ---- MCP 外部服务 ---- */
+    if (p === "/api/mcp" && req.method === "GET") {
+      sendJson(res, 200, mcpConf().map(s2 => ({
+        id: s2.id, name: s2.name, url: s2.url, enabled: s2.enabled,
+        tokenMask: maskKey(s2.token), hasToken: !!s2.token,
+        tools: (s2.tools || []).map(t => ({ name: t.name, description: t.description })),
+        lastError: s2.lastError || "",
+      })));
+      return;
+    }
+    if (p === "/api/mcp" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 128 * 1024));
+      const list = mcpConf(); const srv = newMcp(body);
+      list.push(srv); saveMcp(list);
+      sendJson(res, 200, { id: srv.id });
+      return;
+    }
+    if (p.startsWith("/api/mcp/") && p.endsWith("/connect") && req.method === "POST") {
+      const id = p.slice("/api/mcp/".length, -"/connect".length);
+      const list = mcpConf(); const i = list.findIndex(x => x.id === id);
+      if (i < 0) { sendJson(res, 404, { error: "没有这个服务" }); return; }
+      try {
+        const tools = await mcpConnect(list[i]);
+        saveMcp(list);
+        sendJson(res, 200, { ok: true, count: tools.length, tools: tools.map(t => t.name) });
+      } catch (e) {
+        list[i].lastError = String(e.message || e).slice(0, 200);
+        saveMcp(list);
+        sendJson(res, 200, { ok: false, error: list[i].lastError });
+      }
+      return;
+    }
+    if (p.startsWith("/api/mcp/") && (req.method === "PUT" || req.method === "DELETE")) {
+      const id = p.slice("/api/mcp/".length);
+      const list = mcpConf(); const i = list.findIndex(x => x.id === id);
+      if (i < 0) { sendJson(res, 404, { error: "没有这个服务" }); return; }
+      if (req.method === "DELETE") list.splice(i, 1);
+      else {
+        const body = JSON.parse(await readBody(req, 128 * 1024));
+        list[i] = newMcp({ ...list[i], ...body }, list[i]);
+      }
+      saveMcp(list);
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1093,13 +1248,17 @@ const server = http.createServer(async (req, res) => {
       const days = Math.floor((n - SINCE) / 86400000) + 1;
       const todos = readJson("todos", []) || [];
       const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
-      const status = `【现状】今天是 ${n.getFullYear()}.${String(n.getMonth() + 1).padStart(2, "0")}.${String(n.getDate()).padStart(2, "0")}，你们在一起的第 ${days} 天。` +
+      const WEEK_CN = "日一二三四五六";
+      const hr = n.getHours();
+      const partOfDay = hr < 5 ? "深夜" : hr < 9 ? "清晨" : hr < 12 ? "上午" : hr < 14 ? "中午" : hr < 18 ? "下午" : hr < 22 ? "晚上" : "夜里";
+      const status = `【现状】现在是 ${n.getFullYear()}.${String(n.getMonth() + 1).padStart(2, "0")}.${String(n.getDate()).padStart(2, "0")} 周${WEEK_CN[n.getDay()]} ${String(hr).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}（${partOfDay}），你们在一起的第 ${days} 天。` +
         (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "") +
         `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
 
       const TOOL_HINT = "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
         "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。" +
-        "想不起某段往事的细节时，用 list_docs 看看有哪些长期资料，再用 read_doc 去翻。";
+        "想不起某段往事的细节时，用 list_docs 看看有哪些长期资料，再用 read_doc 去翻。" +
+        (mcpToolDefs().length ? "带 __ 的工具是外部服务（如邮箱），用法和其他工具一样。" : "");
 
       /* ---- 缓存友好的摆法 ----
          缓存是「从头逐字比对，一处变了后面全废」。所以：
@@ -1122,12 +1281,14 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
+      /* 自带的工具 + 开着的 MCP 工具。清单存盘不动，所以缓存前缀是稳的 */
+      const allTools = TOOL_DEFS.concat(mcpToolDefs());
       const usedTotal = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
       /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls 与用量。
          两种方言的事件形状不同，在这里各解析各的，对外形状一致。 */
       async function streamRound(msgs) {
         const anth = chatApi.dialect === "anthropic";
-        const req = upstreamReq(chatApi, msgs, TOOL_DEFS, true);
+        const req = upstreamReq(chatApi, msgs, allTools, true);
         const upstream = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
         if (!upstream.ok) throw new Error("上游 HTTP " + upstream.status + "：" + (await upstream.text()).slice(0, 200));
         let sseBuf = "", acc = "", finish = null;
@@ -1195,7 +1356,7 @@ const server = http.createServer(async (req, res) => {
             }]);
             for (const t of r.calls) {
               let args = {}; try { args = JSON.parse(t.args || "{}"); } catch {}
-              const out = execTool(t.name, args);
+              const out = await execTool(t.name, args);
               console.log("[tool]", t.name, JSON.stringify(args).slice(0, 120), "→", out.slice(0, 80));
               messages.push({ role: "tool", tool_call_id: t.id, content: out });
             }
