@@ -69,6 +69,7 @@
     <button class="tab" data-p="todo">清单</button>
     <button class="tab" data-p="cd">倒数日</button>
     <button class="tab" data-p="diary">日记</button>
+    <button class="tab" data-p="docs">长期文件</button>
     <button class="tab" data-p="drive">内在驱动</button>
     <button class="tab" data-p="raw">原始数据</button>
   </div>
@@ -136,6 +137,38 @@
     </div>
   </div>
 
+  <!-- 长期文件 -->
+  <div class="panel" id="p-docs">
+    <div class="card">
+      <div class="bar">
+        <button class="pri" onclick="docNew()">＋ 新建一份</button>
+        <span class="hint" id="docSummary"></span>
+      </div>
+      <div style="display:flex; gap:18px">
+        <div style="width:280px" id="docList"></div>
+        <div style="flex:1; display:none" id="docEditor">
+          <div class="bar">
+            <input id="docName" class="grow" placeholder="名称，如：核心资料 / 时间线">
+            <select id="docMode" style="width:200px">
+              <option value="always">常驻 · 每轮都给晤看</option>
+              <option value="ondemand">备查 · 晤需要时自己翻</option>
+            </select>
+          </div>
+          <textarea id="docContent" rows="22" placeholder="把内容粘进来…" style="font-size:13px; line-height:1.8"></textarea>
+          <div class="bar" style="margin-top:10px">
+            <button class="pri" onclick="docSave()">保存</button>
+            <button class="warn" onclick="docDel()">删除这份</button>
+            <span class="hint" id="docStat"></span>
+          </div>
+        </div>
+      </div>
+      <div class="hint">
+        <b>常驻</b>：每轮对话都完整送给晤，排在最前面所以能吃满缓存——放最核心、他不知道就会说错话的东西，建议控制在两三千字。<br>
+        <b>备查</b>：不占每轮的额度，晤想不起细节时会自己调 list_docs / read_doc 去翻——时间线、大事记、旧档案放这里。
+      </div>
+    </div>
+  </div>
+
   <!-- 驱动 -->
   <div class="panel" id="p-drive">
     <div class="card">
@@ -193,14 +226,17 @@ $("gatePin").addEventListener("input", async () => {
 function relock(){ $("gate").style.display = "flex"; $("app").style.display = "none"; toast("登录过期了，再输一次密码"); }
 
 /* tabs */
+document.addEventListener("input", e => { if (e.target && e.target.id === "docContent") docStat(); });
 document.querySelector(".tabs").addEventListener("click", e => {
   const t = e.target.closest(".tab"); if (!t) return;
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
   document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("on",x.id==="p-"+t.dataset.p));
-  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, drive:loadDrive, raw:rawLoad})[t.dataset.p]();
+  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, docs:docLoad, drive:loadDrive, raw:rawLoad})[t.dataset.p]();
 });
 async function boot(){
-  try { const h = await api("api/health"); $("健康").textContent = `模型 ${h.model} · Key ${h.hasKey?"已配置":"未配置"} · 记忆 ${h.memories} 张 · 数据目录 ${h.dataDir}`; } catch { $("健康").textContent="⚠️ 连不上后端"; }
+  try { const h = await api("api/health"); $("健康").textContent = `模型 ${h.model} · Key ${h.hasKey?"已配置":"未配置"} · 记忆 ${h.memories} 张` +
+      (h.docs ? ` · 长期文件 ${h.docs.always} 常驻/${h.docs.ondemand} 备查（常驻约 ${h.docs.alwaysTokens.toLocaleString()} token）` : "") +
+      ` · 历史额度 ${(h.historyBudget||0).toLocaleString()} · ${h.dataDir}`; } catch { $("健康").textContent="⚠️ 连不上后端"; }
   memLoad();
 }
 
@@ -291,6 +327,54 @@ async function diarySave(){
   toast("已保存"); dCur=-1; $("dEditor").style.display="none"; diaryLoad();
 }
 async function diaryDel(){ if(dCur<0)return; diaries.splice(dCur,1); dCur=-1; $("dEditor").style.display="none"; await api("api/state/diaries",{method:"PUT",...J(diaries)}).catch(()=>{}); diaryLoad(); }
+
+/* ===== 长期文件 ===== */
+let docs = [], docCur = null;
+async function docLoad(){
+  try { docs = await api("api/docs"); } catch { toast("加载失败"); return; }
+  const always = docs.filter(d=>d.mode==="always");
+  const tk = always.reduce((n,d)=>n+d.tokens,0);
+  $("docSummary").textContent = docs.length
+    ? `${always.length} 份常驻（每轮约 ${tk.toLocaleString()} token）· ${docs.length-always.length} 份备查`
+    : "还没有长期文件";
+  $("docList").innerHTML = docs.map(d=>`
+    <div style="padding:10px 8px;border-bottom:1px dashed var(--line);cursor:pointer;${d.id===docCur?"color:var(--blue)":""}" onclick="docEdit('${d.id}')">
+      <div style="font-family:var(--serif)">${esc(d.name)}</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:2px">
+        ${d.mode==="always"?"常驻":"备查"} · ${d.size.toLocaleString()} 字 · 约 ${d.tokens.toLocaleString()} token
+      </div>
+    </div>`).join("") || '<div class="hint">还没有文件，点「＋ 新建一份」</div>';
+}
+async function docEdit(id){
+  let d; try { d = await api("api/docs/"+id); } catch { toast("打不开"); return; }
+  docCur = id;
+  $("docEditor").style.display = "block";
+  $("docName").value = d.name; $("docMode").value = d.mode; $("docContent").value = d.content || "";
+  docStat(); docLoad();
+}
+function docNew(){
+  docCur = null;
+  $("docEditor").style.display = "block";
+  $("docName").value = ""; $("docMode").value = "ondemand"; $("docContent").value = "";
+  docStat();
+}
+function docStat(){
+  const n = $("docContent").value.length;
+  $("docStat").textContent = n ? n.toLocaleString() + " 字" : "";
+}
+async function docSave(){
+  const body = { name: $("docName").value.trim() || "未命名", mode: $("docMode").value, content: $("docContent").value };
+  try {
+    if (docCur) await api("api/docs/"+docCur, { method:"PUT", ...J(body) });
+    else { const r = await api("api/docs", { method:"POST", ...J(body) }); docCur = r.id; }
+  } catch { toast("保存失败"); return; }
+  toast("已保存"); docLoad();
+}
+async function docDel(){
+  if (!docCur) { $("docEditor").style.display="none"; return; }
+  try { await api("api/docs/"+docCur, { method:"DELETE" }); } catch {}
+  docCur = null; $("docEditor").style.display = "none"; toast("已删除"); docLoad();
+}
 
 /* ===== 驱动 ===== */
 let driveVals = {};

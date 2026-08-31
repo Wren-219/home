@@ -15,6 +15,7 @@
    | `WORKER_API_KEY` | `AIza...` | 选填，后台杂务模型 Key（不配则共用聊天模型） |
    | `WORKER_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | 选填，例：Gemini 免费额度 |
    | `WORKER_MODEL` | `gemini-2.5-flash-lite` | 选填 |
+   | `HISTORY_BUDGET` | `30000` | 选填，每轮送给模型的聊天历史额度（token）。不再按"最近 N 条"截断，短消息能留几百条 |
    | `WU_PIN` | `0527` | 选填，四位页面密码。**设了就以它为准**，忘记密码时用它找回；不设则用服务器上 `data/auth.json` 里的（默认 0527，可在设置页里改） |
 
    聊天（晤的"嘴"）与后台杂务（记忆蒸馏、dream 整理）可用不同模型：
@@ -39,6 +40,9 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
 - 清单 / 倒数日 / 日记 / 信箱 / 照片 / 聊天记录存在服务器（`/app/data`），
   localStorage 作离线兜底
 - 记忆系统：遗忘曲线 / 回忆强化 / 情绪打标 / dream 整理，聊天时自动注入
+- 长期文件（`/admin` → 长期文件）：**常驻**文件每轮完整注入，排在稳定前缀里吃满缓存；
+  **备查**文件不占每轮额度，晤用 `list_docs` / `read_doc` 按需去翻
+- 上下文按 token 额度截断而不是固定条数，设置页能看到"这个窗口装了百分之几"
 - 八维驱动引擎：随时间与对话涨落，影响晤的语气
 - Chat 通过后端 `/api/chat` 流式转发，支持工具调用（写日记 / 加清单 / 写信…），
   Key 只存在服务器

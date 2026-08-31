@@ -920,10 +920,12 @@
         <div class="set-card">
           <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
           <div class="set-line" id="setHealth">检查中…</div>
+          <div class="set-line" id="setCtx" style="margin-top:2px"></div>
           <div class="set-note" style="padding:12px 2px 0">
             模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。<br>
             密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
-            每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。
+            每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。<br>
+            长期文件在电脑上打开 /admin 管理：「常驻」每轮都给晤看，「备查」他需要时自己翻。
           </div>
         </div>
         <div class="set-card">
@@ -932,7 +934,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v0.9（清单能自己加了 · 日记能写能改 · 相册接了真照片 · 服务器加了锁 · 离开 5 分钟自动上锁）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.0（长期文件区 · 聊天历史从 24 条放宽到按额度算 · 修好了上下文缓存顺序）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1518,6 +1520,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
+  if (tab.dataset.page === "settings" && typeof renderCtxUsage === "function") renderCtxUsage();
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -2228,16 +2231,37 @@ function checkHealth() { fetch("api/health").then(r => r.json()).then(j => {
     "服务器　　" + (j.ok ? "已连接 ✓" : "连不上") + "\n" +
     "聊天模型　" + (j.hasKey ? j.model : "未配置 Key（聊天走演示回复）") + "\n" +
     "干活模型　" + (j.workerSame ? "与聊天模型相同" : j.worker) + "\n" +
-    "记忆　　　" + (j.memories ?? 0) + " 张";
+    "记忆　　　" + (j.memories ?? 0) + " 张" +
+    (j.docs ? "\n长期资料　" + j.docs.always + " 份常驻 · " + j.docs.ondemand + " 份备查" : "");
+  if (j.historyBudget) HISTORY_BUDGET = j.historyBudget;
+  renderCtxUsage();
 }).catch(() => {
   const el = document.getElementById("setHealth");
   if (el) el.textContent = "服务器　　连不上（本地模式，数据只存在这台手机上）";
 }); }
+/* 这个聊天窗口装了多少 —— 装满之前，一句话都不会被丢掉 */
+function renderCtxUsage() {
+  const el = document.getElementById("setCtx");
+  if (!el) return;
+  const used = toApiMessages().reduce((n, m) => n + estTokens(m.content) + 4, 0);
+  const pct = Math.min(100, Math.round(used / HISTORY_BUDGET * 100));
+  el.textContent = "这个窗口　装了 " + pct + "%（" + chatLog.length + " 条 · 约 " + used.toLocaleString() + " / " + HISTORY_BUDGET.toLocaleString() + "）";
+}
 
 const cannedReplies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
+/* 粗估 token（跟服务器同一套算法）：中日韩字符约 1 个，其余约 3.5 个字符 1 个 */
+const CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;
+function estTokens(s) {
+  s = String(s == null ? "" : s);
+  let cjk = 0;
+  for (const ch of s) if (CJK_RE.test(ch)) cjk++;
+  return Math.ceil(cjk + (s.length - cjk) / 3.5);
+}
+let HISTORY_BUDGET = 30000;
 function toApiMessages() {
   const msgs = [];
-  chatLog.slice(-24).forEach(m => {
+  /* 送足够多，具体留多少由服务器按额度决定 */
+  chatLog.slice(-600).forEach(m => {
     if (m.k === "me") msgs.push({ role: "user", content: m.t });
     else if (m.k === "ai") msgs.push({ role: "assistant", content: m.t });
     else if (m.k === "stack") msgs.push({ role: "user", content: "（发来了几张照片）" });

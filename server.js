@@ -11,6 +11,7 @@
  *   WU_PIN                             选填，四位页面密码；设了就以它为准（忘记密码时的后门），
  *                                      不设则用 data/auth.json 里的，默认 0527
  *   DATA_DIR                           选填，数据目录；Zeabur 挂载 /app/data 时自动使用
+ *   HISTORY_BUDGET                     选填，每轮送给模型的聊天历史额度（token），默认 30000
  *   PORT                               选填，默认 8080
  */
 const http = require("http");
@@ -91,6 +92,52 @@ const PUBLIC_PATHS = new Set(["/api/health", "/api/login"]);
 function guarded(p) {
   if (PUBLIC_PATHS.has(p)) return false;
   return p.startsWith("/api/") || p.startsWith("/files/");
+}
+
+/* ================= 上下文额度 =================
+   不按"最近 N 条"截断，按装了多少截断：短消息能留几百条，长消息自动少留几条。
+   零依赖的粗估：中日韩字符约 1 token，其余约 3.5 个字符 1 token —— 只用来做预算，不求精确 */
+const HISTORY_BUDGET = +(process.env.HISTORY_BUDGET || 30000);
+const CJK = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;
+function estTokens(s) {
+  s = String(s == null ? "" : s);
+  let cjk = 0;
+  for (const ch of s) if (CJK.test(ch)) cjk++;
+  return Math.ceil(cjk + (s.length - cjk) / 3.5);
+}
+/* 从最新往回收，收到装不下为止；至少留住最后一条 */
+function budgetHistory(all, budget) {
+  const out = [];
+  let sum = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const t = estTokens(all[i].content) + 4;
+    if (out.length && sum + t > budget) break;
+    out.unshift(all[i]);
+    sum += t;
+  }
+  while (out.length > 1 && out[0].role === "assistant") out.shift();  // 别以晤的话开头
+  return out;
+}
+
+/* ================= 长期文件 =================
+   always   = 基本资料，每轮完整送给晤；排在稳定前缀里，改一次才失效一次缓存
+   ondemand = 选择性读取，晤用 list_docs / read_doc 自己去翻，不占每轮的额度 */
+function listDocs() { return readJson("docs", []) || []; }
+function saveDocs(all) { writeJson("docs", all); }
+function newDoc(d, keep) {
+  return {
+    id: (keep && keep.id) || crypto.randomUUID(),
+    name: String(d.name || "未命名").slice(0, 60),
+    mode: d.mode === "always" ? "always" : "ondemand",
+    content: String(d.content == null ? "" : d.content).slice(0, 200000),
+    created: (keep && keep.created) || new Date().toISOString(),
+    updated: new Date().toISOString(),
+  };
+}
+function alwaysDocsBlock() {
+  const on = listDocs().filter(d => d.mode === "always" && String(d.content || "").trim());
+  if (!on.length) return "";
+  return "【你们的基本资料】\n" + on.map(d => "## " + d.name + "\n" + d.content).join("\n\n");
 }
 
 /* ================= 记忆引擎 ================= */
@@ -353,6 +400,10 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: { box: { type: "string", enum: ["mine", "ai", "pen"], description: "mine=她写的, ai=你写给她的, pen=笔友" } }, required: ["box"] } } },
   { type: "function", function: { name: "read_diaries", description: "读最近的日记（含正文）",
     parameters: { type: "object", properties: { limit: { type: "number", description: "篇数，默认 3" } } } } },
+  { type: "function", function: { name: "list_docs", description: "看看有哪些可以查阅的长期资料（时间线、大事记、旧档案…）。需要回忆具体细节又想不起来时，先看这里有什么",
+    parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
+    parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
   { type: "function", function: { name: "remember", description: "主动记住一件重要的事（存入记忆卡）",
     parameters: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } } },
 ];
@@ -395,6 +446,18 @@ function execTool(name, args) {
       const diaries = readJson("diaries", []) || [];
       const out = diaries.slice(0, Math.min(5, args.limit || 3)).map(d => ({ 日期: d.date, 天气: d.w, 标题: d.title, 正文: (d.content || "").slice(0, 800) }));
       return out.length ? JSON.stringify(out) : "还没有日记";
+    }
+    if (name === "list_docs") {
+      const on = listDocs().filter(d => d.mode === "ondemand");
+      if (!on.length) return "还没有可查阅的长期资料";
+      return JSON.stringify(on.map(d => ({ 名称: d.name, 篇幅: d.content.length + " 字", 开头: d.content.slice(0, 60) })));
+    }
+    if (name === "read_doc") {
+      const key = String(args.name || "").trim();
+      const all = listDocs();
+      const d = all.find(x => x.name === key) || all.find(x => x.name.includes(key) || (key && key.includes(x.name)));
+      if (!d) return "没有叫「" + key + "」的资料，先用 list_docs 看看有哪些";
+      return d.content.slice(0, 20000) || "（这份资料是空的）";
     }
     if (name === "remember") {
       const all = listMem();
@@ -464,6 +527,12 @@ const server = http.createServer(async (req, res) => {
         ok: true, authed: true, hasKey: !!API_KEY, model: MODEL,
         worker: WORKER_MODEL, workerSame: WORKER_BASE === API_BASE && WORKER_MODEL === MODEL,
         dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
+        historyBudget: HISTORY_BUDGET,
+        docs: {
+          always: listDocs().filter(d => d.mode === "always").length,
+          ondemand: listDocs().filter(d => d.mode === "ondemand").length,
+          alwaysTokens: estTokens(alwaysDocsBlock()),
+        },
       });
       return;
     }
@@ -530,6 +599,36 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/memories/dream" && req.method === "POST") { sendJson(res, 200, await runDream()); return; }
 
+    /* ---- 长期文件 ---- */
+    if (p === "/api/docs" && req.method === "GET") {
+      sendJson(res, 200, listDocs().map(d => ({
+        id: d.id, name: d.name, mode: d.mode,
+        size: (d.content || "").length, tokens: estTokens(d.content),
+        head: (d.content || "").slice(0, 100), updated: d.updated,
+      })));
+      return;
+    }
+    if (p === "/api/docs" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 2 * 1024 * 1024));
+      const doc = newDoc(body);
+      const all = listDocs(); all.push(doc); saveDocs(all);
+      sendJson(res, 200, { id: doc.id });
+      return;
+    }
+    if (p.startsWith("/api/docs/")) {
+      const id = p.slice("/api/docs/".length);
+      const all = listDocs();
+      const i = all.findIndex(d => d.id === id);
+      if (i < 0) { sendJson(res, 404, { error: "没有这份资料" }); return; }
+      if (req.method === "GET") { sendJson(res, 200, all[i]); return; }
+      if (req.method === "PUT") {
+        const body = JSON.parse(await readBody(req, 2 * 1024 * 1024));
+        all[i] = newDoc({ ...all[i], ...body }, all[i]);
+        saveDocs(all); sendJson(res, 200, { ok: true }); return;
+      }
+      if (req.method === "DELETE") { all.splice(i, 1); saveDocs(all); sendJson(res, 200, { ok: true }); return; }
+    }
+
     /* ---- 八维驱动 ---- */
     if (p === "/api/drives" && req.method === "GET") {
       const now = Date.now();
@@ -575,9 +674,11 @@ const server = http.createServer(async (req, res) => {
     /* ---- 聊天：服务器负责拼 persona + 记忆 + 现状（缓存友好顺序），流式转发 ---- */
     if (p === "/api/chat" && req.method === "POST") {
       if (!API_KEY) { sendJson(res, 503, { error: "服务器未配置 LLM_API_KEY / DEEPSEEK_API_KEY" }); return; }
-      const payload = JSON.parse(await readBody(req, 512 * 1024));
-      const history = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant")).slice(-30);
-      if (!history.length) { sendJson(res, 400, { error: "缺少消息" }); return; }
+      const payload = JSON.parse(await readBody(req, 4 * 1024 * 1024));
+      const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"));
+      if (!raw.length) { sendJson(res, 400, { error: "缺少消息" }); return; }
+      /* 按额度而不是条数截断：短消息能留几百条 */
+      const history = budgetHistory(raw, HISTORY_BUDGET);
       const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
 
       /* 驱动引擎：先响应事件与时间流逝，再把当前状态告诉晤 */
@@ -600,14 +701,27 @@ const server = http.createServer(async (req, res) => {
         `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
 
       const TOOL_HINT = "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
-        "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。";
+        "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。" +
+        "想不起某段往事的细节时，用 list_docs 看看有哪些长期资料，再用 read_doc 去翻。";
+
+      /* ---- 缓存友好的摆法 ----
+         缓存是「从头逐字比对，一处变了后面全废」。所以：
+           稳定的排前面：人设 → 工具说明 → 基本资料（她改一次才变一次）→ 聊天历史（只往后追加）
+           每轮都变的排后面：当轮检索到的记忆卡 + 现状，插在她最新那句话之前
+         这样能命中缓存的前缀会随着聊天一起变长，聊得越久省得越多。 */
+      const alwaysBlock = alwaysDocsBlock();
+      const volatileBlock = [memBlock, status].filter(Boolean).join("\n\n");
       let messages = [
-        { role: "system", content: PERSONA },                       // 固定前缀 → 命中缓存
-        { role: "system", content: TOOL_HINT },                     // 同为固定文本
-        ...(memBlock ? [{ role: "system", content: memBlock }] : []),
-        { role: "system", content: status },
+        { role: "system", content: PERSONA },
+        { role: "system", content: TOOL_HINT },
+        ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
         ...history,
       ];
+      if (volatileBlock) {
+        let at = messages.length;
+        for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === "user") { at = i; break; }
+        messages.splice(at, 0, { role: "system", content: volatileBlock });
+      }
 
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
