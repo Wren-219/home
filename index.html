@@ -922,7 +922,8 @@
           <div class="set-line" id="setHealth">检查中…</div>
           <div class="set-note" style="padding:12px 2px 0">
             模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。<br>
-            密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。
+            密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。<br>
+            每次重新打开都会要密码；中途切出去超过 5 分钟（含息屏）回来也会重新要一次。
           </div>
         </div>
         <div class="set-card">
@@ -931,7 +932,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v0.9（清单能自己加了 · 日记能写能改 · 相册接了真照片 · 服务器加了锁）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v0.9（清单能自己加了 · 日记能写能改 · 相册接了真照片 · 服务器加了锁 · 离开 5 分钟自动上锁）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1483,16 +1484,30 @@ function unlockApp() {
   setTimeout(() => { lock.style.display = "none"; }, 600);
   bootData();
 }
-/* cookie 过期 / 在别处改了密码 → 退回锁屏 */
-function relock() {
-  SERVER = false;
+/* 把门重新关上（数据都在服务器上，锁上不会丢任何东西） */
+function appUnlocked() { return document.getElementById("app").classList.contains("ready"); }
+function showLock(hint) {
   const lock = document.getElementById("lockScreen");
   lock.style.display = "";
   lock.classList.remove("unlocked");
   document.getElementById("app").classList.remove("ready");
   pinBuf = ""; renderPin();
-  document.getElementById("lockHint").textContent = "登录过期了，再输一次密码";
+  document.getElementById("lockHint").textContent = hint || "";
 }
+/* cookie 过期 / 在别处改了密码 */
+function relock() { SERVER = false; showLock("登录过期了，再输一次密码"); }
+
+/* ── 离开超过 5 分钟自动上锁 ──
+   手机息屏、切去别的 App 都算「离开」。别人拿到手机时的第二道门；
+   短暂切出去复制个东西再回来不会被打断 */
+const AUTO_LOCK_MS = 5 * 60 * 1000;
+let awayAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { awayAt = Date.now(); return; }
+  const away = awayAt ? Date.now() - awayAt : 0;
+  awayAt = 0;
+  if (appUnlocked() && away > AUTO_LOCK_MS) showLock("离开一会儿了，再输一次密码");
+});
 
 /* ================= 导航 & 子页 ================= */
 const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters"];
