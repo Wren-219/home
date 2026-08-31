@@ -15,6 +15,7 @@
    | `WORKER_API_KEY` | `AIza...` | 选填，后台杂务模型 Key（不配则共用聊天模型） |
    | `WORKER_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | 选填，例：Gemini 免费额度 |
    | `WORKER_MODEL` | `gemini-2.5-flash-lite` | 选填 |
+   | `WU_PIN` | `0527` | 选填，四位页面密码。**设了就以它为准**，忘记密码时用它找回；不设则用服务器上 `data/auth.json` 里的（默认 0527，可在设置页里改） |
 
    聊天（晤的"嘴"）与后台杂务（记忆蒸馏、dream 整理）可用不同模型：
    贵的好模型聊天，便宜/免费模型干活。
@@ -32,13 +33,21 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
 
 ## 已实现
 
-- 页面密码（默认 0527，可在设置里修改，存于本机）
-- 清单 / 倒数日 / 聊天记录本地持久化（localStorage）
-- Chat 通过后端 `/api/chat` 流式转发 DeepSeek，Key 只存在服务器
+- 页面密码（默认 0527，可在设置里修改）。**密码由服务器验证**：日记 / 信 / 聊天
+  记录 / 照片 / 记忆这些接口，没登录一律 401，上传的文件也一样。登录后拿一个
+  一年期的 HttpOnly cookie；改密码会让其他设备上的旧登录立刻失效
+- 清单 / 倒数日 / 日记 / 信箱 / 照片 / 聊天记录存在服务器（`/app/data`），
+  localStorage 作离线兜底
+- 记忆系统：遗忘曲线 / 回忆强化 / 情绪打标 / dream 整理，聊天时自动注入
+- 八维驱动引擎：随时间与对话涨落，影响晤的语气
+- Chat 通过后端 `/api/chat` 流式转发，支持工具调用（写日记 / 加清单 / 写信…），
+  Key 只存在服务器
+- `/admin` 桌面管理台（同一个密码）
 - PhotoStack 照片堆（github.com/Wren036/PhotoStack，PolyForm Noncommercial）
 
 ## 规划
 
-- [ ] Memory 页接入 wu-memory（OmbreBrain，经 MCP，由后端桥接）
+- [ ] 晤能看图（vision 模型把照片转成文字描述注入上下文）
+- [ ] 长对话滚动摘要（更早的对话压缩后并入记忆系统）
 - [ ] 信箱笔友往来接入 Gmail MCP
-- [ ] 日记 / 清单编辑与云端同步
+- [ ] 聊天多窗口

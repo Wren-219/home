@@ -170,18 +170,27 @@
 const $ = id => document.getElementById(id);
 let toastT;
 function toast(m){ $("toast").textContent=m; $("toast").classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>$("toast").classList.remove("on"),1800); }
-async function api(path, opt){ const r = await fetch(path, opt); if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }
+async function api(path, opt){
+  const r = await fetch(path, opt);
+  if (r.status === 401) { relock(); throw new Error("未登录"); }
+  if (!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
 const J = v => ({ headers:{"Content-Type":"application/json"}, body: JSON.stringify(v) });
 const esc = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
 
-/* 门：与手机端一致的四位密码（默认 0527） */
-$("gatePin").addEventListener("input", () => {
-  if ($("gatePin").value.length === 4) {
-    if ($("gatePin").value === (localStorage.getItem("wu.pin") || "0527")) {
-      $("gate").style.display = "none"; $("app").style.display = "block"; boot();
-    } else { $("gatePin").value = ""; toast("密码不对哦"); }
-  }
+/* 门：交给服务器验，认了才发数据 cookie（与手机端同一个密码，默认 0527） */
+$("gatePin").addEventListener("input", async () => {
+  if ($("gatePin").value.length !== 4) return;
+  const pin = $("gatePin").value;
+  $("gatePin").value = "";
+  try {
+    const r = await fetch("api/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ pin }) });
+    if (!r.ok) { toast("密码不对哦"); return; }
+  } catch { toast("连不上后端"); return; }
+  $("gate").style.display = "none"; $("app").style.display = "block"; boot();
 });
+function relock(){ $("gate").style.display = "flex"; $("app").style.display = "none"; toast("登录过期了，再输一次密码"); }
 
 /* tabs */
 document.querySelector(".tabs").addEventListener("click", e => {

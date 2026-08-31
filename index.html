@@ -921,7 +921,8 @@
           <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
           <div class="set-line" id="setHealth">检查中…</div>
           <div class="set-note" style="padding:12px 2px 0">
-            模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。
+            模型和 API Key 都配置在服务器的环境变量里，不填在这个页面上——手机丢了，钥匙也不会跟着走。<br>
+            密码现在由服务器验证：日记、信、聊天记录、照片都要输对密码才读得到。改密码后其他设备要重新输入一次。
           </div>
         </div>
         <div class="set-card">
@@ -930,7 +931,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v0.9（清单能自己加了 · 日记能写能改 · 相册接了真照片）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v0.9（清单能自己加了 · 日记能写能改 · 相册接了真照片 · 服务器加了锁）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1372,7 +1373,7 @@ function pushState(key, val) {
   if (SERVER) fetch("api/state/" + key, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(val),
-  }).catch(() => {});
+  }).then(r => { if (r.status === 401) relock(); }).catch(() => {});
 }
 function fmt12(d) {
   let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
@@ -1405,15 +1406,28 @@ const TART_PHOTOS = [
 /* ================= 密码锁 ================= */
 let PIN = "0527";
 try { PIN = localStorage.getItem("wu.pin") || "0527"; } catch {}
-function changePin() {
+async function changePin() {
   const cur = document.getElementById("pwCur");
   const nw = document.getElementById("pwNew");
-  if (cur.value !== PIN) { toast("当前密码不对哦"); return; }
   if (!/^\d{4}$/.test(nw.value)) { toast("新密码需为四位数字"); return; }
+  if (SERVER) {
+    /* 服务器是密码的唯一真相；改完其他设备要重新输入 */
+    let j = {};
+    try {
+      const r = await fetch("api/pin", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cur: cur.value, next: nw.value }),
+      });
+      j = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(j.error || "改不了，稍后再试"); return; }
+    } catch { toast("连不上服务器，改不了"); return; }
+  } else if (cur.value !== PIN) {
+    toast("当前密码不对哦"); return;
+  }
   PIN = nw.value;
   try { localStorage.setItem("wu.pin", PIN); } catch {}
   cur.value = ""; nw.value = "";
-  toast("密码已修改 ✓");
+  toast(SERVER ? "密码已修改 ✓ 其他设备要重新输入" : "密码已修改 ✓");
 }
 let pinBuf = "";
 const pinDots = document.getElementById("pinDots");
@@ -1435,19 +1449,49 @@ document.addEventListener("keydown", e => {
 function renderPin() {
   [...pinDots.children].forEach((d, i) => d.classList.toggle("filled", i < pinBuf.length));
 }
-function checkPin() {
-  setTimeout(() => {
-    if (pinBuf === PIN) {
-      const lock = document.getElementById("lockScreen");
-      document.getElementById("app").classList.add("ready");
-      lock.classList.add("unlocked");
-      setTimeout(() => lock.style.display = "none", 600);
-    } else {
-      pinDots.classList.add("shake", "error");
-      document.getElementById("lockHint").textContent = "密码不对哦，再试一次";
-      setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); }, 450);
-    }
-  }, 150);
+/* 密码交给服务器验：认了才发数据 cookie。连不上服务器时用本机密码兜底 */
+let pinBusy = false;
+async function checkPin() {
+  if (pinBusy) return;
+  pinBusy = true;
+  const hint = document.getElementById("lockHint");
+  hint.textContent = "";
+  let ok = null;                        /* true=服务器认了 false=不认 null=连不上 */
+  try {
+    const r = await fetch("api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: pinBuf }),
+    });
+    ok = r.ok;
+  } catch { ok = null; }
+  if (ok === true) {
+    PIN = pinBuf;                       /* 服务器说对，本机也记下来 */
+    try { localStorage.setItem("wu.pin", PIN); } catch {}
+    pinBusy = false; unlockApp(); return;
+  }
+  if (ok === null && pinBuf === PIN) { pinBusy = false; unlockApp(); return; }
+  pinDots.classList.add("shake", "error");
+  hint.textContent = (ok === false && pinBuf === PIN)
+    ? "服务器还不认这个密码，先用 0527 进去，再到设置里改一次"
+    : "密码不对哦，再试一次";
+  setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); pinBusy = false; }, 450);
+}
+function unlockApp() {
+  const lock = document.getElementById("lockScreen");
+  document.getElementById("app").classList.add("ready");
+  lock.classList.add("unlocked");
+  setTimeout(() => { lock.style.display = "none"; }, 600);
+  bootData();
+}
+/* cookie 过期 / 在别处改了密码 → 退回锁屏 */
+function relock() {
+  SERVER = false;
+  const lock = document.getElementById("lockScreen");
+  lock.style.display = "";
+  lock.classList.remove("unlocked");
+  document.getElementById("app").classList.remove("ready");
+  pinBuf = ""; renderPin();
+  document.getElementById("lockHint").textContent = "登录过期了，再输一次密码";
 }
 
 /* ================= 导航 & 子页 ================= */
@@ -2161,7 +2205,7 @@ rerenderChat();
 
 /* 后端探测：部署后有服务器 + Key 就走真 DeepSeek，否则本地演示回复 */
 let ONLINE = false;
-fetch("api/health").then(r => r.json()).then(j => {
+function checkHealth() { fetch("api/health").then(r => r.json()).then(j => {
   ONLINE = !!(j && j.hasKey);
   const el = document.getElementById("setHealth");
   if (!el || !j) return;
@@ -2173,7 +2217,7 @@ fetch("api/health").then(r => r.json()).then(j => {
 }).catch(() => {
   const el = document.getElementById("setHealth");
   if (el) el.textContent = "服务器　　连不上（本地模式，数据只存在这台手机上）";
-});
+}); }
 
 const cannedReplies = ["嗯嗯，我在听～", "这个想法不错，要不要展开说说？", "记下来啦，需要我加进清单吗？", "哈哈，我也这么觉得。"];
 function toApiMessages() {
@@ -2477,7 +2521,6 @@ document.getElementById("memTabs").addEventListener("click", e => {
   document.querySelectorAll("#memTabs .lt-tab").forEach(x => x.classList.toggle("active", x === t));
   memRefresh();
 });
-memRefresh();
 
 /* 聊天后轻量同步：晤用工具改动的清单/日记/信箱回流到界面 */
 async function refreshShared() {
@@ -2493,10 +2536,12 @@ async function refreshShared() {
   } catch {}
 }
 
-/* ================= 启动时从服务器拉取数据 ================= */
-(async function pullState() {
+/* ================= 解锁后才从服务器拉取数据 ================= */
+function bootData() { checkHealth(); pullState(); }
+async function pullState() {
   try {
     const r = await fetch("api/state");
+    if (r.status === 401) { relock(); return; }
     if (!r.ok) throw 0;
     const s = await r.json();
     SERVER = true;
@@ -2512,10 +2557,10 @@ async function refreshShared() {
     if (Array.isArray(s.photos)) photos = s.photos; else put("photos", photos);
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
     renderPhotosPage(); renderHomeStack();
-    memRefresh();
     fetchDrives();
   } catch {}
-})();
+  memRefresh();
+}
 
 /* ================= iOS 键盘适配 =================
    键盘弹出 → 隐藏底部导航（藏到键盘下面）、输入栏贴紧键盘 */
