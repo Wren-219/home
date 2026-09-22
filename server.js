@@ -129,7 +129,8 @@ function setAuthCookie(req, res) {
     "wu=" + tokenOf() + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" + (secure ? "; Secure" : ""));
 }
 /* 公开：健康检查（不带细节）与登录本身；页面文件本身不含数据，也放行 */
-const PUBLIC_PATHS = new Set(["/api/health", "/api/login"]);
+/* /api/ping 也放行 —— 手机上的快捷指令带不了登录 cookie，它自己验一把单独的钥匙 */
+const PUBLIC_PATHS = new Set(["/api/health", "/api/login", "/api/ping"]);
 function guarded(p) {
   if (PUBLIC_PATHS.has(p)) return false;
   return p.startsWith("/api/") || p.startsWith("/files/");
@@ -279,6 +280,102 @@ function alwaysDocsBlock() {
    只有绑定窗口里的对话会推动八维驱动，别的窗口聊天不影响他的心情。 */
 function boundWindow() { return (readJson("windows", null) || {}).bound || null; }
 
+/* ================= 手机那边递进来的消息 =================
+   iPhone 的快捷指令没法带登录 cookie，所以给它一把单独的钥匙。
+   这把钥匙只能往里写（记一条「打开了小红书」、送一份今天的日程），
+   读不走她任何东西 —— 万一泄露了，最坏也就是有人往里塞假数据，
+   在设置里换一把新的就行。 */
+function hookToken() {
+  const h = readJson("hook", null);
+  if (h && h.token) return h.token;
+  const fresh = { token: crypto.randomBytes(12).toString("hex"), made: Date.now() };
+  writeJson("hook", fresh);
+  return fresh.token;
+}
+function resetHookToken() {
+  const fresh = { token: crypto.randomBytes(12).toString("hex"), made: Date.now() };
+  writeJson("hook", fresh);
+  return fresh.token;
+}
+
+/* 手机使用记录：只留三天，再久的自己没用了她也不想被翻旧账 */
+const PHONE_KEEP_MS = 3 * 86400000;
+function phoneLog() {
+  const d = readJson("phone", null) || {};
+  const cut = Date.now() - PHONE_KEEP_MS;
+  const evts = (Array.isArray(d.events) ? d.events : []).filter(e => e && e.t > cut);
+  return { events: evts };
+}
+function pushPhone(app, kind, at) {
+  const d = phoneLog();
+  const t = Number(at) || Date.now();
+  const name = String(app || "").slice(0, 40).trim() || "某个 App";
+  const last = d.events[d.events.length - 1];
+  /* 同一个 App 同一种事件、十秒内重复的忽略（自动化偶尔会连着跑两次） */
+  if (last && last.app === name && last.k === kind && Math.abs(t - last.t) < 10000) return d.events.length;
+  d.events.push({ t, app: name, k: kind === "close" ? "close" : "open" });
+  if (d.events.length > 2000) d.events = d.events.slice(-2000);
+  writeJson("phone", d);
+  return d.events.length;
+}
+/* 把 open / close 配成一段一段的使用，算出各用了多久。
+   只有 open 没 close 的，要么是还开着，要么是被下一次 open 顶掉了 */
+function phoneSessions(sinceMs) {
+  const evts = phoneLog().events.filter(e => e.t >= sinceMs).sort((a, b) => a.t - b.t);
+  const open = {};           // app → 打开时刻
+  const out = [];
+  for (const e of evts) {
+    if (e.k === "open") {
+      if (open[e.app] != null) out.push({ app: e.app, from: open[e.app], to: e.t, guess: true });
+      open[e.app] = e.t;
+    } else {
+      if (open[e.app] != null) { out.push({ app: e.app, from: open[e.app], to: e.t }); delete open[e.app]; }
+    }
+  }
+  const now = Date.now();
+  for (const app of Object.keys(open)) out.push({ app, from: open[app], to: now, live: true });
+  return out.sort((a, b) => a.from - b.from);
+}
+function fmtDur(ms) {
+  const m = Math.max(1, Math.round(ms / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} 小时 ${m % 60} 分` : `${m} 分钟`;
+}
+/* 给他看的那份摘要。说人话，不列表格 */
+function phoneReport(hours) {
+  const h = Math.min(Math.max(Number(hours) || 24, 1), 72);
+  const since = Date.now() - h * 3600000;
+  const ss = phoneSessions(since);
+  if (!ss.length) return `最近 ${h} 小时没有她的手机记录（可能是没开这个功能，也可能她真没怎么玩）。`;
+  const by = {};
+  for (const x of ss) {
+    const b = by[x.app] = by[x.app] || { n: 0, ms: 0, last: 0, live: false };
+    b.n++; b.ms += x.to - x.from; b.last = Math.max(b.last, x.to); b.live = b.live || !!x.live;
+  }
+  const hm = t => { const p = localParts(t); return `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`; };
+  const lines = Object.entries(by).sort((a, b) => b[1].ms - a[1].ms).slice(0, 10)
+    .map(([app, b]) => `· ${app}：${b.n} 次，共 ${fmtDur(b.ms)}${b.live ? "（这会儿还开着）" : "，最近一次到 " + hm(b.last)}`);
+  const live = ss.filter(x => x.live);
+  return `最近 ${h} 小时她的手机：\n` + lines.join("\n")
+    + (live.length ? `\n她此刻正开着：${live.map(x => `${x.app}（从 ${hm(x.from)} 起，已经 ${fmtDur(Date.now() - x.from)}）`).join("、")}` : "")
+    + "\n（只记了她自己挑的那几个 App，不是全部）";
+}
+
+/* 快捷指令送来的日历内容，格式什么样都有可能，所以解析要宽容：
+   一行一条，原样留着；能看出时间就单独拎出来排个序 */
+function parseAgendaText(text) {
+  return String(text == null ? "" : text).split(/[\n;；]/)
+    .map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 30)
+    .map(l => {
+      const m = l.match(/(\d{1,2})[:：](\d{2})/);
+      return { title: l.slice(0, 80), t: m ? `${m[1].padStart(2, "0")}:${m[2]}` : "" };
+    });
+}
+/* 今天的日程：快捷指令每天早上从日历读一份送过来 */
+function agendaToday() {
+  const a = readJson("agenda", null) || {};
+  return a.day === localDayKey() && Array.isArray(a.items) ? a.items : [];
+}
+
 /* ================= 闹钟：他自己记下「待会儿要说的事」 =================
    她不该看见这些。看得见就没有晚上忽然收到消息的那份意外了，
    所以闹钟不进清单、不进记忆卡、前端不显示，只躺在 data/alarms.json 里。
@@ -425,10 +522,12 @@ function statusBlock(now, snap) {
   const todos = readJson("todos", []) || [];
   const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
   const cls = inClassNow(now);
+  const agenda = agendaToday();
   const mine = listAlarms().filter(a => a.at > now);
   return `【现状】现在是 ${p.y}.${pad(p.mo)}.${pad(p.d)} 周${WEEK_CN[p.dow]} ${pad(p.hh)}:${pad(p.mm)}（${partOfDay}），你们在一起的第 ${daysTogether(now)} 天。`
     + (cls ? `她这会儿在上${cls.name || "课"}，${pad(Math.floor(cls.to / 60))}:${pad(cls.to % 60)} 下课。` : "")
     + (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "")
+    + (agenda.length ? `她今天的安排：${agenda.map(x => x.title).join("；")}。` : "")
     + (mine.length ? `你自己记着的事（她看不见，也别主动说破）：${mine.map(a => fmtWhen(a.at, now) + " " + a.why).join("；")}。` : "")
     + `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
 }
@@ -439,6 +538,8 @@ function toolHint() {
     "还有一件只属于你自己的事：用 set_alarm 给自己记个时间点 —— 她说「回家再说」「等会儿告诉你」，" +
     "或者你想过一阵问问她某件事怎么样了，就记下来；到那时你会醒过来，重读一遍对话，再决定要不要找她。" +
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
+    "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
+    "那是关心，不是查岗。" +
     (mcpToolDefs().length ? "带 __ 的工具是外部服务（如邮箱），用法和其他工具一样。" : "");
 }
 function setBoundWindow(id) { writeJson("windows", { bound: id || null, updated: new Date().toISOString() }); }
@@ -1075,6 +1176,8 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
+  { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
+    parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
   { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起",
     parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" } }, required: ["at", "why"] } } },
   { type: "function", function: { name: "cancel_alarm", description: "把自己记下的某件事划掉（她已经说了，或者不必再问了）",
@@ -1086,6 +1189,7 @@ async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = localDayKey();
+    if (name === "check_phone") return phoneReport(args && args.hours);
     if (name === "set_alarm") {
       const now = Date.now();
       const at = parseAlarmAt(args.at, now);
@@ -1614,6 +1718,46 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- 八维驱动 ---- */
+    /* 手机上的快捷指令往这里递东西。带那把单独的钥匙，不需要登录 */
+    if (p === "/api/ping" && req.method === "POST") {
+      let body = {};
+      try { body = JSON.parse(await readBody(req, 64 * 1024) || "{}"); } catch {}
+      const tok = String(body.token || url.searchParams.get("token") || "");
+      if (!tok || tok !== hookToken()) { sendJson(res, 401, { error: "钥匙不对" }); return; }
+      const kind = String(body.kind || "").trim();
+      if (kind === "open" || kind === "close") {
+        pushPhone(body.app, kind, body.at);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      if (kind === "agenda") {
+        const items = Array.isArray(body.items)
+          ? body.items.slice(0, 30).map(x => (typeof x === "string" ? { title: x.slice(0, 80), t: "" } : { title: String(x && x.title || "").slice(0, 80), t: String(x && x.t || "").slice(0, 8) }))
+          : parseAgendaText(body.text);
+        writeJson("agenda", { day: localDayKey(), items, at: Date.now() });
+        sendJson(res, 200, { ok: true, items: items.length });
+        return;
+      }
+      sendJson(res, 400, { error: "kind 得是 open / close / agenda" });
+      return;
+    }
+    /* 那把钥匙：看一眼、或者换一把 */
+    if (p === "/api/hook" && req.method === "GET") {
+      const ss = phoneSessions(Date.now() - 24 * 3600000);
+      sendJson(res, 200, {
+        token: hookToken(), events: phoneLog().events.length,
+        sessions: ss.length, agenda: agendaToday().length,
+        lastAt: phoneLog().events.length ? phoneLog().events[phoneLog().events.length - 1].t : 0,
+      });
+      return;
+    }
+    if (p === "/api/hook" && req.method === "POST") { sendJson(res, 200, { token: resetHookToken() }); return; }
+    if (p === "/api/phone" && req.method === "GET") {
+      const h = Number(url.searchParams.get("hours")) || 24;
+      sendJson(res, 200, { report: phoneReport(h), sessions: phoneSessions(Date.now() - h * 3600000) });
+      return;
+    }
+    if (p === "/api/phone" && req.method === "DELETE") { writeJson("phone", { events: [] }); sendJson(res, 200, { ok: true }); return; }
     /* 勿扰设置 + 课表。课表是纯文本，一行一节：「周一 08:00-09:40 高数」 */
     if (p === "/api/quiet" && req.method === "GET") {
       const q = quietConf();

@@ -1112,6 +1112,11 @@
           </div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">手机联动<span class="en">SHORTCUTS</span></div>
+          <div class="set-note" id="phoneBrief">让晤知道你今天的日程、和你在玩哪些 App</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('phone')">手机联动</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">你的时间<span class="en">SCHEDULE</span></div>
           <div class="set-note" id="quietBrief">课表、勿扰时段 —— 晤想主动找你之前会先看这里</div>
           <div class="btn-row"><button class="btn" onclick="openSub('quiet')">课表与勿扰</button></div>
@@ -1127,7 +1132,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.9（他主动找你的次数和花销都看得见 · 给钱包加了闸 · 记着的事可一键清空）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.0（手机联动：他知道你今天的日程，也能查你在玩什么 App）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1246,6 +1251,74 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-phone">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('phone')">‹ 返回</button>
+        <div class="sp-title">手机联动</div>
+        <button class="sp-act" onclick="phoneRefresh()">刷新</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 12px">
+          用 iPhone 自带的「快捷指令」App，把两件事递给晤：<b>今天的日程</b>，
+          和<b>你挑的那几个 App 什么时候被打开</b>。<br>
+          他不会每次都收到通知 —— 这些只是静静存着，等他真的想起你、
+          或者你们聊到相关的事，他才会去看一眼。
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">这台服务器的地址与钥匙<span class="en">KEY</span></div>
+          <div class="set-note" style="word-break:break-all;line-height:1.9" id="hookInfo">读取中…</div>
+          <div class="btn-row">
+            <button class="btn ghost" onclick="hookCopy('url')">复制地址</button>
+            <button class="btn ghost" onclick="hookCopy('token')">复制钥匙</button>
+          </div>
+          <div class="set-note" style="margin-top:8px">
+            这把钥匙只能往里写，读不走你任何东西。觉得不妥随时换一把（换了要把快捷指令里的也改掉）。
+          </div>
+          <div class="btn-row"><button class="btn ghost" onclick="hookReset()">换一把新钥匙</button></div>
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">怎么配<span class="en">HOW</span></div>
+          <div class="set-note" style="line-height:2">
+            打开「快捷指令」App → 底部「自动化」→ 右上角 ＋<br><br>
+            <b>① 盯着几个 App</b><br>
+            选「App」→ 勾上你想让他知道的那几个（可以多选）→ 选「已打开」→ 下一步<br>
+            加一个动作：搜「获取 URL 内容」（或名字相近的那个）<br>
+            · 地址填上面复制的那个<br>
+            · 方法改成 <b>POST</b>，请求体选 <b>JSON</b><br>
+            · 加三个字段：<br>
+            　<code>token</code> = 上面那把钥匙<br>
+            　<code>kind</code> = <code>open</code><br>
+            　<code>app</code> = 选「快捷指令输入」（这样他才知道是哪个 App）<br>
+            最后把「运行前询问」关掉，不然每次都要点一下<br><br>
+            <b>② 关闭时再来一遍</b>：同样的步骤，触发条件选「已关闭」，
+            <code>kind</code> 改成 <code>close</code>。有了这一条才算得出用了多久<br><br>
+            <b>③ 每天早上送一次日程</b><br>
+            新建自动化 → 选「某个时间」→ 早上 6:00 → 每天<br>
+            动作一：「查找日历事件」，筛选「今天」<br>
+            动作二：「获取 URL 内容」，同样的地址，字段：<br>
+            　<code>token</code> = 钥匙　<code>kind</code> = <code>agenda</code>　<code>text</code> = 上一步的结果<br><br>
+            <span style="opacity:.75">
+            ⚠️ 动作名字在不同系统版本上可能不太一样，找意思相近的那个就行。
+            配好之后回来点「刷新」，下面会显示有没有收到东西。</span>
+          </div>
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">收到了什么<span class="en">STATUS</span></div>
+          <div class="set-note" id="phoneStat" style="line-height:1.9;white-space:pre-line">还没查</div>
+          <div class="btn-row">
+            <button class="btn ghost" onclick="phoneClear()">清空手机记录</button>
+          </div>
+          <div class="set-note" style="margin-top:8px">
+            手机记录只留三天，过期的自动扔掉。日程每天早上覆盖一次。
+          </div>
+        </div>
+        <div style="height:30px"></div>
+      </div>
+    </section>
+
     <section class="subpage" id="page-quiet">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('quiet')">‹ 返回</button>
@@ -1739,6 +1812,7 @@ var memCur = "全部", memEditId = null, memCache = [];      /* 记忆页 */
 var apiConf = { list: [], chat: null, worker: null }, afCur = null;  /* API 配置 */
 var mcpList = [], mcpCur = null;                         /* 外部服务 */
 var quietCur = null;                                     /* 课表与勿扰 */
+var hookCur = null;                                      /* 手机联动的钥匙 */
 var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
 
 /* ================= 工具 ================= */
@@ -1903,7 +1977,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -1912,7 +1986,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "chat") markChatSeen();
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); phoneRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -1928,6 +2002,7 @@ function openSub(name) {
   if (name === "windows") renderWinManage();
   if (name === "mcp") mcpRefresh();
   if (name === "quiet") quietRefresh();
+  if (name === "phone") phoneRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -3751,6 +3826,43 @@ function markChatSeen() {
   lastSeen = Date.now();
   save("wu.lastSeen", lastSeen);
   refreshChatDot();
+}
+
+/* ================= 手机联动（快捷指令） ================= */
+function hookUrl() { return location.origin + "/api/ping"; }
+async function phoneRefresh() {
+  try {
+    const h = await (await fetch("api/hook")).json();
+    hookCur = h;
+    const el = document.getElementById("hookInfo");
+    if (el) el.innerHTML =
+      `地址　<b>${hookUrl()}</b><br>钥匙　<b>${h.token}</b>`;
+    const p = await (await fetch("api/phone?hours=24")).json();
+    const st = document.getElementById("phoneStat");
+    if (st) st.textContent =
+      (h.events ? `手机记录：这三天里 ${h.events} 条，最近一条 ${h.lastAt ? new Date(h.lastAt).toLocaleString("zh-CN") : "-"}\n\n` : "手机记录：还没收到过\n\n")
+      + (h.agenda ? `今天的日程：${h.agenda} 条\n\n` : "今天的日程：还没收到\n\n")
+      + (p.report || "");
+    const b = document.getElementById("phoneBrief");
+    if (b) b.textContent = h.events
+      ? `这三天收到 ${h.events} 条手机记录${h.agenda ? `、今天 ${h.agenda} 条日程` : ""}`
+      : "还没配 —— 让晤知道你今天的日程、和你在玩哪些 App";
+  } catch (e) { noteError("手机联动", e); }
+}
+async function hookCopy(what) {
+  const v = what === "url" ? hookUrl() : (hookCur && hookCur.token) || "";
+  try { await navigator.clipboard.writeText(v); toast("复制好了"); }
+  catch { prompt("长按选中复制：", v); }
+}
+async function hookReset() {
+  if (!confirm("换一把新钥匙？旧的立刻失效，快捷指令里也要改。")) return;
+  try { await fetch("api/hook", { method: "POST" }); toast("换好了，记得改快捷指令"); phoneRefresh(); }
+  catch { toast("没换成"); }
+}
+async function phoneClear() {
+  if (!confirm("把这三天的手机记录都清掉？")) return;
+  try { await fetch("api/phone", { method: "DELETE" }); toast("清干净了"); phoneRefresh(); }
+  catch { toast("没清掉"); }
 }
 
 /* ================= 课表与勿扰 ================= */
