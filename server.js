@@ -360,7 +360,21 @@ function phoneReport(hours) {
   const h = Math.min(Math.max(Number(hours) || 24, 1), 72);
   const since = Date.now() - h * 3600000;
   const ss = phoneSessions(since);
-  if (!ss.length) return `最近 ${h} 小时没有她的手机记录（可能是没开这个功能，也可能她真没怎么玩）。`;
+  const hm0 = t => { const p = localParts(t); return `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`; };
+  if (!ss.length) {
+    /* 配不齐「打开」和「关上」两个自动化时（只有一半也很常见），
+       至少把光秃秃的事件报出来 —— 算不出时长，但「她几点碰过什么」还是有用的 */
+    const evts = phoneLog().events.filter(e => e.t >= since);
+    if (!evts.length) return `最近 ${h} 小时没有她的手机记录（可能是没开这个功能，也可能她真没怎么玩）。`;
+    const by = {};
+    for (const e of evts) {
+      const b = by[e.app] = by[e.app] || { n: 0, last: 0 };
+      b.n++; b.last = Math.max(b.last, e.t);
+    }
+    return `最近 ${h} 小时她碰过这些 App（只记到了动静、算不出用了多久）：\n`
+      + Object.entries(by).sort((a, b) => b[1].last - a[1].last).slice(0, 10)
+          .map(([app, b]) => `· ${app}：${b.n} 次，最近一次 ${hm0(b.last)}`).join("\n");
+  }
   const by = {};
   for (const x of ss) {
     const b = by[x.app] = by[x.app] || { n: 0, ms: 0, last: 0, live: false };
@@ -406,8 +420,10 @@ function phoneBrief(now) {
     return "她这会儿正开着 " + live.map(x => `${x.app}（从 ${hm(x.from)} 起，已经 ${fmtDur(now - x.from)}）`).join("、") + "。";
   }
   const last = ss[ss.length - 1];
-  if (!last) return "";
-  return `她最后一次碰手机是 ${hm(last.to)}（${last.app}），到现在 ${fmtDur(now - last.to)}没动静了。`;
+  if (last) return `她最后一次碰手机是 ${hm(last.to)}（${last.app}），到现在 ${fmtDur(now - last.to)}没动静了。`;
+  /* 配不齐两个自动化时，退而求其次：至少知道她几点还在动 */
+  const e = evts[evts.length - 1];
+  return `她最后一次碰手机是 ${hm(e.t)}（${e.app}，${e.k === "open" ? "打开" : "关上"}），到现在 ${fmtDur(now - e.t)}没动静了。`;
 }
 
 /* 今天的日程：快捷指令每天早上从日历读一份送过来 */
