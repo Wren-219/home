@@ -74,6 +74,7 @@
     <button class="tab" data-p="docs">长期文件</button>
     <button class="tab" data-p="api">API 与花费</button>
     <button class="tab" data-p="drive">内在驱动</button>
+    <button class="tab" data-p="wake">他记着的事</button>
     <button class="tab" data-p="raw">原始数据</button>
   </div>
 
@@ -92,6 +93,27 @@
         <tbody></tbody>
       </table>
       <div class="hint">编辑行内内容后点「存」。删除是软删除（归档），文件仍在硬盘上。</div>
+    </div>
+  </div>
+
+  <!-- 他记着的事 -->
+  <div class="panel" id="p-wake">
+    <div class="card">
+      <div class="bar">
+        <span class="grow" id="wStat">…</span>
+        <button onclick="wakeLoad()">刷新</button>
+        <button onclick="wakeClear()">全部清掉</button>
+      </div>
+      <table id="wTable">
+        <thead><tr><th style="width:150px">什么时候醒</th><th>他记下的理由</th><th style="width:90px">状态</th><th style="width:130px">设于</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="hint">
+        这些是晤在聊天里用 set_alarm 自己记下的，手机界面上看不到 —— 那是有意的，
+        看得见就没有忽然收到消息的意外了。这里是留给你查账和排错的地方。<br>
+        「醒」一次 = 他重读一遍你们的对话再决定说不说，说不说都花那一次的钱。
+        一天能醒几次、能开口几次，在手机「设置 → 你的时间」里调。
+      </div>
     </div>
   </div>
 
@@ -312,8 +334,38 @@ document.querySelector(".tabs").addEventListener("click", e => {
   const t = e.target.closest(".tab"); if (!t) return;
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
   document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("on",x.id==="p-"+t.dataset.p));
-  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, docs:docLoad, api:()=>{apiLoad();usageLoad();}, drive:loadDrive, raw:rawLoad})[t.dataset.p]();
+  ({mem:memLoad, todo:todoLoad, cd:cdLoad, diary:diaryLoad, docs:docLoad, api:()=>{apiLoad();usageLoad();}, drive:loadDrive, wake:wakeLoad, raw:rawLoad})[t.dataset.p]();
 });
+/* ===== 他记着的事 ===== */
+async function wakeLoad(){
+  let d, q;
+  try { d = await api("api/alarms"); q = await api("api/quiet"); }
+  catch { $("wStat").textContent = "读不到"; return; }
+  const t = (q && q.today) || {}, a = t.allTime || {};
+  $("wStat").innerHTML = `今天醒 <b>${t.woke||0}</b> 次 · 开口 <b>${t.said||0}</b> 次`
+    + ` · 上限 ${q.maxWakePerDay}/${q.maxPerDay}`
+    + ` · 累计 ${a.woke||0} 次醒、${a.said||0} 次开口`
+    + (a.cost ? ` · 一共 ${(t.unit||"￥")}${(a.cost||0).toFixed(4)}` : "")
+    + ` · 门：${d.gate && d.gate.ok ? "开着（这会儿可以说话）" : "关着（" + ((d.gate&&d.gate.why)||"") + "）"}`;
+  const tb = document.querySelector("#wTable tbody");
+  const list = (d.list||[]).slice().sort((x,y)=>x.at-y.at);
+  tb.innerHTML = list.length ? "" : '<tr><td colspan="4" style="opacity:.6">他这会儿什么都没记着。</td></tr>';
+  for (const a2 of list) {
+    const tr = document.createElement("tr");
+    const c = (txt, w) => { const td = document.createElement("td"); td.textContent = txt; if (w) td.style.opacity = ".7"; return td; };
+    tr.appendChild(c(a2.when));
+    tr.appendChild(c(a2.why));
+    tr.appendChild(c(a2.due ? "到点了，等门开" : "等着", true));
+    tr.appendChild(c(a2.made ? new Date(a2.made).toLocaleString("zh-CN") : "-", true));
+    tb.appendChild(tr);
+  }
+}
+async function wakeClear(){
+  if (!confirm("让他把记着的事全忘掉？")) return;
+  try { const r = await api("api/alarms", { method: "DELETE" }); alert("清掉了 " + (r.cleared||0) + " 件"); wakeLoad(); }
+  catch { alert("清不掉"); }
+}
+
 async function boot(){
   try { const h = await api("api/health"); $("健康").textContent = `模型 ${h.model} · Key ${h.hasKey?"已配置":"未配置"} · 记忆 ${h.memories} 张` +
       (h.docs ? ` · 长期文件 ${h.docs.always} 常驻/${h.docs.ondemand} 备查（常驻约 ${h.docs.alwaysTokens.toLocaleString()} token）` : "") +

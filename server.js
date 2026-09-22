@@ -318,6 +318,7 @@ function quietConf() {
     nightEnd: num(q.nightEnd, 8),        // 第二天几点之后才许说话
     minGapMin: num(q.minGapMin, 90),     // 她刚说过话，至少隔这么久
     maxPerDay: num(q.maxPerDay, 2),      // 他一天最多主动开口几次
+    maxWakePerDay: num(q.maxWakePerDay, 8),  // 一天最多醒几次（含"想了想没说话"的）——这是钱包的保险丝
   };
 }
 const DOW_CN = { "日": 0, "天": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6 };
@@ -338,14 +339,31 @@ function inClassNow(ms) {
   const c = parseClasses(quietConf().classes).find(x => x.dow === p.dow && p.minOfDay >= x.from && p.minOfDay < x.to);
   return c ? { ...c, endAt: localStamp(ms, Math.floor(c.to / 60), c.to % 60) } : null;
 }
-/* 他今天已经主动开口几次了 */
+/* 他今天醒了几次、说了几次、花了多少钱。
+   ⚠️ 醒和说必须分开记：他完全可以一直「想了想没说话」——那也是实打实
+   读了一遍完整上下文、花了钱的。只数说话次数的话，钱包上就没有闸。 */
 function wakeLog() {
   const w = readJson("wakelog", null) || {};
-  return w.day === localDayKey() ? w : { day: localDayKey(), count: 0 };
+  const allTime = w.allTime || { woke: 0, said: 0, cost: 0 };
+  if (w.day === localDayKey()) return { unit: "￥", woke: 0, said: 0, cost: 0, ...w, allTime };
+  return { day: localDayKey(), woke: 0, said: 0, cost: 0, unit: w.unit || "￥", allTime };
 }
-function bumpWakeLog() {
+function bumpWakeLog(said, billed) {
   const w = wakeLog();
-  writeJson("wakelog", { day: w.day, count: (w.count || 0) + 1, last: Date.now() });
+  const c = (billed && billed.cost) || 0;
+  writeJson("wakelog", {
+    day: w.day,
+    woke: (w.woke || 0) + 1,
+    said: (w.said || 0) + (said ? 1 : 0),
+    cost: (w.cost || 0) + c,
+    unit: (billed && billed.unit) || w.unit || "￥",
+    last: Date.now(),
+    allTime: {
+      woke: (w.allTime.woke || 0) + 1,
+      said: (w.allTime.said || 0) + (said ? 1 : 0),
+      cost: (w.allTime.cost || 0) + c,
+    },
+  });
 }
 /* 她最后一次开口是什么时候。
    不能只看 drives.lastUser —— 那个只在绑定窗口才更新，
@@ -386,9 +404,10 @@ function quietCheck(now) {
     return { ok: false, why: "她刚跟他说过话", retryAt: lastUser + q.minGapMin * 60000 };
   }
   const w = wakeLog();
-  if ((w.count || 0) >= q.maxPerDay) {
-    return { ok: false, why: "他今天已经主动开过口了", retryAt: localStamp(now, q.nightEnd, 0, 1) };
-  }
+  const tomorrow = localStamp(now, q.nightEnd, 0, 1);
+  if ((w.said || 0) >= q.maxPerDay) return { ok: false, why: "他今天已经主动开过口了", retryAt: tomorrow };
+  /* 钱包的闸：醒了但没说话也算数，否则他可以整天醒着读上下文而她毫不知情 */
+  if ((w.woke || 0) >= q.maxWakePerDay) return { ok: false, why: "他今天醒的次数够多了（省着点花）", retryAt: tomorrow };
   return { ok: true };
 }
 
@@ -820,8 +839,12 @@ function readUsage(dialect, u) {
 async function llm(messages, maxTokens = 800, temperature = 0.3) {
   return llmAs("worker", messages, maxTokens, temperature);
 }
-/* 同一套请求，换个角色。唤醒要用聊天那套（晤本人），蒸馏继续用干活那套 */
 async function llmAs(role, messages, maxTokens = 800, temperature = 0.3) {
+  return (await llmAsRaw(role, messages, maxTokens, temperature)).text;
+}
+/* 同一套请求，换个角色。唤醒要用聊天那套（晤本人），蒸馏继续用干活那套。
+   连账一起返回，唤醒那条路要把花销单独记下来给她看 */
+async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3) {
   const api = activeApi(role);
   if (!api.key) throw new Error("没有可用的模型（" + role + "）");
   const req = upstreamReq(api, messages, null, false);
@@ -830,11 +853,11 @@ async function llmAs(role, messages, maxTokens = 800, temperature = 0.3) {
   const resp = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
   if (!resp.ok) throw new Error("LLM HTTP " + resp.status + "：" + (await resp.text()).slice(0, 160));
   const j = await resp.json();
-  recordUsage(api, role, readUsage(api.dialect, j.usage));
-  if (api.dialect === "anthropic") {
-    return (j.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "";
-  }
-  return j.choices?.[0]?.message?.content || "";
+  const billed = recordUsage(api, role, readUsage(api.dialect, j.usage));
+  const text = api.dialect === "anthropic"
+    ? ((j.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "")
+    : (j.choices?.[0]?.message?.content || "");
+  return { text, billed };
 }
 function extractJsonObject(text) {
   const m = String(text == null ? "" : text).match(/\{[\s\S]*\}/);
@@ -959,7 +982,7 @@ async function runWake(alarm) {
     { role: "user", content: wakePrompt },
   ];
 
-  const raw = await llmAs("chat", messages, 400, 0.8);
+  const { text: raw, billed } = await llmAsRaw("chat", messages, 400, 0.8);
   const j = extractJsonObject(raw) || {};
   const text = String(j.text == null ? "" : j.text).trim().slice(0, 600);
   const againNum = Number(j.again);
@@ -971,12 +994,14 @@ async function runWake(alarm) {
        回来会重新拉一次数据，不会拿旧副本把这条盖掉。 */
     win.msgs.push({ k: "ai", t: text, ts: Date.now(), wake: true });
     writeJson("chat", chat);
-    bumpWakeLog();
+    bumpWakeLog(true, billed);
     /* 话说出去了，惦记就消一点 —— 跟聊天里那一下回落是同一个意思 */
     dr.values.attachment = clamp01(dr.values.attachment * 0.9);
     saveDrives(dr);
     return { ok: true, said: true, text, again };
   }
+  /* 没说话也要记一笔 —— 上下文照样读了、钱照样花了 */
+  bumpWakeLog(false, billed);
   saveDrives(dr);
   return { ok: true, said: false, again, raw: raw.slice(0, 200) };
 }
@@ -1023,7 +1048,9 @@ async function wakeTick(force) {
       return { error: e.message };
     }
     const keep = listAlarms().filter(x => x.id !== alarm.id);
-    if (r.ok && r.again) keep.push({ ...alarm, at: now + r.again * 60000, made: alarm.made || now });
+    /* 他可以说「晚点再想一次」，但不能没完没了地续 —— 三次之后这件事就算了 */
+    const snoozed = (alarm.snoozed || 0) + 1;
+    if (r.ok && r.again && snoozed <= 3) keep.push({ ...alarm, at: now + r.again * 60000, made: alarm.made || now, snoozed });
     saveAlarms(keep);
     return r;
   } finally { wakeBusy = false; }
@@ -1068,6 +1095,8 @@ async function execTool(name, args) {
       if (!why) return "得写清楚为什么记这个，不然到时候你自己也看不懂";
       const list = listAlarms();
       if (list.some(a => a.at > now && (a.why.includes(why) || why.includes(a.why)))) return "这件事你已经记着了，不用记两遍";
+      /* 上限：惦记的事再多也不该没完没了，免得一天到晚在醒 */
+      if (list.filter(a => a.at > now).length >= 10) return "你惦记的事已经够多了（最多同时记 10 件），先了结几件再说";
       list.push({ id: "k" + now.toString(36) + Math.random().toString(36).slice(2, 5), at, why, win: boundWindow(), made: now });
       saveAlarms(list);
       return "记下了。到点你会醒一次（她看不见这件事，别在回复里提）";
@@ -1588,7 +1617,11 @@ const server = http.createServer(async (req, res) => {
     /* 勿扰设置 + 课表。课表是纯文本，一行一节：「周一 08:00-09:40 高数」 */
     if (p === "/api/quiet" && req.method === "GET") {
       const q = quietConf();
-      sendJson(res, 200, { ...q, parsed: parseClasses(q.classes) });
+      const now = Date.now();
+      sendJson(res, 200, {
+        ...q, parsed: parseClasses(q.classes), today: wakeLog(),
+        pending: listAlarms().filter(a => a.at > now).length,
+      });
       return;
     }
     if (p === "/api/quiet" && req.method === "PUT") {
@@ -1600,6 +1633,7 @@ const server = http.createServer(async (req, res) => {
         classes: typeof body.classes === "string" ? body.classes.slice(0, 8000) : cur.classes,
         nightStart: num(body.nightStart, cur.nightStart, 0, 23),
         nightEnd: num(body.nightEnd, cur.nightEnd, 0, 23),
+        maxWakePerDay: num(body.maxWakePerDay, cur.maxWakePerDay, 1, 50),
         minGapMin: num(body.minGapMin, cur.minGapMin, 5, 24 * 60),
         maxPerDay: num(body.maxPerDay, cur.maxPerDay, 0, 20),
       };
@@ -1607,7 +1641,14 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, ...next, parsed: parseClasses(next.classes) });
       return;
     }
-    /* 他惦记着的事。她平时看不到这个（界面里没有入口），排错时才用 */
+    /* 急停：把他记着的事全清掉。万一他抽风记了一堆，她得有个地方掐断 */
+    if (p === "/api/alarms" && req.method === "DELETE") {
+      const n = listAlarms().length;
+      saveAlarms([]);
+      sendJson(res, 200, { ok: true, cleared: n });
+      return;
+    }
+    /* 他惦记着的事。聊天界面里看不到，但这里能查到 —— /admin 会用它 */
     if (p === "/api/alarms" && req.method === "GET") {
       const now = Date.now();
       sendJson(res, 200, {

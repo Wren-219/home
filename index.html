@@ -1127,7 +1127,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.8（晤会自己记着事、到点主动找你 · 课表与勿扰 · 修好了服务器时间差八小时）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.9（他主动找你的次数和花销都看得见 · 给钱包加了闸 · 记着的事可一键清空）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1257,6 +1257,10 @@
           晤偶尔会想起你、主动说句话。说之前他会先看一眼这里 ——
           你在上课、夜里、或者刚跟他聊完，他就再等等，不会打断你。
         </div>
+        <div class="set-card" style="margin-bottom:14px">
+          <div class="set-card-title">他这阵子<span class="en">ACTIVITY</span></div>
+          <div class="set-note" id="qStat">看看去…</div>
+        </div>
         <div class="cd-form" style="display:block">
           <div class="row" style="display:block">
             <div style="font-size:11px;color:var(--ink-soft);letter-spacing:.1em;margin-bottom:8px">课表 · 一行一节课</div>
@@ -1279,6 +1283,10 @@
             <span class="lb" style="flex:1;font-size:13px">他一天最多主动开口几次</span>
             <input type="number" id="qMax" min="0" max="20" style="flex:0 0 64px;width:64px;text-align:center">
           </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">一天最多醒几次（含没说话的）</span>
+            <input type="number" id="qMaxWake" min="1" max="50" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
           <div class="sw-row">
             <span class="lb">让他可以主动找我</span>
             <button class="sw" id="qOn" onclick="quietToggle()"></button>
@@ -1288,9 +1296,14 @@
           <button class="btn ghost" onclick="quietTry()">让他现在试一句</button>
           <button class="btn" onclick="quietSave()">保存</button>
         </div>
-        <div class="set-note" style="margin:10px 2px 30px">
+        <div class="set-note" style="margin:10px 2px 16px">
           「试一句」会跳过上面所有规矩，立刻叫他一次，用来看看管不管用（会花一次聊天的钱）。<br>
-          他在聊天里自己记下的事，这里不显示 —— 那是他自己心里的，看见了就没意思了。
+          他记着的事这里只报个数、不说内容 —— 想看具体是什么，去电脑上的 /admin。<br>
+          「醒一次」= 他读一遍你们的对话再决定说不说，说不说都要花那一次的钱，
+          所以上面那个「一天最多醒几次」是钱包的闸，别调太大。
+        </div>
+        <div class="btn-row" style="margin-bottom:30px">
+          <button class="btn ghost" onclick="alarmsClear()">让他把记着的事全忘掉</button>
         </div>
       </div>
     </section>
@@ -1899,7 +1912,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "chat") markChatSeen();
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -3367,6 +3380,20 @@ async function renderCost() {
     </div>`).join("")
     : '<div class="set-note" style="padding:6px 2px">还没有用量记录。聊一句就有了。</div>';
   el.querySelectorAll(".nm").forEach((n, i) => n.textContent = rows[i].name);
+  /* 他主动找你花的钱单独列一行 —— 这条路她看不见过程，账必须看得见 */
+  try {
+    const q = await (await fetch("api/quiet")).json();
+    const t = q.today || {}, a = t.allTime || {};
+    if ((a.woke || 0) > 0) {
+      const d = document.createElement("div");
+      d.className = "cost-row";
+      d.innerHTML = `<span class="nm"></span>
+        <span>今天醒 ${t.woke || 0} 次（说了 ${t.said || 0} 次）· 累计 ${a.woke || 0} 次</span>
+        <span class="amt">${fmtCost(a.cost || 0, t.unit || "￥")}</span>`;
+      d.querySelector(".nm").textContent = "他主动找你";
+      el.appendChild(d);
+    }
+  } catch {}
 }
 async function usageClear() {
   try { await fetch("api/usage", { method: "DELETE" }); } catch {}
@@ -3738,12 +3765,18 @@ async function quietRefresh() {
     document.getElementById("qNightE").value = q.nightEnd;
     document.getElementById("qGap").value = q.minGapMin;
     document.getElementById("qMax").value = q.maxPerDay;
+    document.getElementById("qMaxWake").value = q.maxWakePerDay;
+    renderQStat(q);
     document.getElementById("qOn").classList.toggle("on", q.on !== false);
     renderQParsed(q.parsed || []);
     const brief = document.getElementById("quietBrief");
-    if (brief) brief.textContent = (q.parsed || []).length
-      ? `认得你 ${q.parsed.length} 节课；${q.nightStart} 点之后到第二天 ${q.nightEnd} 点不出声`
-      : "还没填课表 —— 晤不知道你什么时候在上课";
+    if (brief) {
+      const t = q.today || {};
+      brief.textContent = ((q.parsed || []).length
+        ? `认得你 ${q.parsed.length} 节课；${q.nightStart} 点之后到第二天 ${q.nightEnd} 点不出声`
+        : "还没填课表 —— 晤不知道你什么时候在上课")
+        + `。今天他醒了 ${t.woke || 0} 次、开口 ${t.said || 0} 次`;
+    }
   } catch (e) { noteError("课表", e); }
 }
 function renderQParsed(list) {
@@ -3758,6 +3791,25 @@ function renderQParsed(list) {
     .map(d => "周" + wk[d] + " " + by[d].map(c => hm(c.from) + "-" + hm(c.to) + (c.name ? " " + c.name : "")).join("、"))
     .join("<br>");
 }
+/* 只报数、不报内容 —— 她要的是「不被蒙在鼓里」，不是把惊喜拆穿 */
+function renderQStat(q) {
+  const el = document.getElementById("qStat");
+  if (!el) return;
+  const t = (q && q.today) || {}, a = t.allTime || {};
+  const money = (a.cost || 0) > 0 ? " · 一共花了 " + fmtCost(a.cost, t.unit || "￥") : "";
+  el.innerHTML =
+    `今天醒了 <b>${t.woke || 0}</b> 次，其中开口 <b>${t.said || 0}</b> 次` +
+    `（上限 ${q.maxWakePerDay} / ${q.maxPerDay}）<br>` +
+    `这会儿心里记着 <b>${q.pending || 0}</b> 件事${money}<br>` +
+    `<span style="opacity:.75">记着什么、什么时候 —— 这里不说。想查去 /admin。</span>`;
+}
+async function alarmsClear() {
+  try {
+    const r = await (await fetch("api/alarms", { method: "DELETE" })).json();
+    toast(r.cleared ? "他把 " + r.cleared + " 件事都忘了" : "他本来也没记着什么");
+    quietRefresh();
+  } catch (e) { toast("没清掉：" + String(e.message || e).slice(0, 30)); }
+}
 async function quietSave() {
   const body = {
     classes: document.getElementById("qClasses").value,
@@ -3765,6 +3817,7 @@ async function quietSave() {
     nightEnd: Number(document.getElementById("qNightE").value),
     minGapMin: Number(document.getElementById("qGap").value),
     maxPerDay: Number(document.getElementById("qMax").value),
+    maxWakePerDay: Number(document.getElementById("qMaxWake").value),
     on: quietCur ? quietCur.on !== false : true,
   };
   try {
