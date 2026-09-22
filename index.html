@@ -114,6 +114,16 @@
   }
   .tab svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .tab.active { color: var(--blue-deep); }
+  /* 晤在你不在的时候说了话 —— Chat 上点一颗小红点 */
+  .tab { position: relative; }
+  .tab-dot {
+    position: absolute; top: 6px; left: 50%; margin-left: 7px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--coral);
+    opacity: 0; transform: scale(.4); transition: all .25s cubic-bezier(.25,.8,.3,1);
+    box-shadow: 0 0 0 2px rgba(250,251,253,.9);
+  }
+  .tab-dot.on { opacity: 1; transform: scale(1); }
+
   /* 键盘弹出时：导航栏藏到键盘下面，输入栏贴紧键盘 */
   /* 键盘弹出时导航栏直接不渲染。原来用 transform 挪下去 160%，但 iOS 把整个
      fixed 页面往上推时挪的距离不够，它会重新露在键盘上方 —— display:none 是确定的 */
@@ -1102,6 +1112,11 @@
           </div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">你的时间<span class="en">SCHEDULE</span></div>
+          <div class="set-note" id="quietBrief">课表、勿扰时段 —— 晤想主动找你之前会先看这里</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('quiet')">课表与勿扰</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">外部服务<span class="en">MCP</span></div>
           <div id="mcpList"></div>
           <div class="btn-row"><button class="btn" onclick="openSub('mcp')">管理外部服务</button></div>
@@ -1112,7 +1127,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.7（倒数日不再每 5.6 秒闪一下 · 键盘弹出时导航栏彻底藏住 · 底部白块不再刺眼）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.8（晤会自己记着事、到点主动找你 · 课表与勿扰 · 修好了服务器时间差八小时）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1231,6 +1246,55 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-quiet">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('quiet')">‹ 返回</button>
+        <div class="sp-title">你的时间</div>
+        <button class="sp-act" onclick="quietSave()">保存</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 12px">
+          晤偶尔会想起你、主动说句话。说之前他会先看一眼这里 ——
+          你在上课、夜里、或者刚跟他聊完，他就再等等，不会打断你。
+        </div>
+        <div class="cd-form" style="display:block">
+          <div class="row" style="display:block">
+            <div style="font-size:11px;color:var(--ink-soft);letter-spacing:.1em;margin-bottom:8px">课表 · 一行一节课</div>
+            <textarea id="qClasses" rows="9" placeholder="周一 08:00-09:40 高等数学&#10;周一 10:00-11:40 大学英语&#10;周三 14:00-15:40 体育"></textarea>
+          </div>
+          <div class="set-note" id="qParsed" style="margin:2px 2px 10px"></div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">夜里几点之后别出声</span>
+            <input type="number" id="qNightS" min="0" max="23" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">第二天几点之后可以</span>
+            <input type="number" id="qNightE" min="0" max="23" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">刚聊完至少隔几分钟</span>
+            <input type="number" id="qGap" min="5" max="1440" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">他一天最多主动开口几次</span>
+            <input type="number" id="qMax" min="0" max="20" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="sw-row">
+            <span class="lb">让他可以主动找我</span>
+            <button class="sw" id="qOn" onclick="quietToggle()"></button>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn ghost" onclick="quietTry()">让他现在试一句</button>
+          <button class="btn" onclick="quietSave()">保存</button>
+        </div>
+        <div class="set-note" style="margin:10px 2px 30px">
+          「试一句」会跳过上面所有规矩，立刻叫他一次，用来看看管不管用（会花一次聊天的钱）。<br>
+          他在聊天里自己记下的事，这里不显示 —— 那是他自己心里的，看见了就没意思了。
+        </div>
+      </div>
+    </section>
+
     <section class="subpage" id="page-apis">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('apis')">‹ 返回</button>
@@ -1389,6 +1453,7 @@
       <button class="tab" data-page="chat">
         <svg viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5c-1.3 0-2.6-.3-3.7-.9L4 19.5l1.4-4.3A7.5 7.5 0 1 1 20 11.5z"/></svg>
         Chat
+        <i class="tab-dot" id="chatDot"></i>
       </button>
       <button class="tab" data-page="memory">
         <svg viewBox="0 0 24 24"><path d="M12 21s-6.5-4.3-6.5-11a6.5 6.5 0 0 1 13 0c0 6.7-6.5 11-6.5 11z"/><circle cx="12" cy="9.8" r="2.3"/></svg>
@@ -1660,6 +1725,8 @@ var CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;  /* 估 t
 var memCur = "全部", memEditId = null, memCache = [];      /* 记忆页 */
 var apiConf = { list: [], chat: null, worker: null }, afCur = null;  /* API 配置 */
 var mcpList = [], mcpCur = null;                         /* 外部服务 */
+var quietCur = null;                                     /* 课表与勿扰 */
+var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
 
 /* ================= 工具 ================= */
 function pad(n){ return String(n).padStart(2,"0"); }
@@ -1823,13 +1890,14 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
   SUBS.forEach(s => closeSub(s, true));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
+  if (tab.dataset.page === "chat") markChatSeen();
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
   if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); }
 });
@@ -1846,6 +1914,7 @@ function openSub(name) {
   if (name === "apis") apiRefresh();
   if (name === "windows") renderWinManage();
   if (name === "mcp") mcpRefresh();
+  if (name === "quiet") quietRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -2526,6 +2595,7 @@ let chatData = migrateChat(load("wu.chat", null));
 chatReady = true;
 SHOW_USAGE = load("wu.showUsage", false);   /* msgNode 会用到，必须早于第一次渲染 */
 let boundWin = load("wu.boundWin", null) || chatData.active;
+lastSeen = Number(load("wu.lastSeen", 0)) || 0;
 function curWin() { return chatData.windows.find(w => w.id === chatData.active) || chatData.windows[0]; }
 let chatLog = curWin().msgs;
 function saveChat() { chatLog = curWin().msgs; pushState("chat", chatData); }
@@ -3626,12 +3696,105 @@ async function pullState() {
     } catch {}
     renderTodos(); renderCdHome(); renderNotebook(); renderWeek();
     renderPhotosPage(); renderHomeStack(); renderWinMenu();
+    refreshChatDot();
     fetchDrives();
   } catch (e) {
     SERVER = false;
     console.warn("拉数据失败：", e && e.message);
   }
   memRefresh();
+}
+
+/* ================= 他在你不在的时候说了话 =================
+   没有推送的时候，靠 Chat 上一颗小红点告诉你。
+   他自己记的闹钟一概不显示 —— 看得见就没有那份忽然收到消息的意外了。 */
+function newWakeCount() {
+  if (!chatReady) return 0;
+  let n = 0;
+  for (const w of (chatData.windows || [])) {
+    for (const m of (w.msgs || [])) if (m && m.k === "ai" && m.wake && Number(m.ts) > lastSeen) n++;
+  }
+  return n;
+}
+function refreshChatDot() {
+  const d = document.getElementById("chatDot");
+  if (d) d.classList.toggle("on", newWakeCount() > 0);
+}
+function markChatSeen() {
+  lastSeen = Date.now();
+  save("wu.lastSeen", lastSeen);
+  refreshChatDot();
+}
+
+/* ================= 课表与勿扰 ================= */
+async function quietRefresh() {
+  try {
+    const r = await fetch("api/quiet");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const q = await r.json();
+    quietCur = q;
+    document.getElementById("qClasses").value = q.classes || "";
+    document.getElementById("qNightS").value = q.nightStart;
+    document.getElementById("qNightE").value = q.nightEnd;
+    document.getElementById("qGap").value = q.minGapMin;
+    document.getElementById("qMax").value = q.maxPerDay;
+    document.getElementById("qOn").classList.toggle("on", q.on !== false);
+    renderQParsed(q.parsed || []);
+    const brief = document.getElementById("quietBrief");
+    if (brief) brief.textContent = (q.parsed || []).length
+      ? `认得你 ${q.parsed.length} 节课；${q.nightStart} 点之后到第二天 ${q.nightEnd} 点不出声`
+      : "还没填课表 —— 晤不知道你什么时候在上课";
+  } catch (e) { noteError("课表", e); }
+}
+function renderQParsed(list) {
+  const el = document.getElementById("qParsed");
+  if (!el) return;
+  if (!list.length) { el.textContent = "还没认出课来。格式：周一 08:00-09:40 高等数学（一行一节，认不出的行会被跳过）"; return; }
+  const wk = "日一二三四五六";
+  const hm = v => pad(Math.floor(v / 60)) + ":" + pad(v % 60);
+  const by = {};
+  for (const c of list) (by[c.dow] = by[c.dow] || []).push(c);
+  el.innerHTML = "认出 " + list.length + " 节课：<br>" + Object.keys(by).sort()
+    .map(d => "周" + wk[d] + " " + by[d].map(c => hm(c.from) + "-" + hm(c.to) + (c.name ? " " + c.name : "")).join("、"))
+    .join("<br>");
+}
+async function quietSave() {
+  const body = {
+    classes: document.getElementById("qClasses").value,
+    nightStart: Number(document.getElementById("qNightS").value),
+    nightEnd: Number(document.getElementById("qNightE").value),
+    minGapMin: Number(document.getElementById("qGap").value),
+    maxPerDay: Number(document.getElementById("qMax").value),
+    on: quietCur ? quietCur.on !== false : true,
+  };
+  try {
+    const r = await fetch("api/quiet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const q = await r.json();
+    quietCur = q;
+    renderQParsed(q.parsed || []);
+    toast((q.parsed || []).length ? "存好了，认出 " + q.parsed.length + " 节课" : "存好了");
+    quietRefresh();
+  } catch (e) { toast("没存上：" + String(e.message || e).slice(0, 30)); }
+}
+function quietToggle() {
+  if (!quietCur) quietCur = { on: true };
+  quietCur.on = quietCur.on === false;
+  document.getElementById("qOn").classList.toggle("on", quietCur.on !== false);
+  quietSave();
+}
+async function quietTry() {
+  toast("在叫他了…");
+  try {
+    const r = await (await fetch("api/wake/test", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ why: "（她在设置里点了「试一句」）", force: true }),
+    })).json();
+    if (r && r.said) { await pullState(); refreshChatDot(); toast("他说话了，去 Chat 看看"); }
+    else if (r && r.error) toast("出错了：" + String(r.error).slice(0, 40));
+    else if (r && r.note) toast(r.note);
+    else toast("他想了想，这会儿没什么想说的");
+  } catch (e) { toast("没叫动：" + String(e.message || e).slice(0, 30)); }
 }
 
 /* ================= iOS 键盘适配 =================

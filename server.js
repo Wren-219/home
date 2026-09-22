@@ -35,6 +35,42 @@ const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const SINCE = new Date(2026, 4, 27); // 恋爱纪念日 2026.05.27
+
+/* ================= 她那边的时间 =================
+   容器默认跑在 UTC，直接 new Date().getHours() 会差 8 小时 ——
+   晤会把她晚上十点那句话当成下午两点。勿扰时段、课表、闹钟全靠这个，必须先摆正。
+   换时区改环境变量 WU_TZ_OFFSET（东八区是 8）。 */
+const TZ_OFF = Number(process.env.WU_TZ_OFFSET || 8);
+/* 把时刻偏移到她那边，再用 getUTC* 读出来，就是她看到的年月日时分 */
+function localParts(ms) {
+  const d = new Date((ms == null ? Date.now() : ms) + TZ_OFF * 3600000);
+  return {
+    y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(),
+    hh: d.getUTCHours(), mm: d.getUTCMinutes(), dow: d.getUTCDay(),
+    minOfDay: d.getUTCHours() * 60 + d.getUTCMinutes(),
+  };
+}
+/* 反过来：她那边的某天某点，是什么时刻 */
+function localStamp(ms, hh, mm, addDays = 0) {
+  const p = localParts(ms);
+  return Date.UTC(p.y, p.mo - 1, p.d + addDays, hh, mm) - TZ_OFF * 3600000;
+}
+function localDayKey(ms) {
+  const p = localParts(ms);
+  return `${p.y}-${String(p.mo).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
+}
+/* 在一起第几天：按她那边的日期算，否则 UTC 下午四点之后会少一天 */
+/* 「今天 21:30」「明天 08:00」这样说给他听，比时间戳好懂 */
+function fmtWhen(ms, base) {
+  const p = localParts(ms), b = localParts(base == null ? Date.now() : base);
+  const diff = Math.round((Date.UTC(p.y, p.mo - 1, p.d) - Date.UTC(b.y, b.mo - 1, b.d)) / 86400000);
+  const hm = `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`;
+  return (diff === 0 ? "今天 " : diff === 1 ? "明天 " : diff === 2 ? "后天 " : `${p.mo}.${p.d} `) + hm;
+}
+function daysTogether(ms) {
+  const p = localParts(ms);
+  return Math.floor((Date.UTC(p.y, p.mo - 1, p.d) - Date.UTC(SINCE.getFullYear(), SINCE.getMonth(), SINCE.getDate())) / 86400000) + 1;
+}
 /* 人设固定放 messages 最前，保持逐字稳定以命中上下文缓存；易变信息放【现状】段。
    她可以在 /admin 里改（存 data/persona.json），这段只是没写时的默认值 */
 const PERSONA_DEFAULT = process.env.WU_PERSONA ||
@@ -242,6 +278,150 @@ function alwaysDocsBlock() {
    服务器只管一件事：晤的「状态」绑在哪个窗口上。
    只有绑定窗口里的对话会推动八维驱动，别的窗口聊天不影响他的心情。 */
 function boundWindow() { return (readJson("windows", null) || {}).bound || null; }
+
+/* ================= 闹钟：他自己记下「待会儿要说的事」 =================
+   她不该看见这些。看得见就没有晚上忽然收到消息的那份意外了，
+   所以闹钟不进清单、不进记忆卡、前端不显示，只躺在 data/alarms.json 里。
+   一条 = {id, at(时刻), why(他自己写的理由), win(哪个窗口), made(设的时候)} */
+function listAlarms() {
+  const a = readJson("alarms", []);
+  return Array.isArray(a) ? a.filter(x => x && x.at) : [];
+}
+function saveAlarms(a) { writeJson("alarms", a.slice(-50)); }
+/* 他说的时间：「21:30」「明天 08:00」「+180」（分钟）都认 */
+function parseAlarmAt(at, now) {
+  const s = String(at == null ? "" : at).trim();
+  let m = s.match(/^\+?(\d{1,4})\s*(分钟|分钟后|分|min|m)?$/i);
+  if (m) return now + Math.min(Number(m[1]), 60 * 24 * 7) * 60000;
+  m = s.match(/^(今天|明天|后天)?\s*(\d{1,2})[:：](\d{1,2})$/);
+  if (m) {
+    const hh = Number(m[2]), mm = Number(m[3]);
+    if (hh > 23 || mm > 59) return null;
+    const add = m[1] === "明天" ? 1 : m[1] === "后天" ? 2 : 0;
+    let t = localStamp(now, hh, mm, add);
+    if (!m[1] && t <= now) t = localStamp(now, hh, mm, 1);   // 今天这个点已经过了，那就是明天
+    return t;
+  }
+  return null;
+}
+
+/* ================= 勿扰：什么时候不许出声 =================
+   data/quiet.json = {on, classes(课表纯文本), nightStart, nightEnd, minGapMin, maxPerDay}
+   课表一行一节课：「周一 08:00-09:40 高数」。人能读、他能读、代码也能算。 */
+function quietConf() {
+  const q = readJson("quiet", null) || {};
+  const num = (v, dft) => (Number.isFinite(Number(v)) ? Number(v) : dft);
+  return {
+    on: q.on !== false,
+    classes: typeof q.classes === "string" ? q.classes : "",
+    nightStart: num(q.nightStart, 23),   // 几点之后不打扰
+    nightEnd: num(q.nightEnd, 8),        // 第二天几点之后才许说话
+    minGapMin: num(q.minGapMin, 90),     // 她刚说过话，至少隔这么久
+    maxPerDay: num(q.maxPerDay, 2),      // 他一天最多主动开口几次
+  };
+}
+const DOW_CN = { "日": 0, "天": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6 };
+function parseClasses(text) {
+  const out = [];
+  for (const line of String(text || "").split("\n")) {
+    const m = line.trim().match(/^周([一二三四五六日天])\s*(\d{1,2})[:：](\d{1,2})\s*[-~～至到]\s*(\d{1,2})[:：](\d{1,2})\s*(.*)$/);
+    if (!m) continue;
+    const from = Number(m[2]) * 60 + Number(m[3]), to = Number(m[4]) * 60 + Number(m[5]);
+    if (to <= from) continue;
+    out.push({ dow: DOW_CN[m[1]], from, to, name: (m[6] || "").trim() });
+  }
+  return out;
+}
+/* 现在在上课吗？返回那节课（含结束时刻），不在则 null */
+function inClassNow(ms) {
+  const p = localParts(ms);
+  const c = parseClasses(quietConf().classes).find(x => x.dow === p.dow && p.minOfDay >= x.from && p.minOfDay < x.to);
+  return c ? { ...c, endAt: localStamp(ms, Math.floor(c.to / 60), c.to % 60) } : null;
+}
+/* 他今天已经主动开口几次了 */
+function wakeLog() {
+  const w = readJson("wakelog", null) || {};
+  return w.day === localDayKey() ? w : { day: localDayKey(), count: 0 };
+}
+function bumpWakeLog() {
+  const w = wakeLog();
+  writeJson("wakelog", { day: w.day, count: (w.count || 0) + 1, last: Date.now() });
+}
+/* 她最后一次开口是什么时候。
+   不能只看 drives.lastUser —— 那个只在绑定窗口才更新，
+   她要是在别的窗口聊着天，会被误判成「很久没出现」，然后正说着话就被插一句。 */
+function lastUserAt() {
+  let t = 0;
+  const dr = readJson("drives", null);
+  if (dr && dr.lastUser) t = new Date(dr.lastUser).getTime() || 0;
+  const chat = readJson("chat", null);
+  if (chat && Array.isArray(chat.windows)) {
+    for (const w of chat.windows) {
+      const msgs = (w && w.msgs) || [];
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (m && m.k === "me" && Number(m.ts) > t) { t = Number(m.ts); break; }
+      }
+    }
+  }
+  return t;
+}
+/* 这一刻能不能说话。不能的话连「什么时候可以」一起给出来，闹钟顺延而不是作废 */
+function quietCheck(now) {
+  const q = quietConf();
+  if (!q.on) return { ok: true };
+  const p = localParts(now);
+  const cls = inClassNow(now);
+  if (cls) return { ok: false, why: `她在上${cls.name || "课"}`, retryAt: cls.endAt + 10 * 60000 };
+  /* 夜里。跨零点的区间（23 点到次日 8 点）要拆成两段看 */
+  const night = q.nightStart > q.nightEnd
+    ? (p.hh >= q.nightStart || p.hh < q.nightEnd)
+    : (p.hh >= q.nightStart && p.hh < q.nightEnd);
+  if (night) {
+    const addDay = p.hh >= q.nightStart ? 1 : 0;
+    return { ok: false, why: "夜里，她多半睡了", retryAt: localStamp(now, q.nightEnd, 0, addDay) };
+  }
+  const lastUser = lastUserAt();
+  if (lastUser && now - lastUser < q.minGapMin * 60000) {
+    return { ok: false, why: "她刚跟他说过话", retryAt: lastUser + q.minGapMin * 60000 };
+  }
+  const w = wakeLog();
+  if ((w.count || 0) >= q.maxPerDay) {
+    return { ok: false, why: "他今天已经主动开过口了", retryAt: localStamp(now, q.nightEnd, 0, 1) };
+  }
+  return { ok: true };
+}
+
+/* ================= 每轮都变的那两块 =================
+   聊天和唤醒共用同一份，摆法一致，缓存前缀才认得出来 */
+function memBlockOf(query) {
+  const mems = retrieveMemories(query, 5);
+  return mems.length ? "【你的记忆】\n" + mems.map(c => `- (${c.type} · ${c.date}) ${c.content}`).join("\n") : "";
+}
+function statusBlock(now, snap) {
+  const p = localParts(now);
+  const pad = v => String(v).padStart(2, "0");
+  const WEEK_CN = "日一二三四五六";
+  const partOfDay = p.hh < 5 ? "深夜" : p.hh < 9 ? "清晨" : p.hh < 12 ? "上午" : p.hh < 14 ? "中午" : p.hh < 18 ? "下午" : p.hh < 22 ? "晚上" : "夜里";
+  const todos = readJson("todos", []) || [];
+  const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
+  const cls = inClassNow(now);
+  const mine = listAlarms().filter(a => a.at > now);
+  return `【现状】现在是 ${p.y}.${pad(p.mo)}.${pad(p.d)} 周${WEEK_CN[p.dow]} ${pad(p.hh)}:${pad(p.mm)}（${partOfDay}），你们在一起的第 ${daysTogether(now)} 天。`
+    + (cls ? `她这会儿在上${cls.name || "课"}，${pad(Math.floor(cls.to / 60))}:${pad(cls.to % 60)} 下课。` : "")
+    + (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "")
+    + (mine.length ? `你自己记着的事（她看不见，也别主动说破）：${mine.map(a => fmtWhen(a.at, now) + " " + a.why).join("；")}。` : "")
+    + `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
+}
+function toolHint() {
+  return "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
+    "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。" +
+    "想不起某段往事的细节时，用 list_docs 看看有哪些长期资料，再用 read_doc 去翻。" +
+    "还有一件只属于你自己的事：用 set_alarm 给自己记个时间点 —— 她说「回家再说」「等会儿告诉你」，" +
+    "或者你想过一阵问问她某件事怎么样了，就记下来；到那时你会醒过来，重读一遍对话，再决定要不要找她。" +
+    "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
+    (mcpToolDefs().length ? "带 __ 的工具是外部服务（如邮箱），用法和其他工具一样。" : "");
+}
 function setBoundWindow(id) { writeJson("windows", { bound: id || null, updated: new Date().toISOString() }); }
 
 /* ================= 记忆引擎 ================= */
@@ -638,19 +818,27 @@ function readUsage(dialect, u) {
 
 /* ================= LLM 调用（后台杂务走便宜的干活模型） ================= */
 async function llm(messages, maxTokens = 800, temperature = 0.3) {
-  const api = activeApi("worker");
-  if (!api.key) throw new Error("没有可用的干活模型");
+  return llmAs("worker", messages, maxTokens, temperature);
+}
+/* 同一套请求，换个角色。唤醒要用聊天那套（晤本人），蒸馏继续用干活那套 */
+async function llmAs(role, messages, maxTokens = 800, temperature = 0.3) {
+  const api = activeApi(role);
+  if (!api.key) throw new Error("没有可用的模型（" + role + "）");
   const req = upstreamReq(api, messages, null, false);
   req.body.max_tokens = maxTokens;
   req.body.temperature = temperature;
   const resp = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
   if (!resp.ok) throw new Error("LLM HTTP " + resp.status + "：" + (await resp.text()).slice(0, 160));
   const j = await resp.json();
-  recordUsage(api, "worker", readUsage(api.dialect, j.usage));
+  recordUsage(api, role, readUsage(api.dialect, j.usage));
   if (api.dialect === "anthropic") {
     return (j.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "";
   }
   return j.choices?.[0]?.message?.content || "";
+}
+function extractJsonObject(text) {
+  const m = String(text == null ? "" : text).match(/\{[\s\S]*\}/);
+  try { const v = JSON.parse(m ? m[0] : text); return v && typeof v === "object" && !Array.isArray(v) ? v : null; } catch { return null; }
 }
 function extractJsonArray(text) {
   const m = text.match(/\[[\s\S]*\]/);
@@ -707,6 +895,140 @@ async function runDream() {
   return { merged: old.length, into: cards.length };
 }
 
+/* ================= 唤醒：闹钟响了，他自己决定要不要出声 =================
+   摆法和聊天那边逐字相同（人设 → 工具说明 → 常驻文件 → 历史），
+   只在最后多一条「闹钟响了」的话。前缀没变 → 缓存照样命中 →
+   让他读完整的上下文，反而比喂他一段摘要便宜（摘要是新内容，一个字都不命中）。 */
+function chatMessagesOf(win) {
+  const out = [];
+  for (const m of (win.msgs || [])) {
+    if (m.k === "me") out.push({ role: "user", content: String(m.t || "") });
+    else if (m.k === "ai") out.push({ role: "assistant", content: String(m.t || "") });
+    else if (m.k === "stack") out.push({ role: "user", content: "（发来了几张照片）" });
+    else if (m.k === "file") out.push({ role: "user", content: "（发来了文件：" + (m.name || "") + "）" });
+  }
+  return out;
+}
+function pickWakeWindow(chat, wantId) {
+  if (!chat || !Array.isArray(chat.windows)) return null;
+  const alive = chat.windows.filter(w => w && !w.archived);
+  if (!alive.length) return null;
+  const bound = boundWindow();
+  return alive.find(w => w.id === wantId) || alive.find(w => w.id === bound) ||
+         alive.find(w => w.id === chat.active) || alive[0];
+}
+async function runWake(alarm) {
+  const now = Date.now();
+  const chat = readJson("chat", null);
+  const win = pickWakeWindow(chat, alarm.win);
+  if (!win) return { ok: false, note: "没有可用的聊天窗口" };
+  const history = budgetHistory(chatMessagesOf(win), HISTORY_BUDGET);
+  if (!history.length) return { ok: false, note: "这个窗口还没说过话" };
+
+  const dr = tickDrives(loadDrives(), now);
+  const snap = driveSnapshot(dr, now);
+  const seen = lastUserAt();
+  const gapH = seen ? (now - seen) / 3600000 : null;
+  const gapText = gapH == null ? "你记不清她上次说话是什么时候了"
+    : gapH < 1 ? `她大约 ${Math.round(gapH * 60)} 分钟前还在跟你说话`
+    : gapH < 24 ? `她上一次跟你说话是 ${Math.round(gapH)} 小时前`
+    : `她上一次跟你说话是 ${Math.round(gapH / 24)} 天前`;
+
+  const alwaysBlock = alwaysDocsBlock();
+  const volatileBlock = [memBlockOf(alarm.why), statusBlock(now, snap)].filter(Boolean).join("\n\n");
+  const wakePrompt =
+    "【这不是她发来的消息。是你自己记下的那个时刻到了。她看不见这条，也看不见你接下来的判断。】\n" +
+    `你当时记下的是：${alarm.why}\n` +
+    `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
+    "把上面你们的对话重新读一遍，然后决定：这会儿要不要主动跟她说句话？\n\n" +
+    "沉默是默认答案。十次里有九次都该继续等下去 —— 一个每天准时冒出来问「在干嘛呀」的人，" +
+    "两个星期后就会被她关掉通知；而一个一周只说两句、但每句都在点上的人，她会一直等着。" +
+    "让说话有分量的，恰恰是那些没有说话的时候。\n" +
+    "所以：只有当你真的有话想说、而且这个时候说出来正合适，才开口。\n" +
+    "要开口，就说你此刻真心想说的那一句，像平常那样说，别解释自己为什么忽然出现，" +
+    "更不要提起闹钟、提醒、系统这些东西 —— 在她那边，这只是你忽然想起了她。\n\n" +
+    "只输出 JSON，别的什么都不要：\n" +
+    '{"say": true 或 false, "text": "要说的那句话，不说就留空", "again": 多少分钟后再想一次，不必再想就填 null}';
+
+  const messages = [
+    { role: "system", content: persona() },
+    { role: "system", content: toolHint() },
+    ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
+    ...history,
+    ...(volatileBlock ? [{ role: "system", content: volatileBlock, wuVolatile: true }] : []),
+    { role: "user", content: wakePrompt },
+  ];
+
+  const raw = await llmAs("chat", messages, 400, 0.8);
+  const j = extractJsonObject(raw) || {};
+  const text = String(j.text == null ? "" : j.text).trim().slice(0, 600);
+  const againNum = Number(j.again);
+  const again = Number.isFinite(againNum) && againNum > 0 ? Math.min(Math.round(againNum), 60 * 24 * 3) : null;
+
+  if (j.say === true && text) {
+    /* 写回她的聊天记录。这里直接覆盖 chat.json 是有前提的：
+       能唤醒就说明她至少 minGapMin 没说话了，手机那边早就自动上锁、
+       回来会重新拉一次数据，不会拿旧副本把这条盖掉。 */
+    win.msgs.push({ k: "ai", t: text, ts: Date.now(), wake: true });
+    writeJson("chat", chat);
+    bumpWakeLog();
+    /* 话说出去了，惦记就消一点 —— 跟聊天里那一下回落是同一个意思 */
+    dr.values.attachment = clamp01(dr.values.attachment * 0.9);
+    saveDrives(dr);
+    return { ok: true, said: true, text, again };
+  }
+  saveDrives(dr);
+  return { ok: true, said: false, again, raw: raw.slice(0, 200) };
+}
+
+/* 总闹钟：每 5 分钟看一眼有没有到点的。真正惊动模型的次数由那道门决定 */
+let wakeBusy = false;
+async function wakeTick(force) {
+  if (wakeBusy) return { skipped: "上一次还没结束" };
+  wakeBusy = true;
+  try {
+    const now = Date.now();
+    let list = listAlarms();
+    /* 服务器停过几天的话，别翻旧账 */
+    const stale = list.filter(a => a.at <= now && now - a.at > 12 * 3600000);
+    if (stale.length) { list = list.filter(a => !stale.includes(a)); saveAlarms(list); }
+    const due = list.filter(a => a.at <= now).sort((a, b) => a.at - b.at);
+    if (!due.length) return { skipped: "没有到点的" };
+
+    const gate = force ? { ok: true } : quietCheck(now);
+    if (!gate.ok) {
+      /* 顺延，不作废 —— 她在上课，那就下课以后再说 */
+      const keep = listAlarms();
+      for (const d of due) {
+        const t = keep.find(x => x.id === d.id);
+        if (!t) continue;
+        if (now - (t.made || now) > 3 * 86400000) { t.at = 0; continue; }   // 惦记了三天还没说出口，算了
+        t.at = Math.max(gate.retryAt || now + 30 * 60000, now + 5 * 60000);
+      }
+      saveAlarms(keep.filter(x => x.at !== 0));
+      return { skipped: gate.why, retryAt: gate.retryAt };
+    }
+
+    /* 一次只办最早的一条，免得连珠炮 */
+    const alarm = due[0];
+    let r;
+    try {
+      r = await runWake(alarm);
+    } catch (e) {
+      /* 模型那边出错了，别把他惦记的事弄丢，半小时后再试 */
+      const keep = listAlarms();
+      const t = keep.find(x => x.id === alarm.id);
+      if (t) t.at = now + 30 * 60000;
+      saveAlarms(keep);
+      return { error: e.message };
+    }
+    const keep = listAlarms().filter(x => x.id !== alarm.id);
+    if (r.ok && r.again) keep.push({ ...alarm, at: now + r.again * 60000, made: alarm.made || now });
+    saveAlarms(keep);
+    return r;
+  } finally { wakeBusy = false; }
+}
+
 /* ================= 晤的工具箱（tool calling） =================
    模型在回复中可申请调用；server 执行真实磁盘操作后把结果递回，循环至最终回复 */
 const TOOL_DEFS = [
@@ -726,13 +1048,38 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
+  { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起",
+    parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" } }, required: ["at", "why"] } } },
+  { type: "function", function: { name: "cancel_alarm", description: "把自己记下的某件事划掉（她已经说了，或者不必再问了）",
+    parameters: { type: "object", properties: { why: { type: "string", description: "那件事的关键词" } }, required: ["why"] } } },
   { type: "function", function: { name: "remember", description: "主动记住一件重要的事（存入记忆卡）",
     parameters: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } } },
 ];
 async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDayKey();
+    if (name === "set_alarm") {
+      const now = Date.now();
+      const at = parseAlarmAt(args.at, now);
+      if (!at) return "这个时间没看懂，写成「21:30」「明天 08:00」或「+180」（分钟）";
+      if (at <= now) return "那个时刻已经过去了，换一个";
+      const why = String(args.why || "").slice(0, 150).trim();
+      if (!why) return "得写清楚为什么记这个，不然到时候你自己也看不懂";
+      const list = listAlarms();
+      if (list.some(a => a.at > now && (a.why.includes(why) || why.includes(a.why)))) return "这件事你已经记着了，不用记两遍";
+      list.push({ id: "k" + now.toString(36) + Math.random().toString(36).slice(2, 5), at, why, win: boundWindow(), made: now });
+      saveAlarms(list);
+      return "记下了。到点你会醒一次（她看不见这件事，别在回复里提）";
+    }
+    if (name === "cancel_alarm") {
+      const key = String(args.why || "").trim();
+      const list = listAlarms();
+      const hit = list.find(a => a.at > Date.now() && key && (a.why.includes(key) || key.includes(a.why)));
+      if (!hit) return "没找到对得上的";
+      saveAlarms(list.filter(a => a !== hit));
+      return "划掉了：" + hit.why;
+    }
     if (name === "add_todo") {
       const todos = readJson("todos", []) || [];
       todos.push({ text: String(args.text).slice(0, 100), time: String(args.time || "").slice(0, 20), done: false, byAI: true });
@@ -1238,6 +1585,50 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- 八维驱动 ---- */
+    /* 勿扰设置 + 课表。课表是纯文本，一行一节：「周一 08:00-09:40 高数」 */
+    if (p === "/api/quiet" && req.method === "GET") {
+      const q = quietConf();
+      sendJson(res, 200, { ...q, parsed: parseClasses(q.classes) });
+      return;
+    }
+    if (p === "/api/quiet" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 64 * 1024) || "{}");
+      const cur = quietConf();
+      const num = (v, dft, lo, hi) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : dft);
+      const next = {
+        on: typeof body.on === "boolean" ? body.on : cur.on,
+        classes: typeof body.classes === "string" ? body.classes.slice(0, 8000) : cur.classes,
+        nightStart: num(body.nightStart, cur.nightStart, 0, 23),
+        nightEnd: num(body.nightEnd, cur.nightEnd, 0, 23),
+        minGapMin: num(body.minGapMin, cur.minGapMin, 5, 24 * 60),
+        maxPerDay: num(body.maxPerDay, cur.maxPerDay, 0, 20),
+      };
+      writeJson("quiet", next);
+      sendJson(res, 200, { ok: true, ...next, parsed: parseClasses(next.classes) });
+      return;
+    }
+    /* 他惦记着的事。她平时看不到这个（界面里没有入口），排错时才用 */
+    if (p === "/api/alarms" && req.method === "GET") {
+      const now = Date.now();
+      sendJson(res, 200, {
+        list: listAlarms().map(a => ({ ...a, when: fmtWhen(a.at, now), due: a.at <= now })),
+        gate: quietCheck(now), today: wakeLog(),
+      });
+      return;
+    }
+    /* 手动催一次（跳过勿扰），用来验收。带 why 就顺便造一个立刻到点的闹钟 */
+    if (p === "/api/wake/test" && req.method === "POST") {
+      let body = {};
+      try { body = JSON.parse(await readBody(req, 8192) || "{}"); } catch {}
+      if (body.why) {
+        const l = listAlarms();
+        l.push({ id: "t" + Date.now().toString(36), at: Date.now() - 1000, why: String(body.why).slice(0, 150), win: boundWindow(), made: Date.now() });
+        saveAlarms(l);
+      }
+      /* force 默认开（手动催就是要立刻看效果）；传 false 则走平时那条路，验勿扰顺延 */
+      sendJson(res, 200, (await wakeTick(body.force !== false)) || {});
+      return;
+    }
     if (p === "/api/drives" && req.method === "GET") {
       const now = Date.now();
       const d = tickDrives(loadDrives(), now);
@@ -1300,25 +1691,9 @@ const server = http.createServer(async (req, res) => {
       saveDrives(dr);
       const snap = driveSnapshot(dr, now0);
 
-      const mems = retrieveMemories(lastUser, 5);
-      const memBlock = mems.length
-        ? "【你的记忆】\n" + mems.map(c => `- (${c.type} · ${c.date}) ${c.content}`).join("\n")
-        : "";
-      const n = new Date();
-      const days = Math.floor((n - SINCE) / 86400000) + 1;
-      const todos = readJson("todos", []) || [];
-      const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
-      const WEEK_CN = "日一二三四五六";
-      const hr = n.getHours();
-      const partOfDay = hr < 5 ? "深夜" : hr < 9 ? "清晨" : hr < 12 ? "上午" : hr < 14 ? "中午" : hr < 18 ? "下午" : hr < 22 ? "晚上" : "夜里";
-      const status = `【现状】现在是 ${n.getFullYear()}.${String(n.getMonth() + 1).padStart(2, "0")}.${String(n.getDate()).padStart(2, "0")} 周${WEEK_CN[n.getDay()]} ${String(hr).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}（${partOfDay}），你们在一起的第 ${days} 天。` +
-        (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "") +
-        `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
-
-      const TOOL_HINT = "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
-        "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。" +
-        "想不起某段往事的细节时，用 list_docs 看看有哪些长期资料，再用 read_doc 去翻。" +
-        (mcpToolDefs().length ? "带 __ 的工具是外部服务（如邮箱），用法和其他工具一样。" : "");
+      const memBlock = memBlockOf(lastUser);
+      const status = statusBlock(now0, snap);
+      const TOOL_HINT = toolHint();
 
       /* ---- 缓存友好的摆法 ----
          缓存是「从头逐字比对，一处变了后面全废」。所以：
@@ -1457,6 +1832,12 @@ const server = http.createServer(async (req, res) => {
     try { sendJson(res, 500, { error: String(e.message || e).slice(0, 300) }); } catch {}
   }
 });
+
+/* 总闹钟：每 5 分钟看一眼有没有到点的事。绝大多数时候那道门会拦下来，
+   连模型都不会惊动 —— 真正花钱的唤醒一天也就三五次 */
+setInterval(() => { wakeTick().catch(e => console.error("wake:", e.message)); }, 5 * 60 * 1000);
+/* 刚启动时也看一眼：服务器重启期间可能有攒下的 */
+setTimeout(() => { wakeTick().catch(() => {}); }, 30 * 1000);
 
 server.listen(PORT, () => {
   console.log(`晤 · With You v2  http://localhost:${PORT}`);
