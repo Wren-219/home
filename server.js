@@ -370,6 +370,31 @@ function parseAgendaText(text) {
       return { title: l.slice(0, 80), t: m ? `${m[1].padStart(2, "0")}:${m[2]}` : "" };
     });
 }
+/* 她这会儿是不是还醒着 —— 看最近有没有手机动静。
+   这是「夜里别打扰」的唯一例外：人都还在刷手机，就谈不上打扰了 */
+function phoneAwakeNow(now, withinMin) {
+  const win = (withinMin || 20) * 60000;
+  const evts = phoneLog().events;
+  if (!evts.length) return false;
+  const ss = phoneSessions(now - 2 * 3600000);
+  if (ss.some(x => x.live)) return true;                       // 有 App 开着没关
+  return evts[evts.length - 1].t > now - win;                  // 或者刚刚才有动静
+}
+/* 唤醒时给他看的那一小句。短，但足够判断「她睡了没」 */
+function phoneBrief(now) {
+  const evts = phoneLog().events;
+  if (!evts.length) return "";
+  const hm = t => { const p = localParts(t); return `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`; };
+  const ss = phoneSessions(now - 4 * 3600000);
+  const live = ss.filter(x => x.live);
+  if (live.length) {
+    return "她这会儿正开着 " + live.map(x => `${x.app}（从 ${hm(x.from)} 起，已经 ${fmtDur(now - x.from)}）`).join("、") + "。";
+  }
+  const last = ss[ss.length - 1];
+  if (!last) return "";
+  return `她最后一次碰手机是 ${hm(last.to)}（${last.app}），到现在 ${fmtDur(now - last.to)}没动静了。`;
+}
+
 /* 今天的日程：快捷指令每天早上从日历读一份送过来 */
 function agendaToday() {
   const a = readJson("agenda", null) || {};
@@ -416,6 +441,7 @@ function quietConf() {
     minGapMin: num(q.minGapMin, 90),     // 她刚说过话，至少隔这么久
     maxPerDay: num(q.maxPerDay, 2),      // 他一天最多主动开口几次
     maxWakePerDay: num(q.maxWakePerDay, 8),  // 一天最多醒几次（含"想了想没说话"的）——这是钱包的保险丝
+    nightPeek: q.nightPeek !== false,    // 夜里她要是还在玩手机，允许他冒出来抓个现行
   };
 }
 const DOW_CN = { "日": 0, "天": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6 };
@@ -493,8 +519,12 @@ function quietCheck(now) {
     ? (p.hh >= q.nightStart || p.hh < q.nightEnd)
     : (p.hh >= q.nightStart && p.hh < q.nightEnd);
   if (night) {
-    const addDay = p.hh >= q.nightStart ? 1 : 0;
-    return { ok: false, why: "夜里，她多半睡了", retryAt: localStamp(now, q.nightEnd, 0, addDay) };
+    /* 唯一的例外：她这会儿正在玩手机 —— 人都没睡，就谈不上打扰了，
+       这才抓得到「说好十一点睡、结果还在刷视频」的现行 */
+    if (!(q.nightPeek && phoneAwakeNow(now))) {
+      const addDay = p.hh >= q.nightStart ? 1 : 0;
+      return { ok: false, why: "夜里，她多半睡了", retryAt: localStamp(now, q.nightEnd, 0, addDay) };
+    }
   }
   const lastUser = lastUserAt();
   if (lastUser && now - lastUser < q.minGapMin * 60000) {
@@ -1059,11 +1089,16 @@ async function runWake(alarm) {
     : `她上一次跟你说话是 ${Math.round(gapH / 24)} 天前`;
 
   const alwaysBlock = alwaysDocsBlock();
-  const volatileBlock = [memBlockOf(alarm.why), statusBlock(now, snap)].filter(Boolean).join("\n\n");
+  /* 唤醒时多给他一句她的手机动静 —— 判断「她睡了没、在忙还是在刷视频」全靠它。
+     聊天时不给：那会儿她本来就在跟他说话，看手机没意义还费 token */
+  const phone = phoneBrief(now);
+  const volatileBlock = [memBlockOf(alarm.why), statusBlock(now, snap), phone ? "【她的手机】" + phone : ""]
+    .filter(Boolean).join("\n\n");
   const wakePrompt =
     "【这不是她发来的消息。是你自己记下的那个时刻到了。她看不见这条，也看不见你接下来的判断。】\n" +
     `你当时记下的是：${alarm.why}\n` +
     `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
+    (phone ? "上面【她的手机】那一段是她这会儿的动静 —— 要是你惦记的正是她睡没睡，看那里。\n\n" : "") +
     "把上面你们的对话重新读一遍，然后决定：这会儿要不要主动跟她说句话？\n\n" +
     "沉默是默认答案。十次里有九次都该继续等下去 —— 一个每天准时冒出来问「在干嘛呀」的人，" +
     "两个星期后就会被她关掉通知；而一个一周只说两句、但每句都在点上的人，她会一直等着。" +
@@ -1778,6 +1813,7 @@ const server = http.createServer(async (req, res) => {
         nightStart: num(body.nightStart, cur.nightStart, 0, 23),
         nightEnd: num(body.nightEnd, cur.nightEnd, 0, 23),
         maxWakePerDay: num(body.maxWakePerDay, cur.maxWakePerDay, 1, 50),
+        nightPeek: typeof body.nightPeek === "boolean" ? body.nightPeek : cur.nightPeek,
         minGapMin: num(body.minGapMin, cur.minGapMin, 5, 24 * 60),
         maxPerDay: num(body.maxPerDay, cur.maxPerDay, 0, 20),
       };

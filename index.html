@@ -1132,7 +1132,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.0（手机联动：他知道你今天的日程，也能查你在玩什么 App）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.1（他能在你说的睡觉时间去查你睡没睡 · 你还在刷手机的话，夜里他也能冒出来）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1364,6 +1364,10 @@
             <span class="lb">让他可以主动找我</span>
             <button class="sw" id="qOn" onclick="quietToggle()"></button>
           </div>
+          <div class="sw-row">
+            <span class="lb">夜里我还在玩手机的话，允许他冒出来</span>
+            <button class="sw" id="qPeek" onclick="peekToggle()"></button>
+          </div>
         </div>
         <div class="btn-row" style="margin-top:14px">
           <button class="btn ghost" onclick="quietTry()">让他现在试一句</button>
@@ -1373,7 +1377,10 @@
           「试一句」会跳过上面所有规矩，立刻叫他一次，用来看看管不管用（会花一次聊天的钱）。<br>
           他记着的事这里只报个数、不说内容 —— 想看具体是什么，去电脑上的 /admin。<br>
           「醒一次」= 他读一遍你们的对话再决定说不说，说不说都要花那一次的钱，
-          所以上面那个「一天最多醒几次」是钱包的闸，别调太大。
+          所以上面那个「一天最多醒几次」是钱包的闸，别调太大。<br><br>
+          最后那个开关是为了抓你熬夜刷手机用的：夜里他本来一律不出声，
+          但要是你这会儿正开着手机（需要配好「手机联动」他才知道），
+          那说明你压根没睡 —— 他就可以冒出来了。
         </div>
         <div class="btn-row" style="margin-bottom:30px">
           <button class="btn ghost" onclick="alarmsClear()">让他把记着的事全忘掉</button>
@@ -3880,6 +3887,7 @@ async function quietRefresh() {
     document.getElementById("qMaxWake").value = q.maxWakePerDay;
     renderQStat(q);
     document.getElementById("qOn").classList.toggle("on", q.on !== false);
+    document.getElementById("qPeek").classList.toggle("on", q.nightPeek !== false);
     renderQParsed(q.parsed || []);
     const brief = document.getElementById("quietBrief");
     if (brief) {
@@ -3931,6 +3939,7 @@ async function quietSave() {
     maxPerDay: Number(document.getElementById("qMax").value),
     maxWakePerDay: Number(document.getElementById("qMaxWake").value),
     on: quietCur ? quietCur.on !== false : true,
+    nightPeek: quietCur ? quietCur.nightPeek !== false : true,
   };
   try {
     const r = await fetch("api/quiet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -3941,6 +3950,12 @@ async function quietSave() {
     toast((q.parsed || []).length ? "存好了，认出 " + q.parsed.length + " 节课" : "存好了");
     quietRefresh();
   } catch (e) { toast("没存上：" + String(e.message || e).slice(0, 30)); }
+}
+function peekToggle() {
+  if (!quietCur) quietCur = { nightPeek: true };
+  quietCur.nightPeek = quietCur.nightPeek === false;
+  document.getElementById("qPeek").classList.toggle("on", quietCur.nightPeek !== false);
+  quietSave();
 }
 function quietToggle() {
   if (!quietCur) quietCur = { on: true };
