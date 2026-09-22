@@ -348,7 +348,14 @@ function phoneSessions(sinceMs) {
     }
   }
   const now = Date.now();
-  for (const app of Object.keys(open)) out.push({ app, from: open[app], to: now, live: true });
+  for (const app of Object.keys(open)) {
+    /* iOS 的「已关闭」不太靠得住 —— 她以为退出了，其实只是切到后台，
+       系统就不触发。所以开着超过两小时的，一律当作「早就不用了」，
+       只按两小时算，也不再报「这会儿还开着」。不然他会以为她刷了一整夜。 */
+    const span = now - open[app];
+    if (span > 2 * 3600000) out.push({ app, from: open[app], to: open[app] + 2 * 3600000, stale: true });
+    else out.push({ app, from: open[app], to: now, live: true });
+  }
   return out.sort((a, b) => a.from - b.from);
 }
 function fmtDur(ms) {
@@ -383,9 +390,11 @@ function phoneReport(hours) {
   const hm = t => { const p = localParts(t); return `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`; };
   const lines = Object.entries(by).sort((a, b) => b[1].ms - a[1].ms).slice(0, 10)
     .map(([app, b]) => `· ${app}：${b.n} 次，共 ${fmtDur(b.ms)}${b.live ? "（这会儿还开着）" : "，最近一次到 " + hm(b.last)}`);
+  const stale = ss.some(x => x.stale);
   const live = ss.filter(x => x.live);
   return `最近 ${h} 小时她的手机：\n` + lines.join("\n")
     + (live.length ? `\n她此刻正开着：${live.map(x => `${x.app}（从 ${hm(x.from)} 起，已经 ${fmtDur(Date.now() - x.from)}）`).join("、")}` : "")
+    + (stale ? "\n（有些没收到「关闭」的信号 —— iOS 上退到后台不算关闭，所以时长是往少了算的）" : "")
     + "\n（只记了她自己挑的那几个 App，不是全部）";
 }
 
