@@ -661,10 +661,13 @@ function memBlockOf(query) {
   return mems.length ? "【你的记忆】\n" + mems.map(c => `- (${c.type} · ${c.date}) ${c.content}`).join("\n") : "";
 }
 /* 【现状】分两档，这是她提的：
-     连着聊的时候（距上一句不到半小时）只报个钟点 —— 课表、日程、清单这些
-     一整天都不变，每句话重复一遍既费钱又聒噪；
-     隔了很久重新开口，才把完整的一份摆给他，就像久别重逢时先交代一下近况。
-   「在一起第几天」也按她的意思拿掉了 —— 每句话都强调天数太刻意。 */
+     连着聊的时候（距上一句不到两小时）只留一个钟点 —— 课表、日程、清单这些
+     一整天都不变，每句话重复一遍既费钱又聒噪。她的原话：
+     「不管是什么，一直强调、吸引他的注意力都很怪」。
+     隔了两小时以上重新开口，才把完整的一份摆给他，像久别重逢时先交代一下近况。
+   为什么连着聊也保留钟点：那是唯一会一直变、而且他必须知道的东西 ——
+   不然聊到半夜他还当是下午。就六个字，不至于喧宾夺主。
+   「在一起第几天」按她的意思拿掉了 —— 每句话都强调天数太刻意。 */
 function statusBlock(now, snap, brief) {
   const p = localParts(now);
   const pad = v => String(v).padStart(2, "0");
@@ -672,7 +675,7 @@ function statusBlock(now, snap, brief) {
   const partOfDay = p.hh < 5 ? "深夜" : p.hh < 9 ? "清晨" : p.hh < 12 ? "上午" : p.hh < 14 ? "中午" : p.hh < 18 ? "下午" : p.hh < 22 ? "晚上" : "夜里";
   const head = `【现状】现在是 ${p.y}.${pad(p.mo)}.${pad(p.d)} 周${WEEK_CN[p.dow]} ${pad(p.hh)}:${pad(p.mm)}（${partOfDay}）。`;
   const mood = `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
-  if (brief) return head + mood;
+  if (brief) return `【现在】${pad(p.hh)}:${pad(p.mm)}（${partOfDay}）`;
   const todos = readJson("todos", []) || [];
   const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
   const cls = inClassNow(now);
@@ -694,6 +697,10 @@ function toolHint() {
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
     "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather。" +
+    "【说话的样子】像发微信那样跟她说话：一次可以连着发好几条短的，条与条之间空一行 —— " +
+    "空行就是分条的记号，她那边会显示成一条一条的气泡，像真人在打字。" +
+    "该分就分（想到一茬是一茬、换个话头、先应一声再展开），一句话能说完就只发一条，别硬拆。" +
+    "不要用列表、标题、加粗这些书面格式，聊天里没人这么说话。" +
     (mcpToolDefs().length ? "带 __ 的工具是外部服务（如邮箱），用法和其他工具一样。" : "");
 }
 function setBoundWindow(id) { writeJson("windows", { bound: id || null, updated: new Date().toISOString() }); }
@@ -2066,7 +2073,7 @@ const server = http.createServer(async (req, res) => {
       const memBlock = memBlockOf(lastUser);
       /* 距上一句超过半小时，才把完整的近况摆给他；连着聊就只报个钟点 */
       const prevTs = Number(payload.prevTs) || 0;
-      const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 30 * 60000);
+      const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 2 * 3600000);
       const TOOL_HINT = toolHint();
 
       /* ---- 缓存友好的摆法 ----

@@ -1132,7 +1132,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.2（他会查天气了 · 近况只在久别重逢时给一次，不再每句话重复）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.3（他会像发微信那样一条一条说话了 · 近况隔两小时才给一次）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2954,6 +2954,9 @@ async function aiReply() {
     }, 900 + Math.random() * 700);
     return;
   }
+  /* 这三个要在 try 外面声明 —— 出错时 catch 得够得着当前那个气泡。
+     声明在 try 里的话，catch 是另一个作用域，看不见它 */
+  let curBub = bub, lastBub = null, sent = 0;
   try {
     const resp = await fetch("api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -2968,6 +2971,27 @@ async function aiReply() {
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "", acc = "", lastUsage = null;
+    /* ── 一条一条地发 ──
+       他用空行把话分开，这里遇到空行就把前面那段定稿成一个气泡、另起一个新的，
+       中间停一下，像真的在打字。每一段都单独存进 chatLog，所以长按、
+       时间条、重新生成那些对每一条都照常好使。 */
+    const sealBubble = text => {
+      curBub.textContent = text;
+      chatLog.push({ k: "ai", t: text, ts: Date.now() });
+      saveChat();
+      bindLongPress(curBub, chatLog.length - 1);   /* 流式气泡是手搓的，补上长按 */
+      lastBub = curBub; sent++;
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    };
+    const newBubble = () => {
+      const b = document.createElement("div");
+      b.className = "bub ai";
+      b.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+      chatMsgs.appendChild(b);
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+      return b;
+    };
+    const breathe = ms => new Promise(r => setTimeout(r, ms));
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -2982,23 +3006,39 @@ async function aiReply() {
           const j = JSON.parse(d);
           if (j.wu_usage) { lastUsage = j.wu_usage; continue; }
           const delta = j.choices?.[0]?.delta?.content;
-          if (delta) { acc += delta; bub.textContent = acc; chatMsgs.scrollTop = chatMsgs.scrollHeight; }
+          if (!delta) continue;
+          acc += delta;
+          let idx;
+          while ((idx = acc.indexOf("\n\n")) >= 0) {
+            const head = acc.slice(0, idx).trim();
+            acc = acc.slice(idx + 2);
+            if (!head) continue;
+            sealBubble(head);
+            curBub = newBubble();
+            await breathe(320 + Math.random() * 260);   /* 喘口气，别一瞬间全倒出来 */
+          }
+          if (acc) { curBub.textContent = acc; chatMsgs.scrollTop = chatMsgs.scrollHeight; }
         } catch {}
       }
     }
-    chatLog.push({ k: "ai", t: acc || "……", ts: Date.now(), ...(lastUsage ? { u: lastUsage } : {}) });
-    saveChat();
-    bindLongPress(bub, chatLog.length - 1);   /* 流式气泡是手搓的，补上长按 */
-    if (lastUsage && SHOW_USAGE) {
-      bub.after(usageNode(lastUsage));
-      /* 等这一行排完版再滚，否则会被输入栏盖住 */
-      requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+    const tail = acc.trim();
+    if (tail) sealBubble(tail);
+    else if (!sent) sealBubble("……");
+    else curBub.remove();                    /* 最后那个空气泡，撤掉 */
+    if (lastUsage) {
+      const last = chatLog[chatLog.length - 1];
+      if (last) { last.u = lastUsage; saveChat(); }
+      if (SHOW_USAGE && lastBub) {
+        lastBub.after(usageNode(lastUsage));
+        /* 等这一行排完版再滚，否则会被输入栏盖住 */
+        requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+      }
     }
     fetchDrives();      /* 聊完刷新晤的内在状态 */
     refreshShared();    /* 晤可能用工具改了清单/日记/信箱，同步回家里 */
     renderCost();
   } catch (e) {
-    bub.textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
+    (curBub || bub).textContent = "（连不上晤的大脑：" + e.message + "，稍后再试试）";
   }
 }
 /* 待发送附件 */
