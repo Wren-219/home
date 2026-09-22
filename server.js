@@ -32,7 +32,22 @@ const WORKER_BASE = (process.env.WORKER_BASE_URL || API_BASE).replace(/\/$/, "")
 const WORKER_MODEL = process.env.WORKER_MODEL || MODEL;
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync("/app/data") ? "/app/data" : path.join(__dirname, "data"));
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+/* 开机第一件事就建目录，但这一步**不许**把服务弄死：
+   Volume 没挂上 / 挂成只读的时候，原来会直接崩在这儿，
+   面板上看到的就是永远「启动中」，什么线索都没有。
+   现在改成起得来 + 在日志里把话说明白，她至少能进去看见界面。 */
+let DATA_OK = true;
+try {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  fs.writeFileSync(path.join(DATA_DIR, ".probe"), String(Date.now()));
+  fs.unlinkSync(path.join(DATA_DIR, ".probe"));
+} catch (e) {
+  DATA_OK = false;
+  console.error("⚠️  数据目录用不了：" + DATA_DIR);
+  console.error("    " + (e && e.message));
+  console.error("    多半是 Volume 没挂上，或者挂成了只读。");
+  console.error("    服务照常起来，但日记 / 照片 / 记忆都存不住，重启就没 —— 先去 Zeabur 把 Volume 挂到 /app/data。");
+}
 
 const SINCE = new Date(2026, 4, 27); // 恋爱纪念日 2026.05.27
 
@@ -1411,6 +1426,7 @@ const server = http.createServer(async (req, res) => {
 
     /* ---- 健康检查（登录后才给细节） ---- */
     if (req.method === "GET" && p === "/api/health") {
+      /* dataOk 为 false = Volume 没挂上，数据存不住 —— 这个必须让她看见 */
       if (!authed(req)) { sendJson(res, 200, { ok: true, authed: false }); return; }
       sendJson(res, 200, {
         ok: true, authed: true,
@@ -1418,7 +1434,7 @@ const server = http.createServer(async (req, res) => {
         apiName: activeApi("chat").name, dialect: activeApi("chat").dialect,
         worker: activeApi("worker").model, workerName: activeApi("worker").name,
         workerSame: activeApi("worker").id === activeApi("chat").id,
-        dataDir: DATA_DIR, memories: listMem().filter(c => !c.archived).length,
+        dataDir: DATA_DIR, dataOk: DATA_OK, memories: listMem().filter(c => !c.archived).length,
         historyBudget: HISTORY_BUDGET,
         tools: { own: TOOL_DEFS.length, mcp: mcpToolDefs().length },
         mcp: mcpConf().map(s2 => ({ name: s2.name, enabled: s2.enabled, tools: (s2.tools || []).length })),

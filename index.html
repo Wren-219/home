@@ -1132,7 +1132,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.1（他能在你说的睡觉时间去查你睡没睡 · 你还在刷手机的话，夜里他也能冒出来）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.1.1（他能查你睡没睡 · 数据盘没挂上时服务也能起来，并且告诉你）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2881,7 +2881,8 @@ function checkHealth() { fetchT("api/health", {}, 12000).then(r => r.json()).the
     "干活模型　" + (j.workerSame ? "与聊天模型相同" : j.worker + "（" + (j.workerName || "") + "）") + "\n" +
     "记忆　　　" + (j.memories ?? 0) + " 张" +
     (j.docs ? "\n长期资料　" + j.docs.always + " 份常驻 · " + j.docs.ondemand + " 份备查" : "") +
-    (j.tools ? "\n工具　　　自带 " + j.tools.own + " 件" + (j.tools.mcp ? " · 外部 " + j.tools.mcp + " 件" : "") : "");
+    (j.tools ? "\n工具　　　自带 " + j.tools.own + " 件" + (j.tools.mcp ? " · 外部 " + j.tools.mcp + " 件" : "") : "") +
+    (j.dataOk === false ? "\n\n⚠️ 数据盘没挂上！现在写什么都存不住、一重启就没。\n请去 Zeabur 把 Volume 挂到 /app/data，再重新部署一次。" : "");
   if (j.historyBudget) HISTORY_BUDGET = j.historyBudget;
   try { renderCtxUsage(); } catch (e) { noteError("用量估算", e); }
 }).catch(e => {
