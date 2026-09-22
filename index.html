@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -32,7 +32,10 @@
     --navspace: calc(78px + var(--sab));   /* 悬浮导航占位 */
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  /* html 也上底色：body 是 fixed，iOS 键盘收起后视口偶尔会短暂露出 body 之外的区域，
+     露出来的其实是 html 的默认白底 —— 那就是页面底部那块白。上了色就不刺眼了 */
   html, body { height: 100%; }
+  html { background: #E9EDF3; overscroll-behavior: none; }
   /* 固定整个页面：防止 iOS Safari 整页橡皮筋滚动 / 键盘顶飞布局 */
   body {
     font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased;
@@ -109,7 +112,9 @@
   .tab svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .tab.active { color: var(--blue-deep); }
   /* 键盘弹出时：导航栏藏到键盘下面，输入栏贴紧键盘 */
-  body.kb-open #tabbar { transform: translateY(160%); opacity: 0; pointer-events: none; }
+  /* 键盘弹出时导航栏直接不渲染。原来用 transform 挪下去 160%，但 iOS 把整个
+     fixed 页面往上推时挪的距离不够，它会重新露在键盘上方 —— display:none 是确定的 */
+  body.kb-open #tabbar { display: none; }
   body.kb-open .chat-inbar { padding-bottom: 10px; }
   body.kb-open .chat-msgs { padding-bottom: 80px; }
 
@@ -172,6 +177,7 @@
   .cd-dt { font-size: 10px; color: var(--ink-faint); letter-spacing: .03em; white-space: nowrap; }
   .cd-nm { font-size: 13.5px; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cd-dots { display: flex; justify-content: center; gap: 5px; padding: 10px 0 0; }
+  .cd-dots:empty { display: none; }   /* 只有一页、圆点不渲染时，别留那 10px 空档 */
   .cd-dots i { width: 5px; height: 5px; border-radius: 50%; background: rgba(168,178,196,.4); transition: all .3s; }
   .cd-dots i.on { background: var(--blue-deep); width: 14px; border-radius: 99px; }
   .cd-empty { font-size: 11px; color: var(--ink-faint); }
@@ -1103,7 +1109,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.6（修好"连不上/卡住"的真正原因 · 聊天顶栏改成水平一排）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v1.7（倒数日不再每 5.6 秒闪一下 · 键盘弹出时导航栏彻底藏住 · 底部白块不再刺眼）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1897,9 +1903,17 @@ function renderCdHome() {
       <div class="cd-nm">${c.name}</div>
     </div></div>`;
   }).join("");
-  dots.innerHTML = Array.from({ length: pages }, (_, i) => `<i class="${i === cdPage ? "on" : ""}"></i>`).join("");
+  /* 一页时那颗孤零零的圆点没有意义，不显示 */
+  dots.innerHTML = pages > 1
+    ? Array.from({ length: pages }, (_, i) => `<i class="${i === cdPage ? "on" : ""}"></i>`).join("")
+    : "";
 }
-setInterval(() => { cdPage++; renderCdHome(); }, 5600);
+setInterval(() => {
+  /* 只有多于一页时才翻页重画。1~2 个倒数日只有一页，翻了也是同样的内容，
+     但 innerHTML 重建会让 cdIn 入场动画重放一遍 —— 看上去就是每 5.6 秒闪一下 */
+  if (Math.ceil(countdowns.length / 2) <= 1) return;
+  cdPage++; renderCdHome();
+}, 5600);
 function renderCdList() {
   document.getElementById("cdList").innerHTML = countdowns.map((c, i) => {
     const d = cdDays(c.date);
