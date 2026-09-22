@@ -435,6 +435,82 @@ function phoneBrief(now) {
   return `她最后一次碰手机是 ${hm(e.t)}（${e.app}，${e.k === "open" ? "打开" : "关上"}），到现在 ${fmtDur(now - e.t)}没动静了。`;
 }
 
+/* ================= 天气 =================
+   用 Open-Meteo：免费、不用注册、不用 key。她在哪儿存在 quiet.json 里。
+   做成工具而不是塞进每轮的【现状】—— 她的原话：「他想知道的时候再查」。 */
+function placeConf() {
+  const q = readJson("quiet", null) || {};
+  const num = (v, dft) => (Number.isFinite(Number(v)) ? Number(v) : dft);
+  return {
+    city: (typeof q.city === "string" && q.city.trim()) ? q.city.trim() : "长沙",
+    lat: num(q.lat, 28.19),    // 长沙芙蓉区
+    lon: num(q.lon, 113.03),
+  };
+}
+/* WMO 天气代码 → 人话 */
+const WMO_CN = {
+  0: "晴", 1: "大致晴朗", 2: "多云", 3: "阴",
+  45: "有雾", 48: "雾凇",
+  51: "毛毛雨", 53: "小雨", 55: "中雨", 56: "冻毛毛雨", 57: "冻雨",
+  61: "小雨", 63: "中雨", 65: "大雨", 66: "冻雨", 67: "大冻雨",
+  71: "小雪", 73: "中雪", 75: "大雪", 77: "雪粒",
+  80: "阵雨", 81: "强阵雨", 82: "暴雨", 85: "阵雪", 86: "大阵雪",
+  95: "雷阵雨", 96: "雷阵雨伴冰雹", 99: "强雷阵雨伴冰雹",
+};
+const wmo = c => WMO_CN[Number(c)] || "说不好什么天气";
+let weatherCache = { at: 0, text: "" };
+function weatherText(j, place, now) {
+  const c = j.current || {}, d = j.daily || {};
+  const at = a => (Array.isArray(a) ? a : []);
+  const r1 = n => (Number.isFinite(Number(n)) ? Math.round(Number(n)) : null);
+  const today = {
+    code: at(d.weather_code)[0], max: r1(at(d.temperature_2m_max)[0]),
+    min: r1(at(d.temperature_2m_min)[0]), rain: r1(at(d.precipitation_probability_max)[0]),
+  };
+  const tmr = {
+    code: at(d.weather_code)[1], max: r1(at(d.temperature_2m_max)[1]),
+    min: r1(at(d.temperature_2m_min)[1]), rain: r1(at(d.precipitation_probability_max)[1]),
+  };
+  const nowT = r1(c.temperature_2m), feel = r1(c.apparent_temperature);
+  const lines = [`${place.city}，此刻 ${wmo(c.weather_code)} ${nowT == null ? "" : nowT + "℃"}` +
+    (feel != null && nowT != null && Math.abs(feel - nowT) >= 2 ? `（体感 ${feel}℃）` : "")];
+  if (today.max != null) {
+    lines.push(`今天 ${wmo(today.code)}，${today.min}~${today.max}℃` +
+      (today.rain != null && today.rain >= 30 ? `，降水概率 ${today.rain}%` : ""));
+  }
+  if (tmr.max != null) {
+    lines.push(`明天 ${wmo(tmr.code)}，${tmr.min}~${tmr.max}℃` +
+      (tmr.rain != null && tmr.rain >= 30 ? `，降水概率 ${tmr.rain}%` : ""));
+  }
+  /* 值得提醒她的事，单独拎出来 —— 他多半会顺口说一句 */
+  const tips = [];
+  if ((today.rain || 0) >= 50 || [51,53,55,61,63,65,80,81,82,95,96,99].includes(Number(today.code))) tips.push("今天大概率要下雨，记得带伞");
+  if (today.min != null && today.min <= 5) tips.push("今天挺冷的");
+  if (today.max != null && today.max >= 32) tips.push("今天很热");
+  if (today.max != null && tmr.max != null && tmr.max - today.max <= -6) tips.push("明天要降温了");
+  if (tips.length) lines.push("（" + tips.join("；") + "）");
+  return lines.join("\n");
+}
+async function checkWeather(force) {
+  const now = Date.now();
+  if (!force && weatherCache.text && now - weatherCache.at < 30 * 60000) return weatherCache.text;
+  const place = placeConf();
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=" + place.lat + "&longitude=" + place.lon +
+    "&current=temperature_2m,apparent_temperature,weather_code" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+    "&timezone=Asia%2FShanghai&forecast_days=2";
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const text = weatherText(await r.json(), place, now);
+    weatherCache = { at: now, text };
+    return text;
+  } catch (e) {
+    /* 查不到就老实说查不到，别编天气 */
+    return `查不到${place.city}的天气（${String(e.message || e).slice(0, 60)}）。别猜，就跟她说没查着。`;
+  }
+}
+
 /* 今天的日程：快捷指令每天早上从日历读一份送过来 */
 function agendaToday() {
   const a = readJson("agenda", null) || {};
@@ -584,22 +660,30 @@ function memBlockOf(query) {
   const mems = retrieveMemories(query, 5);
   return mems.length ? "【你的记忆】\n" + mems.map(c => `- (${c.type} · ${c.date}) ${c.content}`).join("\n") : "";
 }
-function statusBlock(now, snap) {
+/* 【现状】分两档，这是她提的：
+     连着聊的时候（距上一句不到半小时）只报个钟点 —— 课表、日程、清单这些
+     一整天都不变，每句话重复一遍既费钱又聒噪；
+     隔了很久重新开口，才把完整的一份摆给他，就像久别重逢时先交代一下近况。
+   「在一起第几天」也按她的意思拿掉了 —— 每句话都强调天数太刻意。 */
+function statusBlock(now, snap, brief) {
   const p = localParts(now);
   const pad = v => String(v).padStart(2, "0");
   const WEEK_CN = "日一二三四五六";
   const partOfDay = p.hh < 5 ? "深夜" : p.hh < 9 ? "清晨" : p.hh < 12 ? "上午" : p.hh < 14 ? "中午" : p.hh < 18 ? "下午" : p.hh < 22 ? "晚上" : "夜里";
+  const head = `【现状】现在是 ${p.y}.${pad(p.mo)}.${pad(p.d)} 周${WEEK_CN[p.dow]} ${pad(p.hh)}:${pad(p.mm)}（${partOfDay}）。`;
+  const mood = `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
+  if (brief) return head + mood;
   const todos = readJson("todos", []) || [];
   const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
   const cls = inClassNow(now);
   const agenda = agendaToday();
   const mine = listAlarms().filter(a => a.at > now);
-  return `【现状】现在是 ${p.y}.${pad(p.mo)}.${pad(p.d)} 周${WEEK_CN[p.dow]} ${pad(p.hh)}:${pad(p.mm)}（${partOfDay}），你们在一起的第 ${daysTogether(now)} 天。`
+  return head
     + (cls ? `她这会儿在上${cls.name || "课"}，${pad(Math.floor(cls.to / 60))}:${pad(cls.to % 60)} 下课。` : "")
-    + (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "")
     + (agenda.length ? `她今天的安排：${agenda.map(x => x.title).join("；")}。` : "")
+    + (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "")
     + (mine.length ? `你自己记着的事（她看不见，也别主动说破）：${mine.map(a => fmtWhen(a.at, now) + " " + a.why).join("；")}。` : "")
-    + `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
+    + mood;
 }
 function toolHint() {
   return "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
@@ -609,7 +693,7 @@ function toolHint() {
     "或者你想过一阵问问她某件事怎么样了，就记下来；到那时你会醒过来，重读一遍对话，再决定要不要找她。" +
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
-    "那是关心，不是查岗。" +
+    "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather。" +
     (mcpToolDefs().length ? "带 __ 的工具是外部服务（如邮箱），用法和其他工具一样。" : "");
 }
 function setBoundWindow(id) { writeJson("windows", { bound: id || null, updated: new Date().toISOString() }); }
@@ -1251,6 +1335,8 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
+  { type: "function", function: { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）。聊到出门、穿什么、下不下雨的时候用；也可以在你想提醒她带伞、加衣服的时候主动看一眼",
+    parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
   { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起",
@@ -1264,6 +1350,7 @@ async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = localDayKey();
+    if (name === "check_weather") return await checkWeather();
     if (name === "check_phone") return phoneReport(args && args.hours);
     if (name === "set_alarm") {
       const now = Date.now();
@@ -1839,7 +1926,7 @@ const server = http.createServer(async (req, res) => {
       const q = quietConf();
       const now = Date.now();
       sendJson(res, 200, {
-        ...q, parsed: parseClasses(q.classes), today: wakeLog(),
+        ...q, ...placeConf(), parsed: parseClasses(q.classes), today: wakeLog(),
         pending: listAlarms().filter(a => a.at > now).length,
       });
       return;
@@ -1847,6 +1934,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/quiet" && req.method === "PUT") {
       const body = JSON.parse(await readBody(req, 64 * 1024) || "{}");
       const cur = quietConf();
+      const place = placeConf();
       const num = (v, dft, lo, hi) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : dft);
       const next = {
         on: typeof body.on === "boolean" ? body.on : cur.on,
@@ -1855,6 +1943,9 @@ const server = http.createServer(async (req, res) => {
         nightEnd: num(body.nightEnd, cur.nightEnd, 0, 23),
         maxWakePerDay: num(body.maxWakePerDay, cur.maxWakePerDay, 1, 50),
         nightPeek: typeof body.nightPeek === "boolean" ? body.nightPeek : cur.nightPeek,
+        city: typeof body.city === "string" && body.city.trim() ? body.city.trim().slice(0, 30) : place.city,
+        lat: num(body.lat, place.lat, -90, 90),
+        lon: num(body.lon, place.lon, -180, 180),
         minGapMin: num(body.minGapMin, cur.minGapMin, 5, 24 * 60),
         maxPerDay: num(body.maxPerDay, cur.maxPerDay, 0, 20),
       };
@@ -1867,6 +1958,25 @@ const server = http.createServer(async (req, res) => {
       const n = listAlarms().length;
       saveAlarms([]);
       sendJson(res, 200, { ok: true, cleared: n });
+      return;
+    }
+    /* 按地名找坐标（Open-Meteo 的免费接口，不用 key）。查不到就让她手填 */
+    if (p === "/api/geocode" && req.method === "GET") {
+      const q = (url.searchParams.get("q") || "").trim();
+      if (!q) { sendJson(res, 400, { ok: false, error: "没给地名" }); return; }
+      try {
+        const r = await fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=zh&name=" + encodeURIComponent(q), { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const j = await r.json();
+        const hit = (j.results || [])[0];
+        if (!hit) { sendJson(res, 200, { ok: false, error: "没找到「" + q + "」，可以直接手填经纬度" }); return; }
+        sendJson(res, 200, { ok: true, city: hit.name, lat: hit.latitude, lon: hit.longitude, admin: hit.admin1 || "" });
+      } catch (e) { sendJson(res, 200, { ok: false, error: String(e.message || e).slice(0, 60) }); }
+      return;
+    }
+    /* 天气，她在设置里点「看一眼」时用 */
+    if (p === "/api/weather" && req.method === "GET") {
+      sendJson(res, 200, { text: await checkWeather(url.searchParams.get("force") === "1") });
       return;
     }
     /* 他惦记着的事。聊天界面里看不到，但这里能查到 —— /admin 会用它 */
@@ -1954,7 +2064,9 @@ const server = http.createServer(async (req, res) => {
       const snap = driveSnapshot(dr, now0);
 
       const memBlock = memBlockOf(lastUser);
-      const status = statusBlock(now0, snap);
+      /* 距上一句超过半小时，才把完整的近况摆给他；连着聊就只报个钟点 */
+      const prevTs = Number(payload.prevTs) || 0;
+      const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 30 * 60000);
       const TOOL_HINT = toolHint();
 
       /* ---- 缓存友好的摆法 ----

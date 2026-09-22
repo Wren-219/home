@@ -1132,7 +1132,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.1.3（手机记录：漏收「关闭」信号时不再谎报「还开着」）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.2（他会查天气了 · 近况只在久别重逢时给一次，不再每句话重复）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1359,6 +1359,14 @@
           <div class="row">
             <span class="lb" style="flex:1;font-size:13px">一天最多醒几次（含没说话的）</span>
             <input type="number" id="qMaxWake" min="1" max="50" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">你在哪个城市（他查天气用）</span>
+            <input type="text" id="qCity" placeholder="长沙" style="flex:0 0 96px;width:96px;text-align:center">
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:12px;opacity:.7" id="qGeo">坐标 —</span>
+            <button class="btn ghost" style="flex:0 0 auto;padding:6px 12px;font-size:12px" onclick="geoFind()">按名字找坐标</button>
           </div>
           <div class="sw-row">
             <span class="lb">让他可以主动找我</span>
@@ -2949,7 +2957,12 @@ async function aiReply() {
   try {
     const resp = await fetch("api/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: toApiMessages(), windowId: chatData.active }),
+      /* 带上「上一句是什么时候」：服务器据此决定给他完整近况、还是只报个钟点。
+         倒数第一条是她刚发的这句，所以要看倒数第二条 */
+      body: JSON.stringify({
+        messages: toApiMessages(), windowId: chatData.active,
+        prevTs: (chatLog[chatLog.length - 2] || {}).ts || 0,
+      }),
     });
     if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
     const reader = resp.body.getReader();
@@ -3886,6 +3899,9 @@ async function quietRefresh() {
     document.getElementById("qGap").value = q.minGapMin;
     document.getElementById("qMax").value = q.maxPerDay;
     document.getElementById("qMaxWake").value = q.maxWakePerDay;
+    document.getElementById("qCity").value = q.city || "";
+    const geo = document.getElementById("qGeo");
+    if (geo) geo.textContent = `坐标 ${Number(q.lat).toFixed(2)}, ${Number(q.lon).toFixed(2)}`;
     renderQStat(q);
     document.getElementById("qOn").classList.toggle("on", q.on !== false);
     document.getElementById("qPeek").classList.toggle("on", q.nightPeek !== false);
@@ -3931,6 +3947,19 @@ async function alarmsClear() {
     quietRefresh();
   } catch (e) { toast("没清掉：" + String(e.message || e).slice(0, 30)); }
 }
+async function geoFind() {
+  const name = (document.getElementById("qCity").value || "").trim();
+  if (!name) { toast("先填个地名"); return; }
+  toast("找找看…");
+  try {
+    const r = await (await fetch("api/geocode?q=" + encodeURIComponent(name))).json();
+    if (!r.ok) { toast(r.error || "没找到"); return; }
+    await fetch("api/quiet", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ city: r.city, lat: r.lat, lon: r.lon }) });
+    toast("找到了：" + (r.admin ? r.admin + " " : "") + r.city);
+    quietRefresh();
+  } catch (e) { toast("没找着：" + String(e.message || e).slice(0, 30)); }
+}
 async function quietSave() {
   const body = {
     classes: document.getElementById("qClasses").value,
@@ -3939,6 +3968,7 @@ async function quietSave() {
     minGapMin: Number(document.getElementById("qGap").value),
     maxPerDay: Number(document.getElementById("qMax").value),
     maxWakePerDay: Number(document.getElementById("qMaxWake").value),
+    city: document.getElementById("qCity").value,
     on: quietCur ? quietCur.on !== false : true,
     nightPeek: quietCur ? quietCur.nightPeek !== false : true,
   };
