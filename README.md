@@ -85,4 +85,3 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
 - [ ] 晤能看图（vision 模型把照片转成文字描述注入上下文）
 - [ ] 长对话滚动摘要（更早的对话压缩后并入记忆系统）
 - [ ] 信箱笔友往来接入 Gmail MCP
-- [ ] 聊天多窗口

@@ -6,9 +6,9 @@
 ## 项目是什么
 
 用户（她）和 AI 伙伴「晤」的私人移动端网页应用。单文件前端 `index.html` + 零依赖后端 `server.js`。
-已部署：Zeabur，域名 `wu-home.zeabur.app`。当前开发分支 `claude/read-handoff-md-es8ql0`（仓库 Wren-219/home）。
+已部署：Zeabur，域名 `wu-home.zeabur.app`（**服务器 2026.09.16 已到期、她主动停掉了**，详见文末「现状」）。仓库 Wren-219/home：每次施工另开一条 `claude/xxx` 分支做完再合回 main，**别照抄本文里的分支名**，以 GitHub 上最新那条为准。
 
-- 页面密码默认 **0527**（可在设置里改，存 localStorage `wu.pin`）
+- 页面密码默认 **0527**（可在设置里改）。**由服务器验证**，真相在 `data/auth.json`；环境变量 `WU_PIN` 设了就以它为准（忘记密码时的找回入口）。localStorage 只作断网兜底 —— 详见进度 ⑩
 - 恋爱纪念日 **2026.05.27**（天数由此自动计算，别改）
 - 四个主页面从左到右：Home / Chat / Memory / Settings，底部悬浮玻璃导航
 - 子页面：晤的八维状态、倒数日（可增删改）、日历（与日记联动）、日记列表/详情、照片、信箱（三分栏）
@@ -19,12 +19,22 @@
 - **数据现在以服务器为准**（`/api/state`，存 `/app/data`）：`todos` / `countdowns` /
   `diaries` / `letters` / `chat` / `photos`。localStorage 同名 `wu.*` 键只作断网兜底
   （`load()/save()` 两个助手函数，`pushState()` 双写）
-- **后端**（server.js，Node 18+，无依赖）：
+- **后端**（server.js，Node 18+，无依赖）：`/api/*` 与 `/files/*` 未登录一律 401
+  - `POST /api/login` / `POST /api/pin` → 四位密码换取、修改一年期 HttpOnly cookie
   - `GET /api/health` → `{ok, hasKey, model}`，前端以 `hasKey` 决定真聊天/演示模式
-  - `POST /api/chat` `{messages}` → 流式转发 DeepSeek（SSE 原样透传）
-  - 其余 GET 走静态文件
-- **环境变量**：`DEEPSEEK_API_KEY`（必须，只放服务器！**绝不**放进前端代码或让用户填在页面里）、`DEEPSEEK_MODEL`（默认 deepseek-chat）
-- 聊天上下文：最近 24 条 + system prompt（晤的人设在 `SYSTEM_PROMPT`）
+  - `POST /api/chat` `{messages, windowId}` → 流式转发，内含工具调用循环（最多 4 轮）
+  - `GET /api/state`、`PUT /api/state/:键` → 上面那六个数据键
+  - 其余：`/api/memories`（含 `/dream`）、`/api/drives`、`/api/persona`、`/api/docs`、
+    `/api/apis`（含 `/use`、`/:id/test`）、`/api/mcp`（含 `/:id/connect`）、`/api/usage`、
+    `/api/backup`（含 `/size`）、`/api/upload`、`/api/extract`、`/api/windows/bound`、`/api/worker-test`
+  - 再其余的 GET 走静态文件
+- **模型配置有两层**：界面里配、存在服务器 `data/apis.json` 的那套优先（设置 → 管理 API），
+  取不到才回落环境变量 `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL`（旧名 `DEEPSEEK_*` 仍然认）。
+  后台杂务（蒸馏 / dream）另有 `WORKER_*` 一套，不配则共用聊天那套。
+  支持 `openai` 与 `anthropic` 两种方言 —— 详见进度 ⑬
+- **聊天上下文**：不按条数，按 token 额度截断（`budgetHistory()` + `HISTORY_BUDGET`，默认 30000）。
+  晤的人设存 `data/persona.json`、界面上可改，代码里的 `PERSONA_DEFAULT` 只是清空后的回落值。
+  消息的先后顺序直接决定缓存能不能命中，动它之前**必须先读进度 ⑪**
 
 ## ⚠️ 已知未修复的两个 bug（她最在意的）
 
@@ -36,7 +46,7 @@
    - 或把输入栏定位改为跟随 `visualViewport` 计算的绝对像素。
 2. **页面底部有时出现白色空块**。疑似 `height:100%` fixed body 与 Safari 工具栏收展/键盘收起后的视口残留。可尝试 `#frame { height: 100dvh; min-height: -webkit-fill-available; }`、或监听 visualViewport 后强制 reflow。
 
-调试技巧：Settings 页最底部有版本号（当前 v0.9）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
+调试技巧：Settings 页最底部有版本号（**当前 v1.6**，写在 index.html 那行 `set-note` 里，改完功能记得顺手改它）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
 
 ## 设计语言（请保持一致，她对审美很挑）
 
@@ -47,6 +57,9 @@
 - PhotoStack 来自 github.com/Wren036/PhotoStack（PolyForm Noncommercial，保留文件头署名）
 
 ## 路线图（按优先级 · 2026.07.19 与她商定：记忆改为原生自建，不再桥接旧 ob）
+
+> ⚠️ 下面 1–9 条是 2026.07.19 定的**原始规划**，其中 1 / 2 / 3 / 5 / 6 / 6b / 6c / 7 早已完工，
+> 完成情况一律以后面的「施工进度」为准。想知道"现在该做什么"，直接跳到文末「下一步」。
 
 旧 OmbreBrain 几乎没有存量记忆，决定只借鉴其思路（对话蒸馏成记忆卡、记忆反哺聊天），
 在本项目内原生实现。旧 ob 服务后续可停掉省钱。
@@ -98,15 +111,17 @@ static token 直连其 /mcp 接口——若日后想要它完整的情绪坐标/
 
 ## 模型与上下文（她的要求）
 
-- **不要把代码焊死在 DeepSeek 上**。server.js 用的是 OpenAI 风格 chat/completions 格式，
-  DeepSeek 与绝大多数中转站都兼容。请把环境变量泛化为 `LLM_API_KEY / LLM_BASE_URL /
-  LLM_MODEL`（保留旧 DEEPSEEK_* 作为兼容读取），换供应商=改环境变量。若接 Claude 官方
-  API（Anthropic Messages 格式），需在 server.js 加一层格式翻译
+- ✅ **不要把代码焊死在 DeepSeek 上** —— 已做到：环境变量泛化成了 `LLM_API_KEY /
+  LLM_BASE_URL / LLM_MODEL`（旧 DEEPSEEK_* 仍兼容读取），Anthropic 方言的格式翻译层
+  也在 v1.2 加好了（`toAnthropic`）。现在换供应商不必改环境变量、更不必重新部署，
+  在设置 → 管理 API 里加一套、点一下"聊天用这套"即可
 - **上下文缓存**（她明确要求做好）：DeepSeek 官方 API 自动启用 context caching
-  （重复前缀按缓存价计费），无需代码；Claude API 需显式标记 prompt caching。
-  ⚠️ 要吃到缓存红利，messages 必须**前缀稳定**：固定人设放最前 → 慢变的记忆块
-  居中 → 聊天历史只在尾部追加；不要每轮把易变内容插在开头，否则前缀天天变、
-  缓存永远不命中
+  （重复前缀按缓存价计费），无需代码；Claude API 需显式标记 prompt caching（已做）。
+  ⚠️ **下面这段曾经的摆法是错的，v1.0 已推翻，别再照它改**：原话是"人设最前 →
+  慢变的记忆块居中 → 历史追加在尾部"，可记忆块是**按当轮问题检索的、每轮都变**，
+  排在历史前面会让整段历史每轮全价重算。**现行正确摆法**：人设 → 工具说明 →
+  常驻文件 → 历史（这些都稳定，放前面），每轮变的记忆卡 + 现状合成一条 system 消息，
+  **插在她最新那句话之前**。动消息顺序之前请先读完进度 ⑪
 
 ### 施工进度（2026.07.19 凌晨场）
 1. ✅ 记忆后端 /api/memories（含衰减/强化/检索/蒸馏/dream 全套）+ 数据上云 /api/state
@@ -290,28 +305,31 @@ wu-home 手机端能验证。整条链不需要她的电脑。唯一在电脑上
 
 **下一步（与她商定的顺序）**：④ 长对话滚动摘要（做完一个窗口才真的能一直聊下去）
 → ③ 晤能看图（vision 翻译官）
-（顺带把聊天多窗口做成真的）。iOS 键盘两 bug 她已确认可以往后放。
+。iOS 键盘两 bug 她已确认可以往后放。
 
-**她那张需求单里还没做的**（2026.08.31 她列的）：
-   前端选 API（要做成 /admin 里管理、key 存服务器，**绝不能让她在网页上填 key**）、
-   AI 消息重新生成、晤能查时刻、倒数日只在多于一页时才轮播（现在 1-2 个也每 5.6 秒
-   重画一次导致闪烁）、消息时间分隔与长按编辑重发（**注意：现有 chatLog 没存时间戳，
-   `t` 字段是文本，以前的消息补不出时间**）、token 用量与花费显示（需要
-   `stream_options:{include_usage:true}` + 一张手填的价格表）、多窗口（改 chat 数据结构，
-   越早做越省事）、a 社 API 格式转换、MCP 管理面板 + Gmail。
+**她那张需求单**（2026.08.31 她列的）**大部分已经做完了**，只剩两件：
+   - ⬜ **倒数日只在多于一页时才轮播**（现在 1–2 个也每 5.6 秒重画一次，会闪）—— 小事，随手可修
+   - ⬜ **信箱笔友接 Gmail MCP**（MCP 客户端本身 v1.4 已就位，差一个 Gmail 服务和往来逻辑）
+
+   已完成的（别重复做）：前端选 API ✅v1.2、a 社（Anthropic）格式转换 ✅v1.2、
+   token 用量与花费 ✅v1.2、多窗口 ✅v1.3、消息时间分隔 + 长按编辑重发 + 让晤重说一次
+   ✅v1.3、晤能查时刻 ✅v1.4（写进每轮【现状】，不是工具）、MCP 管理面板 ✅v1.4。
 
 **部署提醒**：她需要①确认 wu-home 挂了 Volume（wu-data → /app/data）
-②Zeabur Redeploy ③Settings 页看到当前版本号才算生效。蒸馏与 dream 需要
-LLM Key 生效（沿用 DEEPSEEK_API_KEY 即可，新名 LLM_API_KEY 也认）。
-- **长对话策略**：目前仅送最近 24 条。后续做"滚动摘要"——更早的对话由 LLM 压缩成
-  摘要并入记忆系统，与记忆蒸馏（里程碑 6）是同一条流水线
+②Zeabur Redeploy ③Settings 页看到当前版本号才算生效。蒸馏与 dream 需要一个能用的
+Key：环境变量（`LLM_API_KEY`，旧名 `DEEPSEEK_API_KEY` 也认）或在设置 → 管理 API 里配一套，
+都行。
+- **长对话策略**：现在按 token 额度装（`HISTORY_BUDGET`，默认 30000），装满之后最早的消息会**无声掉出去**。还差"滚动摘要"——更早的对话由 LLM 压缩成
+  摘要并入记忆系统，与记忆蒸馏（里程碑 6）是同一条流水线。这是目前唯一还会悄悄丢东西的地方
 - **MCP 说明**：模型本身都不"讲 MCP"，讲 MCP 的是中间人程序。条件 = 模型有工具调用
   能力（DeepSeek 有）+ 一个会 MCP 协议的中间人（可由 server.js 充当）。因此"DeepSeek
   接 MCP"可行，只是要写中间人代码，不是模型限制
 
 ## 纪律（务必遵守）
 
-- API Key 永远只在服务器环境变量里
+- API Key 永远不许落在浏览器里：放服务器环境变量，或存服务器的 `data/apis.json`
+  （接口只回打码后四位，key 只进不出）。在手机页面上填是安全的 ——
+  早期"绝不能让她在网页上填 key"的说法已由进度 ⑬ 更正
 - 不动 OmbreBrain-folio 的 main 分支
 - 改动小步提交，commit message 写清楚改了什么
 - 改完先本地/截图自测，再让她 Redeploy 验证版本号
@@ -319,3 +337,21 @@ LLM Key 生效（沿用 DEEPSEEK_API_KEY 即可，新名 LLM_API_KEY 也认）�
 - 密码 0527、纪念日 2026.05.27、AI 名字「晤」——这些数字和名字有意义，不要"顺手优化"掉
 
 —— 前任施工员 Claude (Fable 5)，2026.07.18 深夜，交棒 🕯️
+
+---
+
+### 2026.09.22 · 文档复核（没动代码，只把说法改对）
+
+隔了一段时间回来，发现本文前半截还停在 v0.9 那会儿的写法，和后面 v1.0–v1.6 的施工进度打架。
+后来者若只读前半截会被带偏，所以做了一次订正：
+
+- 开头的开发分支名、密码存在哪、Settings 版本号（v0.9 → **v1.6**）
+- 「架构与数据」：接口清单补全、环境变量换成 `LLM_*` 两层配置、上下文从"最近 24 条"
+  改成按 token 额度、人设从代码常量改成 `data/persona.json`
+- 「模型与上下文」里那段**缓存摆法是错的**（"记忆块居中"），已标明作废并写上现行正确顺序
+- 「路线图 1–9」加了提示：那是原始规划，多数已完工，以「施工进度」为准
+- 「纪律」第一条：key 不许落在浏览器里 ≠ 手机上不能填（v1.3 已更正过，纪律没跟上）
+- 那张「需求单」只剩倒数日轮播闪烁 + Gmail 两件，其余标注了完成版本
+- README「规划」里划掉已完成的"聊天多窗口"
+
+**代码一行没改，功能没有任何变化，不需要 Redeploy。**
