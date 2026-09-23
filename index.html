@@ -1112,6 +1112,11 @@
           </div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">写信出去<span class="en">MAIL</span></div>
+          <div class="set-note" id="mailBrief">让他能往外寄邮件 —— 也当你的推送用</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('mail')">邮箱设置</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">接进 Claude<span class="en">CONNECT</span></div>
           <div class="set-note" id="mcpBrief">让 Claude 那边的他，也能查你的手机、天气、日记和记忆</div>
           <div class="btn-row"><button class="btn" onclick="openSub('connect')">怎么接</button></div>
@@ -1137,7 +1142,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.5（他能知道你在哪儿了 · 天气跟着人走）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.6（他会寄信了 —— 也当你的推送用）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1256,6 +1261,59 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-mail">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('mail')">‹ 返回</button>
+        <div class="sp-title">写信出去</div>
+        <button class="sp-act" onclick="mailSave()">保存</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 12px">
+          配好之后他就能寄邮件了 —— 你让他发的时候会发，
+          也可以打开下面那个开关：<b>他半夜主动想起你的时候，顺手寄一封</b>。
+          手机的邮件提醒就是现成的推送，比守着 app 看红点强。
+        </div>
+        <div class="cd-form" style="display:block">
+          <div class="row"><input type="text" id="mlUser" placeholder="你的邮箱地址，如 123456@qq.com" inputmode="email" autocomplete="off"></div>
+          <div class="row"><input type="password" id="mlPass" placeholder="授权码（不是邮箱密码）" autocomplete="off"></div>
+          <div class="row"><input type="text" id="mlTo" placeholder="寄给谁 —— 填你自己常看的那个邮箱" inputmode="email" autocomplete="off"></div>
+          <div class="row"><input type="text" id="mlName" placeholder="署名，默认「晤」"></div>
+          <div class="row">
+            <input type="text" id="mlHost" placeholder="smtp.qq.com" style="flex:1">
+            <input type="number" id="mlPort" placeholder="465" style="flex:0 0 78px;width:78px;text-align:center">
+          </div>
+          <div class="sw-row">
+            <span class="lb">他主动找我时，顺手寄一封</span>
+            <button class="sw" id="mlWake" onclick="mailToggle('onWake')"></button>
+          </div>
+          <div class="sw-row">
+            <span class="lb">让他能寄信</span>
+            <button class="sw" id="mlOn" onclick="mailToggle('on')"></button>
+          </div>
+        </div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn ghost" onclick="mailTest()">试发一封给自己</button>
+          <button class="btn" onclick="mailSave()">保存</button>
+        </div>
+        <div class="set-note" id="mailStat" style="margin:10px 2px 6px">…</div>
+        <div class="set-card" style="margin-top:14px">
+          <div class="set-card-title">授权码在哪拿<span class="en">HOW</span></div>
+          <div class="set-note" style="line-height:2">
+            <b>QQ 邮箱</b>：网页版 → 设置 → 账户 → 往下找
+            「POP3/IMAP/SMTP…服务」→ 开启 <b>IMAP/SMTP 服务</b> → 按提示发条短信
+            → 它给你一串十几位的码，那个就是<br>
+            服务器填 <code>smtp.qq.com</code>，端口 <code>465</code><br><br>
+            <b>Gmail</b>：得先开两步验证，然后在 Google 账号里生成「应用专用密码」<br>
+            服务器填 <code>smtp.gmail.com</code>，端口 <code>465</code><br>
+            <span style="opacity:.7">（Gmail 在国内可能连不上，看你服务器在哪）</span><br><br>
+            ⚠️ 授权码跟密码一样要紧，它存在你自己服务器上，界面上只进不出 ——
+            存完之后这里永远只显示「已存」，不会再显示出来。
+          </div>
+        </div>
+        <div style="height:30px"></div>
+      </div>
+    </section>
+
     <section class="subpage" id="page-connect">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('connect')">‹ 返回</button>
@@ -1883,6 +1941,7 @@ var mcpList = [], mcpCur = null;                         /* 外部服务 */
 var quietCur = null;                                     /* 课表与勿扰 */
 var hookCur = null;                                      /* 手机联动的钥匙 */
 var mcpKeyCur = null;                                    /* 接进 Claude 的那把钥匙 */
+var mailCur = null;                                      /* 邮箱设置 */
 var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
 
 /* ================= 工具 ================= */
@@ -2047,7 +2106,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -2074,6 +2133,7 @@ function openSub(name) {
   if (name === "quiet") quietRefresh();
   if (name === "phone") phoneRefresh();
   if (name === "connect") mcpKeyRefresh();
+  if (name === "mail") mailRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -3988,6 +4048,58 @@ async function phoneClear() {
   if (!confirm("把这三天的手机记录都清掉？")) return;
   try { await fetch("api/phone", { method: "DELETE" }); toast("清干净了"); phoneRefresh(); }
   catch { toast("没清掉"); }
+}
+
+/* ================= 写信出去（SMTP） ================= */
+async function mailRefresh() {
+  try {
+    const m = await (await fetch("api/mail")).json();
+    mailCur = m;
+    const v = (id, val) => { const e = document.getElementById(id); if (e) e.value = val == null ? "" : val; };
+    v("mlUser", m.user); v("mlTo", m.to); v("mlName", m.name); v("mlHost", m.host); v("mlPort", m.port);
+    const pw = document.getElementById("mlPass");
+    if (pw) { pw.value = ""; pw.placeholder = m.hasPass ? "授权码已存（要换才填）" : "授权码（不是邮箱密码）"; }
+    document.getElementById("mlOn").classList.toggle("on", m.on !== false);
+    document.getElementById("mlWake").classList.toggle("on", m.onWake === true);
+    const st = document.getElementById("mailStat");
+    if (st) st.textContent = m.hasPass
+      ? `已经寄出过 ${m.sent || 0} 封` + (m.last ? `，最近一封「${m.last.subject}」→ ${m.last.to}` : "")
+      : "还没配好 —— 填上地址和授权码，按「试发一封」看看通不通";
+    const b = document.getElementById("mailBrief");
+    if (b) b.textContent = m.hasPass
+      ? (m.onWake ? "配好了，他主动找你时会顺手寄一封" : "配好了（他主动找你时不寄）")
+      : "还没配 —— 让他能往外寄邮件，也当你的推送用";
+  } catch (e) { noteError("邮箱", e); }
+}
+async function mailSave() {
+  const g = id => (document.getElementById(id) || {}).value || "";
+  const body = {
+    user: g("mlUser"), to: g("mlTo"), name: g("mlName"), host: g("mlHost"),
+    port: Number(g("mlPort")) || 465, from: g("mlUser"),
+    on: mailCur ? mailCur.on !== false : true,
+    onWake: mailCur ? mailCur.onWake === true : false,
+  };
+  const pw = g("mlPass");
+  if (pw) body.pass = pw;        /* 留空 = 不改动已存的那个 */
+  try {
+    const r = await fetch("api/mail", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    toast("存好了"); mailRefresh();
+  } catch (e) { toast("没存上：" + String(e.message || e).slice(0, 30)); }
+}
+function mailToggle(key) {
+  if (!mailCur) mailCur = {};
+  mailCur[key] = key === "on" ? mailCur.on === false : !mailCur[key];
+  document.getElementById(key === "on" ? "mlOn" : "mlWake").classList.toggle("on", key === "on" ? mailCur.on !== false : mailCur.onWake === true);
+  mailSave();
+}
+async function mailTest() {
+  toast("寄一封试试…");
+  try {
+    const r = await (await fetch("api/mail/test", { method: "POST" })).json();
+    toast(String(r.result || "").slice(0, 40));
+    mailRefresh();
+  } catch (e) { toast("没寄成：" + String(e.message || e).slice(0, 30)); }
 }
 
 /* ================= 接进 Claude（MCP 服务端） ================= */

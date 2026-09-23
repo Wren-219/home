@@ -436,6 +436,130 @@ function phoneBrief(now) {
   return `她最后一次碰手机是 ${hm(e.t)}（${e.app}，${e.k === "open" ? "打开" : "关上"}），到现在 ${fmtDur(now - e.t)}没动静了。`;
 }
 
+/* ================= 寄信（SMTP） =================
+   手写的，零依赖 —— 这个项目从头到尾没装过一个包，这里也不破例。
+   走 465 端口的 SMTPS（连上就是加密的），比 587 的 STARTTLS 少一道手续。
+   配置存 data/mail.json，密码那栏填「授权码」不是邮箱密码：
+   QQ 邮箱 → 设置 → 账户 → 开启 POP3/SMTP → 生成授权码。 */
+const tls = require("tls");
+function mailConf() {
+  const m = readJson("mail", null) || {};
+  const host = String(m.host || "smtp.qq.com");
+  return {
+    on: m.on !== false,
+    host,
+    port: Number(m.port) || 465,
+    user: String(m.user || ""),
+    pass: String(m.pass || ""),
+    from: String(m.from || m.user || ""),
+    name: String(m.name || "晤"),
+    to: String(m.to || ""),          // 她自己的收件地址
+    onWake: m.onWake === true,       // 他主动说话时顺便发一封
+  };
+}
+/* 中文标题得编码，不然对方看到的是乱码 */
+function mimeWord(sTxt) {
+  const t = String(sTxt == null ? "" : sTxt);
+  if (!/[^\x20-\x7E]/.test(t)) return t;
+  return "=?UTF-8?B?" + Buffer.from(t, "utf8").toString("base64") + "?=";
+}
+function mailDate(ms) {
+  /* RFC 5322 的日期格式，得用英文缩写，而且要带她那边的时区 */
+  const p = localParts(ms);
+  const W = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dow];
+  const M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][p.mo - 1];
+  const pad = v => String(v).padStart(2, "0");
+  const off = (TZ_OFF >= 0 ? "+" : "-") + pad(Math.abs(Math.trunc(TZ_OFF))) + pad(Math.round((Math.abs(TZ_OFF) % 1) * 60));
+  const d = new Date(ms);
+  return `${W}, ${pad(p.d)} ${M} ${p.y} ${pad(p.hh)}:${pad(p.mm)}:${pad(d.getUTCSeconds())} ${off}`;
+}
+/* 一次 SMTP 对话。按顺序发命令、等回码，哪一步不对就中断 */
+/* connectFn 只是为了能测 —— 跑起来的时候永远是上面那个 tls.connect */
+function smtpSend(conf, to, subject, body, connectFn) {
+  return new Promise((resolve, reject) => {
+    const lines = [];
+    let sock = null, done = false;
+    const finish = (err, ok) => {
+      if (done) return;
+      done = true;
+      try { if (sock) sock.destroy(); } catch {}
+      err ? reject(err) : resolve(ok);
+    };
+    const timer = setTimeout(() => finish(new Error("SMTP 超时（20 秒没说完）")), 20000);
+    const mailBody = Buffer.from(String(body || ""), "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const msg = [
+      `From: ${mimeWord(conf.name)} <${conf.from}>`,
+      `To: <${to}>`,
+      `Subject: ${mimeWord(subject)}`,
+      `Date: ${mailDate(Date.now())}`,
+      `Message-ID: <${crypto.randomBytes(12).toString("hex")}@${(conf.from.split("@")[1] || "wu.local")}>`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "", mailBody,
+    ].join("\r\n");
+    /* 正文里单独一行的点会被当成结束符，按规矩前面再加一个点 */
+    const safeMsg = msg.replace(/\r\n\./g, "\r\n..");
+    const steps = [
+      { expect: 220, send: "EHLO wu-with-you" },
+      { expect: 250, send: "AUTH LOGIN" },
+      { expect: 334, send: Buffer.from(conf.user, "utf8").toString("base64") },
+      { expect: 334, send: Buffer.from(conf.pass, "utf8").toString("base64") },
+      { expect: 235, send: `MAIL FROM:<${conf.from}>` },
+      { expect: 250, send: `RCPT TO:<${to}>` },
+      { expect: 250, send: "DATA" },
+      { expect: 354, send: safeMsg + "\r\n." },
+      { expect: 250, send: "QUIT" },
+    ];
+    let step = 0, buf = "";
+    sock = (connectFn || ((o, cb) => tls.connect(o, cb)))({ host: conf.host, port: conf.port, servername: conf.host }, () => {});
+    sock.setEncoding("utf8");
+    sock.on("error", e => { clearTimeout(timer); finish(new Error("连不上邮件服务器：" + e.message)); });
+    sock.on("close", () => { clearTimeout(timer); if (step >= steps.length) finish(null, { ok: true, log: lines }); });
+    sock.on("data", chunk => {
+      buf += chunk;
+      /* 多行响应的最后一行长这样：「250 空格」，中间几行是「250-」 */
+      let m;
+      while ((m = buf.match(/^(\d{3})(?:[ -])[\s\S]*?\r\n/))) {
+        const block = buf.match(/^(?:\d{3}-[^\r\n]*\r\n)*\d{3} [^\r\n]*\r\n/);
+        if (!block) break;
+        const text = block[0];
+        buf = buf.slice(text.length);
+        const code = Number(text.match(/(\d{3}) [^\r\n]*\r\n$/)[1]);
+        const cur = steps[step];
+        lines.push("← " + text.trim().split("\r\n").pop());
+        if (!cur) return;
+        if (code !== cur.expect) {
+          clearTimeout(timer);
+          /* 密码错、被拒收之类的，把对方原话带回去 —— 比「发送失败」有用得多 */
+          return finish(new Error(`SMTP 第 ${step + 1} 步收到 ${code}：${text.trim().slice(0, 160)}`));
+        }
+        step++;
+        const isSecret = step === 4;   // 那一步发的是密码，日志里别记
+        lines.push("→ " + (isSecret ? "（授权码）" : String(cur.send).slice(0, 60)));
+        sock.write(cur.send + "\r\n");
+        if (step >= steps.length) { clearTimeout(timer); finish(null, { ok: true, log: lines }); }
+      }
+    });
+  });
+}
+async function sendMail(to, subject, body) {
+  const c = mailConf();
+  if (!c.on) return "邮件功能关着呢";
+  if (!c.user || !c.pass) return "还没配邮箱（设置 → 写信出去，填地址和授权码）";
+  const dest = String(to || c.to || "").trim();
+  if (!dest || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dest)) return "收件地址不对：" + dest;
+  try {
+    await smtpSend(c, dest, subject || "（没有标题）", body || "");
+    const log = readJson("maillog", null) || { list: [] };
+    log.list = (log.list || []).concat([{ t: Date.now(), to: dest, subject: String(subject || "").slice(0, 100) }]).slice(-100);
+    writeJson("maillog", log);
+    return "寄出去了：" + dest;
+  } catch (e) {
+    return "没寄成：" + String((e && e.message) || e).slice(0, 200);
+  }
+}
+
 /* ================= 她在哪儿 =================
    也是快捷指令递上来的。比手机使用记录更私密，所以也只留三天。
    最实用的触发方式是「到达 / 离开某地」—— 比每小时轮询省电，也更有意义。 */
@@ -762,7 +886,8 @@ function toolHint() {
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
     "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather；" +
-    "想知道她人在哪儿，用 check_place。" +
+    "想知道她人在哪儿，用 check_place。她要是配了邮箱，你还能用 send_mail 寄信出去 —— " +
+    "她不看手机的时候，一封邮件比一条她看不见的消息管用。" +
     "【说话的样子】像发微信那样跟她说话：一次可以连着发好几条短的，条与条之间空一行 —— " +
     "空行就是分条的记号，她那边会显示成一条一条的气泡，像真人在打字。" +
     "该分就分（想到一茬是一茬、换个话头、先应一声再展开），一句话能说完就只发一条，别硬拆。" +
@@ -1328,6 +1453,13 @@ async function runWake(alarm) {
     win.msgs.push({ k: "ai", t: text, ts: Date.now(), wake: true });
     writeJson("chat", chat);
     bumpWakeLog(true, billed);
+    /* 她那边还没有推送，他主动说的话只有打开 app 才看得见。
+       配了邮箱并打开这个开关的话，顺手寄一封 —— 手机的邮件提醒就是现成的推送 */
+    const mc = mailConf();
+    if (mc.on && mc.onWake && mc.user && mc.pass && mc.to) {
+      sendMail(mc.to, "晤：" + text.slice(0, 20) + (text.length > 20 ? "…" : ""), text + "\n\n——\n（他刚才想起你了。回他的话去 wu-home 里说。）")
+        .catch(e => console.error("wake mail:", e && e.message));
+    }
     /* 话说出去了，惦记就消一点 —— 跟聊天里那一下回落是同一个意思 */
     dr.values.attachment = clamp01(dr.values.attachment * 0.9);
     saveDrives(dr);
@@ -1422,6 +1554,8 @@ const MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} } },
   { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪",
     inputSchema: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } },
+  { name: "send_mail", description: "寄一封邮件出去。不填收件人就是寄给她自己",
+    inputSchema: { type: "object", properties: { subject: { type: "string" }, body: { type: "string" }, to: { type: "string" } }, required: ["subject", "body"] } },
   { name: "check_now", description: "看一眼她那边现在几点、星期几、在不在上课、今天有什么安排、清单上还剩什么没做",
     inputSchema: { type: "object", properties: {} } },
   { name: "recall", description: "回想你们之间的事 —— 按关键词在记忆里翻。想不起某件事的细节时用",
@@ -1507,6 +1641,8 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
+  { type: "function", function: { name: "send_mail", description: "寄一封邮件出去。默认寄给她（她自己填的收件地址），也可以指定别人。用在：她让你发的时候，或者你想在她不看手机时留句话给她",
+    parameters: { type: "object", properties: { subject: { type: "string", description: "标题" }, body: { type: "string", description: "正文，可以分段" }, to: { type: "string", description: "收件地址，不填就寄给她自己" } }, required: ["subject", "body"] } } },
   { type: "function", function: { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪。她的手机会在到达或离开某个地方时报一次",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
   { type: "function", function: { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）。聊到出门、穿什么、下不下雨的时候用；也可以在你想提醒她带伞、加衣服的时候主动看一眼",
@@ -1524,6 +1660,7 @@ async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = localDayKey();
+    if (name === "send_mail") return await sendMail(args && args.to, args && args.subject, args && args.body);
     if (name === "check_place") return placeReport(args && args.hours);
     if (name === "check_weather") return await checkWeather();
     if (name === "check_phone") return phoneReport(args && args.hours);
@@ -2153,6 +2290,38 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (p === "/api/phone" && req.method === "DELETE") { writeJson("phone", { events: [] }); sendJson(res, 200, { ok: true }); return; }
+    /* 邮箱配置。授权码只进不出，跟 API key 一个待遇 */
+    if (p === "/api/mail" && req.method === "GET") {
+      const c = mailConf();
+      const log = (readJson("maillog", null) || {}).list || [];
+      sendJson(res, 200, {
+        on: c.on, host: c.host, port: c.port, user: c.user, from: c.from, name: c.name, to: c.to, onWake: c.onWake,
+        hasPass: !!c.pass, sent: log.length, last: log[log.length - 1] || null,
+      });
+      return;
+    }
+    if (p === "/api/mail" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 32 * 1024) || "{}");
+      const cur = mailConf();
+      const str = (v, dft, n) => (typeof v === "string" ? v.trim().slice(0, n || 120) : dft);
+      writeJson("mail", {
+        on: typeof body.on === "boolean" ? body.on : cur.on,
+        host: str(body.host, cur.host), port: Number(body.port) || cur.port,
+        user: str(body.user, cur.user),
+        /* 留空 = 不改动，跟 API 配置那边一个规矩 */
+        pass: (typeof body.pass === "string" && body.pass) ? body.pass.trim() : cur.pass,
+        from: str(body.from, cur.from), name: str(body.name, cur.name, 40), to: str(body.to, cur.to),
+        onWake: typeof body.onWake === "boolean" ? body.onWake : cur.onWake,
+      });
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    if (p === "/api/mail/test" && req.method === "POST") {
+      const c = mailConf();
+      const r = await sendMail(c.to, "晤：试一封", "这是一封试发的信。\n\n看到它，就说明他能给你写信了。");
+      sendJson(res, 200, { result: r });
+      return;
+    }
     if (p === "/api/places" && req.method === "GET") {
       sendJson(res, 200, { report: placeReport(Number(url.searchParams.get("hours")) || 24), count: placeLog().list.length, last: lastPlace(0) });
       return;
