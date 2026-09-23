@@ -342,6 +342,15 @@ function phoneSessions(sinceMs) {
   const out = [];
   for (const e of evts) {
     if (e.k === "open") {
+      /* 她打开一个 App 的那一刻，别的就都不在前台了 —— 手机一次只能用一个。
+         iOS 的「已关闭」经常不触发（退到后台不算关闭），但这条物理事实一定成立，
+         所以不用等它告诉我们，自己就能把前一个结算掉。
+         不这么做的话，报告里会出现三个 App 同时「还开着」这种不可能的事。 */
+      for (const other of Object.keys(open)) {
+        if (other === e.app) continue;
+        out.push({ app: other, from: open[other], to: e.t, guess: true });
+        delete open[other];
+      }
       if (open[e.app] != null) out.push({ app: e.app, from: open[e.app], to: e.t, guess: true });
       open[e.app] = e.t;
     } else {
