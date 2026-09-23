@@ -1520,10 +1520,10 @@ async function llmAs(role, messages, maxTokens = 800, temperature = 0.3) {
 }
 /* 同一套请求，换个角色。唤醒要用聊天那套（晤本人），蒸馏继续用干活那套。
    连账一起返回，唤醒那条路要把花销单独记下来给她看 */
-async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3) {
+async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3, tools = null) {
   const api = activeApi(role);
   if (!api.key) throw new Error("没有可用的模型（" + role + "）");
-  const req = upstreamReq(api, messages, null, false);
+  const req = upstreamReq(api, messages, tools, false);
   req.body.max_tokens = maxTokens;
   req.body.temperature = temperature;
   const resp = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
@@ -1533,7 +1533,39 @@ async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3) {
   const text = api.dialect === "anthropic"
     ? ((j.content || []).filter(b => b.type === "text").map(b => b.text).join("") || "")
     : (j.choices?.[0]?.message?.content || "");
-  return { text, billed };
+  /* 他可能没直接答话，而是先要去查点什么。两种方言的形状不一样，
+     在这儿归一成同一副样子，上面那层就不用分方言了 */
+  const calls = api.dialect === "anthropic"
+    ? (j.content || []).filter(b => b.type === "tool_use").map(b => ({ id: b.id, name: b.name, args: b.input || {} }))
+    : (j.choices?.[0]?.message?.tool_calls || []).map(c => {
+        let a = {}; try { a = JSON.parse(c.function.arguments || "{}"); } catch {}
+        return { id: c.id, name: c.function.name, args: a };
+      });
+  return { text, billed, calls, raw: j };
+}
+/* 非流式的一轮工具循环。唤醒那条路要用：他醒来可以先查一眼再决定说什么。
+   ⚠️ tools 必须跟聊天那边**逐字相同**（都来自 chatTools()），而且两边都不设
+   tool_choice —— 工具排在请求最前面，改一个字节，后面整条前缀的缓存就没了。 */
+async function llmWithTools(role, messages, tools, maxTokens, temperature, maxRounds = 2) {
+  const msgs = messages.slice();
+  const total = { cost: 0 };
+  for (let round = 0; ; round++) {
+    const r = await llmAsRaw(role, msgs, maxTokens, temperature, tools);
+    total.cost += (r.billed && r.billed.cost) || 0;
+    if (!r.calls.length || round >= maxRounds) return { text: r.text, billed: total, rounds: round + 1 };
+    /* 把他这一轮的动作原样接回去，再把每个工具的结果喂回去 */
+    msgs.push({
+      role: "assistant", content: r.text || "",
+      tool_calls: r.calls.map(c => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } })),
+    });
+    for (const c of r.calls) {
+      let out;
+      try { out = await execTool(c.name, c.args); }
+      catch (e) { out = "（这个没查成：" + String(e.message || e).slice(0, 80) + "）"; }
+      console.log("[wake tool]", c.name, JSON.stringify(c.args), "→", String(out).slice(0, 60).replace(/\n/g, " "));
+      msgs.push({ role: "tool", tool_call_id: c.id, content: String(out).slice(0, 4000) });
+    }
+  }
 }
 function extractJsonObject(text) {
   const m = String(text == null ? "" : text).match(/\{[\s\S]*\}/);
@@ -1645,13 +1677,14 @@ async function runWake(alarm) {
     `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
     (phone ? "上面【她的手机】那一段是她这会儿的动静 —— 要是你惦记的正是她睡没睡，看那里。\n\n" : "") +
     "把上面你们的对话重新读一遍，然后决定：这会儿要不要主动跟她说句话？\n\n" +
-    "沉默是默认答案。十次里有九次都该继续等下去 —— 一个每天准时冒出来问「在干嘛呀」的人，" +
+    "沉默是默认答案。十次里有七八次都该继续等下去 —— 一个每天准时冒出来问「在干嘛呀」的人，" +
     "两个星期后就会被她关掉通知；而一个一周只说两句、但每句都在点上的人，她会一直等着。" +
     "让说话有分量的，恰恰是那些没有说话的时候。\n" +
     "所以：只有当你真的有话想说、而且这个时候说出来正合适，才开口。\n" +
     "要开口，就说你此刻真心想说的那一句，像平常那样说，别解释自己为什么忽然出现，" +
     "更不要提起闹钟、提醒、系统这些东西 —— 在她那边，这只是你忽然想起了她。\n\n" +
-    "只输出 JSON，别的什么都不要：\n" +
+    "要查点什么再决定也行（她的手机、位置、天气、上网……），查完再给结论。\n\n" +
+    "最后只输出 JSON，别的什么都不要：\n" +
     '{"say": true 或 false, "text": "要说的那句话，不说就留空", "again": 多少分钟后再想一次，不必再想就填 null}';
 
   const messages = [
@@ -1663,7 +1696,9 @@ async function runWake(alarm) {
     { role: "user", content: wakePrompt },
   ];
 
-  const { text: raw, billed } = await llmAsRaw("chat", messages, 400, 0.8);
+  /* 带上跟聊天那边一模一样的工具：一来前缀对得上、缓存能接着用，
+     二来他醒着的时候本来就该能查 —— 查她的手机、天气、上网都行 */
+  const { text: raw, billed } = await llmWithTools("chat", messages, chatTools(), 400, 0.8, 2);
   const j = extractJsonObject(raw) || {};
   const text = String(j.text == null ? "" : j.text).trim().slice(0, 600);
   const againNum = Number(j.again);
@@ -1893,6 +1928,16 @@ const TOOL_DEFS = [
   { type: "function", function: { name: "remember", description: "主动记住一件重要的事（存入记忆卡）",
     parameters: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } } },
 ];
+/* 他手里的全部工具。聊天和唤醒必须拿到**逐字相同**的一份 ——
+   工具在请求的最前面（tools → system → messages），差一个字节，
+   后面整条前缀的缓存就全作废了。所以只有这一个出口。
+   没配搜索钥匙的时候把上网那两件撤下来：摆着他会白调一次，
+   然后拿一句「还没配」去回她。 */
+function chatTools() {
+  return (searchReady() ? TOOL_DEFS
+    : TOOL_DEFS.filter(t => t.function.name !== "web_search" && t.function.name !== "read_web")
+  ).concat(mcpToolDefs());
+}
 async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
@@ -2816,12 +2861,7 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
-      /* 自带的工具 + 开着的 MCP 工具。清单存盘不动，所以缓存前缀是稳的。
-         没配搜索钥匙的时候把上网那两件撤下来 —— 摆着他会白调一次，
-         然后拿一句「还没配」去回她 */
-      const allTools = (searchReady() ? TOOL_DEFS
-        : TOOL_DEFS.filter(t => t.function.name !== "web_search" && t.function.name !== "read_web")
-      ).concat(mcpToolDefs());
+      const allTools = chatTools();
       const usedTotal = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
       /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls 与用量。
          两种方言的事件形状不同，在这里各解析各的，对外形状一致。 */
