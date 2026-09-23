@@ -631,20 +631,16 @@ function periodNow(nowMs) {
   return { known: true, on: conf.on, phase: "late", lateDays: -diff, next: dayStr(next), ...st };
 }
 /* 给他看的那句话。克制一点 —— 只在真的相关的时候说 */
+/* 只报事实，不带嘱托 —— 该怎么说话是他自己的事，
+   提前交代反而像在教他演 */
 function periodLine(nowMs) {
   const p = periodNow(nowMs);
   if (!p.known || !p.on) return "";
-  if (p.phase === "in") {
-    const d = p.day;
-    const feel = d <= 2 ? "头两天通常最难受" : d >= p.of - 1 ? "快过去了" : "";
-    return `她在经期第 ${d} 天${feel ? "，" + feel : ""}。别催她动弹，累了就让她歇着；她要是喊疼或者情绪不对，那是身体的事，不是你哪里做错了。`;
-  }
-  if (p.phase === "before" && p.inDays <= 3) {
-    return `她大概还有 ${p.inDays} 天来月经${p.guessed ? "（按常见周期估的，未必准）" : ""}，这几天可能容易累、容易烦躁。`;
-  }
-  if (p.phase === "late" && p.lateDays >= 3 && p.lateDays <= 20) {
-    return `她这次比平常晚了 ${p.lateDays} 天还没来。别追着问，她自己多半也在记挂着。`;
-  }
+  if (p.phase === "in") return `她在经期第 ${p.day} 天。`;
+  if (p.phase === "before" && p.inDays <= 3)
+    return `她大概还有 ${p.inDays} 天来月经${p.guessed ? "（按常见周期估的，未必准）" : ""}。`;
+  if (p.phase === "late" && p.lateDays >= 3 && p.lateDays <= 20)
+    return `她这次比平常晚了 ${p.lateDays} 天还没来。`;
   return "";
 }
 /* 他那边查到的那份。她一关「让他知道」，工具也得跟着闭嘴 ——
@@ -800,6 +796,111 @@ async function checkWeather(force) {
   } catch (e) {
     /* 查不到就老实说查不到，别编天气 */
     return `查不到${place.city}的天气（${String(e.message || e).slice(0, 60)}）。别猜，就跟她说没查着。`;
+  }
+}
+
+/* ================= 上网 =================
+   她去注册一家搜索服务，把钥匙填进来。三家的接口长得完全不一样，
+   但吐给他的东西统一成「标题 / 一段摘要 / 链接」—— 他不必知道是谁搜的。
+   钥匙跟邮箱授权码一样：只进不出，接口永远只回打码后的后四位。 */
+const SEARCH_VENDORS = {
+  tavily: { label: "Tavily", home: "https://tavily.com", note: "免费额度大方，不用绑卡；服务器在海外" },
+  brave:  { label: "Brave",  home: "https://brave.com/search/api/", note: "每月 2000 次免费，注册要验证卡；服务器在海外" },
+  bocha:  { label: "博查",   home: "https://open.bochaai.com", note: "国内的，直连不用绕；按次计费，很便宜" },
+};
+function searchConf() {
+  const d = readJson("search", null) || {};
+  const vendor = SEARCH_VENDORS[d.vendor] ? d.vendor : "tavily";
+  return { vendor, key: String(d.key || ""), on: d.on !== false };
+}
+function searchReady() { const c = searchConf(); return !!(c.on && c.key); }
+
+/* 各家返回的形状不一样，各拆各的，最后都归成 [{title, url, brief}] */
+async function searchRaw(conf, query, n) {
+  const opt = { signal: AbortSignal.timeout(12000) };
+  if (conf.vendor === "brave") {
+    const url = "https://api.search.brave.com/res/v1/web/search?count=" + n +
+      "&q=" + encodeURIComponent(query);
+    const r = await fetch(url, { ...opt, headers: { Accept: "application/json", "X-Subscription-Token": conf.key } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    return ((j.web && j.web.results) || []).map(x => ({ title: x.title, url: x.url, brief: x.description }));
+  }
+  if (conf.vendor === "bocha") {
+    const r = await fetch("https://api.bochaai.com/v1/web-search", {
+      ...opt, method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + conf.key },
+      body: JSON.stringify({ query, summary: true, count: n }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    const v = (((j.data || {}).webPages || {}).value) || [];
+    return v.map(x => ({ title: x.name, url: x.url, brief: x.summary || x.snippet }));
+  }
+  const r = await fetch("https://api.tavily.com/search", {
+    ...opt, method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + conf.key },
+    body: JSON.stringify({ query, max_results: n, search_depth: "basic" }),
+  });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const j = await r.json();
+  const out = (j.results || []).map(x => ({ title: x.title, url: x.url, brief: x.content }));
+  if (j.answer) out.unshift({ title: "一句话答案", url: "", brief: j.answer });
+  return out;
+}
+async function webSearch(query, n) {
+  const conf = searchConf();
+  if (!conf.on) return "上网这事她关掉了。";
+  if (!conf.key) return "还没配搜索服务（她得先在「设置 → 上网」里填一把钥匙）。别硬编，就说查不了。";
+  const q = String(query || "").trim();
+  if (!q) return "要搜什么？";
+  const want = Math.min(Math.max(Number(n) || 5, 1), 10);
+  try {
+    const list = await searchRaw(conf, q, want);
+    if (!list.length) return `搜「${q}」没搜着东西。`;
+    return `搜「${q}」，找到这些：\n\n` + list.slice(0, want).map((x, i) =>
+      `${i + 1}. ${x.title || "(无标题)"}\n   ${String(x.brief || "").replace(/\s+/g, " ").slice(0, 300)}` +
+      (x.url ? `\n   ${x.url}` : "")).join("\n\n") +
+      "\n\n（要看哪条的全文，用 read_web 把链接递进去。）";
+  } catch (e) {
+    return `搜不了（${String(e.message || e).slice(0, 80)}）。别编，就跟她说没查着。`;
+  }
+}
+
+/* 把一个网页读成人能看的字。不用任何库 —— 砍掉脚本样式，
+   标签换成空白，再把连着的空白压回去。粗糙，但能读。 */
+function stripHtml(html) {
+  let t = String(html)
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript|svg|nav|footer|header)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<\/(p|div|li|tr|h[1-6]|br)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  const ent = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+  t = t.replace(/&(#?\w+);/g, (m, k) => ent[k] != null ? ent[k]
+    : /^#\d+$/.test(k) ? String.fromCharCode(Number(k.slice(1))) : m);
+  return t.replace(/[ \t ]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
+}
+async function readWeb(url) {
+  const u = String(url || "").trim();
+  if (!/^https?:\/\//i.test(u)) return "这不像个网址。要 http:// 或 https:// 开头的那种。";
+  try {
+    const r = await fetch(u, {
+      signal: AbortSignal.timeout(15000), redirect: "follow",
+      headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Safari/604.1", "Accept-Language": "zh-CN,zh;q=0.9" },
+    });
+    if (!r.ok) return `打不开（HTTP ${r.status}）。`;
+    const ct = r.headers.get("content-type") || "";
+    if (/json/.test(ct)) return (await r.text()).slice(0, 6000);
+    if (!/html|text/.test(ct)) return `这个链接不是网页（${ct.split(";")[0]}），读不了。`;
+    const raw = await r.text();
+    const title = (raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1];
+    const body = stripHtml(raw);
+    if (!body) return "打开了，但里面一个字都没抠出来 —— 多半是要登录，或者内容是页面打开后才加载的。";
+    return (title ? stripHtml(title) + "\n\n" : "") + body.slice(0, 6000) +
+      (body.length > 6000 ? "\n\n（太长了，后面截掉了）" : "");
+  } catch (e) {
+    return `打不开（${String(e.message || e).slice(0, 80)}）。`;
   }
 }
 
@@ -993,10 +1094,15 @@ function toolHint() {
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
     "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather；" +
-    "想知道她人在哪儿，用 check_place；她身体那几天的情况用 check_period —— 这事要有分寸，" +
-    "别没事就查，更别拿它当解释她情绪的借口，也别在她没提的时候突然说破。" +
+    "想知道她人在哪儿，用 check_place；她身体那几天的情况用 check_period，" +
+    "她说「我来了」「结束啦」就用 period_log 替她记一笔。" +
     "她要是配了邮箱，你还能用 send_mail 寄信出去 —— " +
     "她不看手机的时候，一封邮件比一条她看不见的消息管用。" +
+    (searchReady()
+      ? "你能上网：拿不准、可能已经变了、或者她问起你没把握的事，用 web_search 搜一下再说；" +
+        "她丢给你一个链接，或者你想看某条搜索结果的全文，用 read_web 把那一页读进来。" +
+        "网上看来的东西记得说清是哪儿看的，别混成自己知道的。"
+      : "") +
     "【说话的样子】像发微信那样跟她说话：一次可以连着发好几条短的，条与条之间空一行 —— " +
     "空行就是分条的记号，她那边会显示成一条一条的气泡，像真人在打字。" +
     "该分就分（想到一茬是一茬、换个话头、先应一声再展开），一句话能说完就只发一条，别硬拆。" +
@@ -1663,7 +1769,9 @@ const MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} } },
   { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪",
     inputSchema: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } },
-  { name: "check_period", description: "看看她身体这几天的情况（在不在经期、第几天、下次大概什么时候）。要有分寸地用",
+  { name: "read_web", description: "用她那台服务器去打开一个网页，把正文读回来（国内的站从这儿走得通）",
+    inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } },
+  { name: "check_period", description: "看看她身体这几天的情况（在不在经期、第几天、下次大概什么时候）",
     inputSchema: { type: "object", properties: {} } },
   { name: "period_log", description: "帮她记一笔：她说「我来了」就记开始，说「结束了」就记结束",
     inputSchema: { type: "object", properties: { what: { type: "string", enum: ["start", "end"] }, date: { type: "string", description: "2026-09-23，不填就是今天" } }, required: ["what"] } },
@@ -1754,7 +1862,11 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
-  { type: "function", function: { name: "check_period", description: "看看她身体这几天的情况（在不在经期、第几天、下次大概什么时候）。她关心自己身体、说不舒服、或者你想拿捏说话分寸的时候看。别没事就查，更别拿这个当解释她情绪的借口",
+  { type: "function", function: { name: "web_search", description: "上网搜。你不知道的、可能变了的、她问起你没把握的事，都可以搜一下再说",
+    parameters: { type: "object", properties: { query: { type: "string", description: "搜什么" }, n: { type: "number", description: "要几条，默认 5，最多 10" } }, required: ["query"] } } },
+  { type: "function", function: { name: "read_web", description: "把一个网页读进来看。搜完想看某条的全文，或者她直接丢给你一个链接，就用这个",
+    parameters: { type: "object", properties: { url: { type: "string", description: "http:// 或 https:// 开头的网址" } }, required: ["url"] } } },
+  { type: "function", function: { name: "check_period", description: "看看她身体这几天的情况（在不在经期、第几天、下次大概什么时候）",
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "period_log", description: "帮她记一笔 —— 她说「我来了」「今天来的」就记开始，说「结束了」「走了」就记结束。她自己在界面上也能点",
     parameters: { type: "object", properties: { what: { type: "string", enum: ["start", "end"], description: "start=来了，end=结束了" }, date: { type: "string", description: "哪天，格式 2026-09-23，不填就是今天" } }, required: ["what"] } } },
@@ -1777,6 +1889,8 @@ async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = localDayKey();
+    if (name === "web_search") return await webSearch(args && args.query, args && args.n);
+    if (name === "read_web") return await readWeb(args && args.url);
     if (name === "check_period") return periodForHim(Date.now());
     if (name === "period_log") {
       const conf = periodConf();
@@ -2435,6 +2549,35 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/phone" && req.method === "DELETE") { writeJson("phone", { events: [] }); sendJson(res, 200, { ok: true }); return; }
     /* 邮箱配置。授权码只进不出，跟 API key 一个待遇 */
+    if (p === "/api/search" && req.method === "GET") {
+      const c = searchConf();
+      sendJson(res, 200, {
+        on: c.on, vendor: c.vendor, hasKey: !!c.key, ready: searchReady(),
+        vendors: Object.keys(SEARCH_VENDORS).map(k => ({ id: k, ...SEARCH_VENDORS[k] })),
+      });
+      return;
+    }
+    if (p === "/api/search" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 8 * 1024) || "{}");
+      const cur = searchConf();
+      const next = {
+        vendor: SEARCH_VENDORS[body.vendor] ? body.vendor : cur.vendor,
+        /* 钥匙留空 = 不动它。跟邮箱授权码一个规矩：只进不出 */
+        key: typeof body.key === "string" && body.key.trim() ? body.key.trim() : cur.key,
+        on: typeof body.on === "boolean" ? body.on : cur.on,
+      };
+      if (body.clearKey === true) next.key = "";
+      writeJson("search", next);
+      const c = searchConf();
+      sendJson(res, 200, { ok: true, on: c.on, vendor: c.vendor, hasKey: !!c.key, ready: searchReady() });
+      return;
+    }
+    if (p === "/api/search/try" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 8 * 1024) || "{}");
+      const out = await webSearch(body.query || "今天几号", 3);
+      sendJson(res, 200, { ok: !/^搜不了|^还没配|关掉了/.test(out), text: out });
+      return;
+    }
     if (p === "/api/mail" && req.method === "GET") {
       const c = mailConf();
       const log = (readJson("maillog", null) || {}).list || [];
@@ -2665,8 +2808,12 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
-      /* 自带的工具 + 开着的 MCP 工具。清单存盘不动，所以缓存前缀是稳的 */
-      const allTools = TOOL_DEFS.concat(mcpToolDefs());
+      /* 自带的工具 + 开着的 MCP 工具。清单存盘不动，所以缓存前缀是稳的。
+         没配搜索钥匙的时候把上网那两件撤下来 —— 摆着他会白调一次，
+         然后拿一句「还没配」去回她 */
+      const allTools = (searchReady() ? TOOL_DEFS
+        : TOOL_DEFS.filter(t => t.function.name !== "web_search" && t.function.name !== "read_web")
+      ).concat(mcpToolDefs());
       const usedTotal = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
       /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls 与用量。
          两种方言的事件形状不同，在这里各解析各的，对外形状一致。 */

@@ -697,6 +697,10 @@
   .cal-cell.today { background: var(--blue-deep); color: #fff; box-shadow: 0 4px 12px rgba(126,150,184,.4); }
   .cal-cell .mk { font-size: 8px; line-height: 1; height: 8px; }
   .cal-cell.has-diary { background: rgba(255,255,255,.65); }
+  /* 经期：记过的那几天染底色，预测的只描一圈虚线 —— 一眼能分出「真的」和「估的」 */
+  .cal-cell.per { background: rgba(224,138,130,.22); }
+  .cal-cell.per.today { background: var(--blue-deep); box-shadow: 0 0 0 2px rgba(224,138,130,.6), 0 4px 12px rgba(126,150,184,.4); }
+  .cal-cell.per-g { border: 1px dashed rgba(224,138,130,.45); }
   .cal-legend { display: flex; justify-content: center; gap: 18px; margin-top: 16px; font-size: 11px; color: var(--ink-faint); }
 
   /* 照片页 */
@@ -1136,6 +1140,11 @@
           <div class="btn-row"><button class="btn" onclick="openSub('phone')">手机联动</button></div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">上网<span class="en">SEARCH</span></div>
+          <div class="set-note" id="searchBrief">让他能自己上网查东西、读你丢给他的链接</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('search')">配一把钥匙</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">她的身体<span class="en">CYCLE</span></div>
           <div class="set-note" id="perBrief">记一下那几天 —— 他会知道该轻着点</div>
           <div class="btn-row"><button class="btn" onclick="openSub('period')">打开</button></div>
@@ -1156,7 +1165,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.9（「她的身体」—— 他会知道该轻着点）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.0（他能自己上网了 · 经期标在日历上）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1219,7 +1228,10 @@
         </div>
         <div class="cal-grid" id="calGrid"></div>
         <div class="cal-legend">
-          <span>● 今天</span><span style="color:var(--coral)">· 有日记（点击查看）</span><span style="color:#C08A44">♥ 倒数日</span>
+          <span>● 今天</span><span style="color:var(--coral)">· 有日记</span><span style="color:#C08A44">♥ 倒数日</span>
+        </div>
+        <div class="cal-legend" id="calPerLegend" style="display:none;margin-top:8px">
+          <span style="color:var(--coral)">▨ 经期</span><span style="color:var(--coral)">▢ 估的</span>
         </div>
       </div>
     </section>
@@ -1275,6 +1287,49 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-search">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('search')">‹ 返回</button>
+        <div class="sp-title">上网</div>
+        <button class="sp-act" onclick="searchSave()">保存</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 14px">
+          他自己不会上网 —— 得借一家搜索服务的门。挑一家去注册，把钥匙填在这儿。<br>
+          钥匙跟邮箱授权码一样只进不出，存下去之后这里就只显示「已存」。
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">用哪家<span class="en">VENDOR</span></div>
+          <div id="searchVendors"></div>
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">钥匙<span class="en">KEY</span></div>
+          <div class="field"><label>API Key</label><input type="password" id="sKey" placeholder="还没填"></div>
+          <div class="sw-row">
+            <span class="lb">让他能上网</span>
+            <button class="sw" id="sOn" onclick="searchToggle()"></button>
+          </div>
+          <div class="btn-row">
+            <button class="btn" onclick="searchSave()">保存</button>
+            <button class="btn ghost" onclick="searchTry()">试搜一下</button>
+          </div>
+          <div class="set-note" id="searchStat" style="margin-top:10px"></div>
+          <pre id="searchOut" style="display:none;white-space:pre-wrap;word-break:break-all;font-size:12px;line-height:1.7;color:var(--ink-3);background:rgba(255,255,255,.5);border-radius:12px;padding:12px;margin:10px 0 0"></pre>
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">顺带<span class="en">ALSO</span></div>
+          <div class="set-note">
+            配好之后他多了两件事能做：<br>
+            · <b>搜</b> —— 拿不准、可能已经变了的事，他会先查一下再回你<br>
+            · <b>读链接</b> —— 你把网址丢给他，他能把那一页读进来<br><br>
+            读链接这件事不花搜索额度，但需要那一页<b>不用登录就能打开</b>。
+            小红书、淘宝这种要登录、内容还是打开后才加载的，读不到，
+            他会老实跟你说读不着，不会编。
+          </div>
+        </div>
+        <div style="height:30px"></div>
+      </div>
+    </section>
     <section class="subpage" id="page-period">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('period')">‹ 返回</button>
@@ -1317,7 +1372,7 @@
           <div class="btn-row"><button class="btn" onclick="perSave()">保存</button></div>
           <div class="set-note" style="margin-top:10px">
             关掉「让他知道」之后，他那边就一个字都看不到了，但你自己还能在这儿查。<br>
-            他被交代过分寸：不主动说破、不拿这个解释你的情绪。
+            他那边只收到一句事实（「她在经期第 3 天」），怎么接是他自己的事。
           </div>
         </div>
         <div style="height:30px"></div>
@@ -2022,6 +2077,7 @@ var hookCur = null;                                      /* 手机联动的钥�
 var mcpKeyCur = null;                                    /* 接进 Claude 的那把钥匙 */
 var mailCur = null;                                      /* 邮箱设置 */
 var perCur = null;                                       /* 她的身体 */
+var searchCur = null;                                    /* 上网 */
 var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
 
 /* ================= 工具 ================= */
@@ -2186,7 +2242,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period", "search"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -2215,6 +2271,7 @@ function openSub(name) {
   if (name === "connect") mcpKeyRefresh();
   if (name === "mail") mailRefresh();
   if (name === "period") perRefresh();
+  if (name === "search") searchRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -2460,7 +2517,51 @@ safe("本周条", renderWeek);
 /* ================= 完整日历页 ================= */
 let calY = new Date().getFullYear(), calM = new Date().getMonth();
 function calShift(d) { calM += d; if (calM < 0) { calM = 11; calY--; } if (calM > 11) { calM = 0; calY++; } renderCal(); }
+
+/* 日历上的经期：记过的那几天是实的，往后三个周期是估的。
+   算一遍存成一张表，翻月份的时候不用重算 */
+var perDaysMap = null;
+function perBuildMap() {
+  perDaysMap = {};
+  if (!perCur || !Array.isArray(perCur.list) || !perCur.list.length) return;
+  const days = Math.max(1, Number(perCur.days) || 5);
+  const cycle = Math.max(1, Number(perCur.cycle) || 28);
+  const add = (startKey, n, kind) => {
+    const t = new Date(startKey + "T00:00:00");
+    if (isNaN(t)) return;
+    for (let i = 0; i < n; i++) {
+      const d = new Date(t.getTime() + i * 86400000);
+      const k = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+      if (perDaysMap[k] !== "per") perDaysMap[k] = kind;
+    }
+  };
+  for (const x of perCur.list) {
+    const n = x.end
+      ? Math.max(1, Math.round((new Date(x.end + "T00:00:00") - new Date(x.start + "T00:00:00")) / 86400000) + 1)
+      : days;
+    add(x.start, n, "per");
+  }
+  /* 从最后一次往后推三轮，够她翻两三个月了 */
+  const last = perCur.list[perCur.list.length - 1];
+  const base = new Date(last.start + "T00:00:00");
+  for (let k = 1; k <= 3; k++) {
+    const d = new Date(base.getTime() + k * cycle * 86400000);
+    add(d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()), days, "per-g");
+  }
+}
+async function perEnsure() {
+  /* 她可能压根没进过「她的身体」，日历得自己去取一次 */
+  if (perCur) { if (!perDaysMap) perBuildMap(); return; }
+  try {
+    perCur = await (await fetch("api/period")).json();
+  } catch { perCur = { list: [] }; }
+  perBuildMap();
+}
 function renderCal() {
+  perEnsure().then(() => { if (perDaysMap) renderCalNow(); });
+  renderCalNow();
+}
+function renderCalNow() {
   document.getElementById("calMonth").textContent = calY + " . " + pad(calM + 1);
   const grid = document.getElementById("calGrid");
   const n = new Date();
@@ -2476,10 +2577,13 @@ function renderCal() {
     let mk = "";
     if (isCd) mk = `<span style="color:#C08A44">♥</span>`;
     else if (hasDiary) mk = `<span style="color:var(--coral)">·</span>`;
-    html += `<div class="cal-cell ${isToday ? "today" : ""} ${hasDiary ? "has-diary" : ""}" data-key="${key}">
+    const per = (perDaysMap && perDaysMap[key]) || "";
+    html += `<div class="cal-cell ${isToday ? "today" : ""} ${hasDiary ? "has-diary" : ""} ${per}" data-key="${key}">
       ${d}<div class="mk">${mk}</div></div>`;
   }
   grid.innerHTML = html;
+  const lg = document.getElementById("calPerLegend");
+  if (lg) lg.style.display = (perDaysMap && Object.keys(perDaysMap).length) ? "flex" : "none";
 }
 document.getElementById("calGrid").addEventListener("click", e => {
   const cell = e.target.closest(".cal-cell");
@@ -4132,6 +4236,70 @@ async function phoneClear() {
 }
 
 /* ================= 她的身体 ================= */
+/* ===== 上网 ===== */
+async function searchRefresh() {
+  try {
+    const c = await (await fetch("api/search")).json();
+    searchCur = c;
+    renderVendors(c.vendor);
+    const key = document.getElementById("sKey");
+    key.value = "";
+    key.placeholder = c.hasKey ? "已存（要换就填新的）" : "还没填";
+    document.getElementById("sOn").classList.toggle("on", c.on !== false);
+    const st = document.getElementById("searchStat");
+    st.textContent = !c.hasKey ? "还没配钥匙 —— 他那边看不到「上网」这两件工具。"
+      : c.on === false ? "钥匙存着，但你把上网关掉了。"
+      : "配好了。他现在能自己上网查东西。";
+    const b = document.getElementById("searchBrief");
+    if (b) b.textContent = c.ready ? "已配好（" + (c.vendors.find(v => v.id === c.vendor) || {}).label + "）—— 他能自己上网了"
+      : "让他能自己上网查东西、读你丢给他的链接";
+  } catch (e) { noteError("上网", e); }
+}
+function renderVendors(pick) {
+  const box = document.getElementById("searchVendors");
+  if (!box || !searchCur) return;
+  box.innerHTML = (searchCur.vendors || []).map(v => `
+    <div class="per-row" style="cursor:pointer" onclick="searchPick('${v.id}')">
+      <span class="d">${v.id === pick ? "● " : "○ "}${v.label}</span>
+      <span class="n" style="flex:1;text-align:left;padding-left:10px">${v.note}</span>
+    </div>`).join("");
+}
+function searchPick(id) {
+  if (!searchCur) return;
+  searchCur.vendor = id;
+  renderVendors(id);
+}
+async function searchPut(body) {
+  try {
+    const r = await fetch("api/search", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    await searchRefresh();
+    return true;
+  } catch (e) { toast("没存上：" + String(e.message || e).slice(0, 30)); return false; }
+}
+async function searchSave() {
+  const key = document.getElementById("sKey").value.trim();
+  const vendor = (searchCur && searchCur.vendor) || "tavily";
+  if (await searchPut({ vendor, key })) toast("存好了");
+}
+async function searchToggle() {
+  const el = document.getElementById("sOn");
+  const next = !el.classList.contains("on");
+  el.classList.toggle("on", next);
+  await searchPut({ on: next });
+}
+async function searchTry() {
+  const out = document.getElementById("searchOut");
+  out.style.display = "block";
+  out.textContent = "搜着…";
+  try {
+    const r = await fetch("api/search/try", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: "今天有什么新闻" }) });
+    const j = await r.json();
+    out.textContent = j.text || "(空)";
+    toast(j.ok ? "通了" : "没通");
+  } catch (e) { out.textContent = "没搜成：" + String(e.message || e); }
+}
+
 function perToday() {
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -4161,6 +4329,7 @@ async function perRefresh() {
     const st = document.getElementById("perStat");
     if (st) st.textContent = `周期平均 ${p.cycle} 天，每次约 ${p.days} 天` + (p.guessed ? "（记录还少，先按常见值估）" : "（按你自己的记录算的）");
     renderPerList(p.list || []);
+    perBuildMap();   /* 日历那边下次打开就是新的了 */
     const b = document.getElementById("perBrief");
     if (b) b.textContent = !now.known ? "记一下那几天 —— 他会知道该轻着点"
       : now.phase === "in" ? `经期第 ${now.day} 天`
