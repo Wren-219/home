@@ -2873,6 +2873,9 @@ const server = http.createServer(async (req, res) => {
         let sseBuf = "", acc = "", finish = null;
         const calls = [];
         const send = txt => res.write("data: " + JSON.stringify({ choices: [{ delta: { content: txt } }] }) + "\n\n");
+        /* 会思考的模型先吐一段想法再说话。单独走一路发给前端 ——
+           混进 content 里她就要在气泡里读到一堆自言自语了 */
+        const sendThink = txt => res.write("data: " + JSON.stringify({ wu_think: txt }) + "\n\n");
         for await (const chunk of upstream.body) {
           sseBuf += dec.decode(chunk, { stream: true });
           const lines = sseBuf.split("\n"); sseBuf = lines.pop();
@@ -2892,6 +2895,7 @@ const server = http.createServer(async (req, res) => {
                 calls[j.index] = { id: j.content_block.id, name: j.content_block.name, args: "" };
               } else if (j.type === "content_block_delta") {
                 if (j.delta?.type === "text_delta" && j.delta.text) { acc += j.delta.text; send(j.delta.text); }
+                else if (j.delta?.type === "thinking_delta" && j.delta.thinking) sendThink(j.delta.thinking);
                 else if (j.delta?.type === "input_json_delta" && calls[j.index]) calls[j.index].args += j.delta.partial_json || "";
               } else if (j.type === "message_delta") {
                 if (j.delta?.stop_reason) finish = j.delta.stop_reason === "tool_use" ? "tool_calls" : j.delta.stop_reason;
@@ -2909,6 +2913,9 @@ const server = http.createServer(async (req, res) => {
             const ch = j.choices?.[0];
             if (!ch) continue;
             const delta = ch.delta || {};
+            /* DeepSeek 叫 reasoning_content，OpenRouter 那帮叫 reasoning，两个都认 */
+            const think = delta.reasoning_content || delta.reasoning;
+            if (think) sendThink(think);
             if (delta.content) { acc += delta.content; send(delta.content); }
             if (delta.tool_calls) for (const tc of delta.tool_calls) {
               const i = tc.index || 0;

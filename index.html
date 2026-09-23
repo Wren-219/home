@@ -797,6 +797,25 @@
   .sw.on::after { transform: translateX(18px); }
   /* 每条消息底下的用量 */
   .bub-usage { font-size: 9.5px; color: var(--ink-faint); margin: -6px 0 2px 4px; align-self: flex-start; letter-spacing: .02em; }
+  /* 他想事情的那一段。默认卷起来只剩一行，点一下展开 */
+  .think { align-self: flex-start; max-width: 82%; margin: 2px 0 6px 2px; }
+  .think-head {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    font-size: 11px; color: var(--ink-faint); letter-spacing: .04em;
+    padding: 4px 10px; border-radius: 12px; background: rgba(255,255,255,.45);
+    border: 1px dashed rgba(168,178,196,.4); user-select: none;
+  }
+  .think-head .ar { transition: transform .22s ease; display: inline-block; font-size: 9px; }
+  .think.open .think-head .ar { transform: rotate(90deg); }
+  .think-body {
+    display: none; margin-top: 6px; padding: 10px 13px; border-radius: 14px;
+    background: rgba(255,255,255,.42); border: 1px dashed rgba(168,178,196,.34);
+    font-size: 12.5px; line-height: 1.75; color: var(--ink-soft);
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 280px; overflow-y: auto;
+  }
+  .think.open .think-body { display: block; }
+  .think.live .think-head { color: var(--blue-deep); }
   /* 设置页里的下拉 */
   .set-sel { width: 100%; padding: 10px 13px; border-radius: 14px; border: 1px solid rgba(168,178,196,.35);
     background: rgba(255,255,255,.6); font-size: 15px; color: var(--ink); outline: none; font-family: var(--sans); }
@@ -1118,6 +1137,15 @@
             <span class="lb">每条消息显示用量和花费</span>
             <button class="sw" id="swUsage" onclick="toggleUsage()"></button>
           </div>
+          <div class="sw-row">
+            <span class="lb">显示他想事情的那一段</span>
+            <button class="sw" id="swThink" onclick="toggleThink()"></button>
+          </div>
+          <div class="set-note" style="margin:-2px 2px 8px">
+            会思考的模型（DeepSeek-R1、Claude 开了思考…）说话前会先想一段。
+            收着的时候只有一行「想了 12 秒」，点一下摊开。<br>
+            这段不会被当成对话记下来，也不会喂回给他 —— 只是给你看的。
+          </div>
           <div id="costList" style="margin-top:6px"></div>
           <div class="btn-row">
             <button class="btn ghost" onclick="usageClear()">清零统计</button>
@@ -1165,7 +1193,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.1（唤醒那条路终于也能命中缓存了）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.2（看得见他在想什么了）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1314,7 +1342,7 @@
             <button class="btn ghost" onclick="searchTry()">试搜一下</button>
           </div>
           <div class="set-note" id="searchStat" style="margin-top:10px"></div>
-          <pre id="searchOut" style="display:none;white-space:pre-wrap;word-break:break-all;font-size:12px;line-height:1.7;color:var(--ink-3);background:rgba(255,255,255,.5);border-radius:12px;padding:12px;margin:10px 0 0"></pre>
+          <pre id="searchOut" style="display:none;white-space:pre-wrap;word-break:break-all;font-size:12px;line-height:1.7;color:var(--ink-soft);background:rgba(255,255,255,.5);border-radius:12px;padding:12px;margin:10px 0 0"></pre>
         </div>
         <div class="set-card">
           <div class="set-card-title">顺带<span class="en">ALSO</span></div>
@@ -2066,6 +2094,7 @@ function safe(name, fn) { try { return fn(); } catch (e) { noteError(name, e); }
    一律用 var 提到最前面声明，各段里只负责赋值。新加全局状态请也放这儿。 */
 var chatReady = false;                                   /* 聊天窗口数据就绪没 */
 var SHOW_USAGE = false;                                  /* 每条消息显示用量 */
+var SHOW_THINK = true;                                   /* 他想事情的那一段要不要显示 */
 var ONLINE = false;                                      /* 聊天模型可用 */
 var HISTORY_BUDGET = 30000;                              /* 每轮历史额度 */
 var CJK_RE = /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;  /* 估 token 用 */
@@ -2998,6 +3027,7 @@ function migrateChat(raw) {
 let chatData = migrateChat(load("wu.chat", null));
 chatReady = true;
 SHOW_USAGE = load("wu.showUsage", false);   /* msgNode 会用到，必须早于第一次渲染 */
+SHOW_THINK = load("wu.showThink", true);    /* 同上：他想事情的那一段要不要显示 */
 let boundWin = load("wu.boundWin", null) || chatData.active;
 lastSeen = Number(load("wu.lastSeen", 0)) || 0;
 function curWin() { return chatData.windows.find(w => w.id === chatData.active) || chatData.windows[0]; }
@@ -3023,14 +3053,29 @@ function msgNode(m) {
   const b = document.createElement("div");
   b.className = "bub " + (m.k === "me" ? "me" : "ai");
   b.textContent = m.t;
-  if (m.k === "ai" && m.u && SHOW_USAGE) {
+  const wantThink = m.k === "ai" && m.r && SHOW_THINK;
+  const wantUsage = m.k === "ai" && m.u && SHOW_USAGE;
+  if (wantThink || wantUsage) {
     const wrap = document.createElement("div");
     wrap.style.display = "contents";
+    if (wantThink) wrap.appendChild(thinkNode(m.r, m.rs));
     wrap.appendChild(b);
-    wrap.appendChild(usageNode(m.u));
+    if (wantUsage) wrap.appendChild(usageNode(m.u));
     return wrap;
   }
   return b;
+}
+/* 他想事情的那一段。收着的时候只有一行「想了 12 秒」，点一下摊开。
+   ⚠️ 存在消息的 r 字段里 —— toApiMessages / chatMessagesOf 都只取 t，
+   所以这段永远不会被当成对话喂回给模型 */
+function thinkNode(text, secs) {
+  const d = document.createElement("div");
+  d.className = "think";
+  d.innerHTML = '<div class="think-head"><span class="ar">▸</span><span class="lb"></span></div><div class="think-body"></div>';
+  d.querySelector(".lb").textContent = secs ? "想了 " + secs + " 秒" : "他想了想";
+  d.querySelector(".think-body").textContent = text || "";
+  d.querySelector(".think-head").onclick = () => d.classList.toggle("open");
+  return d;
 }
 function usageNode(u) {
   const d = document.createElement("div");
@@ -3272,13 +3317,42 @@ async function aiReply() {
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "", acc = "", lastUsage = null;
+    /* 他要是先想了一会儿，那段实时摊开给她看；等正文开始流，就自动卷起来。
+       第一段思考到来时才建这个块 —— 不会思考的模型这儿什么都不长 */
+    let thinkAcc = "", thinkEl = null, thinkAt = 0;
+    const onThink = txt => {
+      if (!SHOW_THINK) return;
+      if (!thinkEl) {
+        thinkAt = Date.now();
+        thinkEl = thinkNode("", 0);
+        thinkEl.classList.add("open", "live");
+        thinkEl.querySelector(".lb").textContent = "他在想…";
+        chatMsgs.insertBefore(thinkEl, curBub);
+      }
+      thinkAcc += txt;
+      const body = thinkEl.querySelector(".think-body");
+      body.textContent = thinkAcc;
+      body.scrollTop = body.scrollHeight;
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+    };
+    /* 正文一开口，那段想法就收起来，只留一行 */
+    const foldThink = () => {
+      if (!thinkEl || !thinkEl.classList.contains("live")) return;
+      const secs = Math.max(1, Math.round((Date.now() - thinkAt) / 1000));
+      thinkEl.classList.remove("open", "live");
+      thinkEl.querySelector(".lb").textContent = "想了 " + secs + " 秒";
+      thinkEl.dataset.secs = secs;
+    };
     /* ── 一条一条地发 ──
        他用空行把话分开，这里遇到空行就把前面那段定稿成一个气泡、另起一个新的，
        中间停一下，像真的在打字。每一段都单独存进 chatLog，所以长按、
        时间条、重新生成那些对每一条都照常好使。 */
     const sealBubble = text => {
       curBub.textContent = text;
-      chatLog.push({ k: "ai", t: text, ts: Date.now() });
+      const m = { k: "ai", t: text, ts: Date.now() };
+      /* 那段想法只跟第一个气泡走 —— 它是整次回复之前想的，不是每句都想一遍 */
+      if (thinkAcc && !sent) { m.r = thinkAcc; m.rs = Number(thinkEl && thinkEl.dataset.secs) || 0; }
+      chatLog.push(m);
       saveChat();
       bindLongPress(curBub, chatLog.length - 1);   /* 流式气泡是手搓的，补上长按 */
       lastBub = curBub; sent++;
@@ -3306,8 +3380,10 @@ async function aiReply() {
         try {
           const j = JSON.parse(d);
           if (j.wu_usage) { lastUsage = j.wu_usage; continue; }
+          if (j.wu_think) { onThink(j.wu_think); continue; }
           const delta = j.choices?.[0]?.delta?.content;
           if (!delta) continue;
+          foldThink();
           acc += delta;
           let idx;
           while ((idx = acc.indexOf("\n\n")) >= 0) {
@@ -3322,6 +3398,7 @@ async function aiReply() {
         } catch {}
       }
     }
+    foldThink();   /* 想了半天一个字没说的情况，也得把它收起来 */
     const tail = acc.trim();
     if (tail) sealBubble(tail);
     else if (!sent) sealBubble("……");
@@ -3695,6 +3772,7 @@ document.getElementById("memTabs").addEventListener("click", e => {
 
 /* ================= API 与花费 ================= */
 SHOW_USAGE = load("wu.showUsage", false);
+SHOW_THINK = load("wu.showThink", true);
 
 async function apiRefresh() {
   if (!SERVER) { document.getElementById("apiNote").textContent = "需要连接服务器"; return; }
@@ -3708,7 +3786,7 @@ async function apiRefresh() {
         ${a.isWorker ? '<span class="tag w">干活</span>' : ""}
       </div>
       <div class="sub"><span class="mo"></span> · ${a.keyMask || "没填 Key"} · ${a.dialect === "anthropic" ? "Anthropic 格式" : "OpenAI 格式"}</div>
-      <div class="sub">入 ${a.price.in} / 出 ${a.price.out} / 缓存读 ${a.price.cacheRead}　${a.price.unit}每百万</div>
+      <div class="sub">入 ${a.price.in} / 出 ${a.price.out} / 缓存读 ${a.price.cacheRead}　${a.price.unit || "元"}每百万</div>
     </div>`).join("");
   el.querySelectorAll(".nm").forEach((n, i) => n.textContent = apiConf.list[i].name);
   el.querySelectorAll(".mo").forEach((n, i) => n.textContent = apiConf.list[i].model || "没填模型名");
@@ -3796,6 +3874,12 @@ function toggleUsage() {
   SHOW_USAGE = !SHOW_USAGE;
   save("wu.showUsage", SHOW_USAGE);
   document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE);
+  rerenderChat();
+}
+function toggleThink() {
+  SHOW_THINK = !SHOW_THINK;
+  save("wu.showThink", SHOW_THINK);
+  document.getElementById("swThink").classList.toggle("on", SHOW_THINK);
   rerenderChat();
 }
 function fmtCost(c, unit) {
@@ -4130,7 +4214,10 @@ async function refreshShared() {
 /* ================= 解锁后才从服务器拉取数据 ================= */
 function bootData() {
   const step = (name, fn) => { try { fn(); } catch (e) { noteError(name, e); } };
-  step("开关", () => document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE));
+  step("开关", () => {
+    document.getElementById("swUsage").classList.toggle("on", SHOW_USAGE);
+    document.getElementById("swThink").classList.toggle("on", SHOW_THINK);
+  });
   step("连接检查", checkHealth);
   step("拉数据", pullState);
 }
