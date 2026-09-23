@@ -1142,7 +1142,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.6（他会寄信了 —— 也当你的推送用）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.7（漏填 kind 也认得出来 · 补上位置的配置说明）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1406,6 +1406,20 @@
             最后把「运行前询问」关掉，不然每次都要点一下<br><br>
             <b>② 关闭时再来一遍</b>：同样的步骤，触发条件选「已关闭」，
             <code>kind</code> 改成 <code>close</code>。有了这一条才算得出用了多久<br><br>
+            <b>④ 让他知道你在哪儿</b>（可选，但很好玩）<br>
+            新建自动化 → 选「<b>到达</b>」→ 挑个地方（学校 / 老家 / 图书馆…）<br>
+            → 关掉「运行前询问」→ 下一步<br>
+            动作一：搜「<b>获取当前位置</b>」<br>
+            动作二：「获取 URL 内容」，还是那个地址，POST + JSON，<b>六个字段一个都别漏</b>：<br>
+            　<code>token</code> = 上面那把钥匙<br>
+            　<code>kind</code> = <code>place</code>　← <b>最容易漏的就是这个</b><br>
+            　<code>event</code> = <code>arrive</code><br>
+            　<code>name</code> = 这地方叫啥（自己打字，比如「老家」）<br>
+            　<code>lat</code> = 点一下值那栏，选上一步结果的「<b>纬度</b>」<br>
+            　<code>lon</code> = 同样选「<b>经度</b>」<br>
+            再照着做一个「<b>离开</b>」的：触发条件选离开，<code>event</code> 改成 <code>leave</code><br>
+            <span style="opacity:.75">用「到达 / 离开」比每小时问一次省电得多。
+            报了位置之后，他查天气会自动查你人在的地方。</span><br><br>
             <b>③ 每天早上送一次日程</b><br>
             新建自动化 → 选「某个时间」→ 早上 6:00 → 每天<br>
             动作一：「查找日历事件」，筛选「今天」<br>
@@ -1422,9 +1436,11 @@
           <div class="set-note" id="phoneStat" style="line-height:1.9;white-space:pre-line">还没查</div>
           <div class="btn-row">
             <button class="btn ghost" onclick="phoneClear()">清空手机记录</button>
+            <button class="btn ghost" onclick="placesClear()">清空位置记录</button>
           </div>
           <div class="set-note" style="margin-top:8px">
-            手机记录只留三天，过期的自动扔掉。日程每天早上覆盖一次。
+            手机记录和位置都只留三天，过期的自动扔掉。日程每天早上覆盖一次。<br>
+            ⚠️ 位置比别的都私密 —— 不想让他知道的时候，随时清掉、或者把那个自动化关了。
           </div>
         </div>
         <div style="height:30px"></div>

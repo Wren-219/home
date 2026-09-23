@@ -2248,7 +2248,14 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(await readBody(req, 64 * 1024) || "{}"); } catch {}
       const tok = String(body.token || url.searchParams.get("token") || "");
       if (!tok || tok !== hookToken()) { sendJson(res, 401, { error: "钥匙不对" }); return; }
-      const kind = String(body.kind || "").trim();
+      let kind = String(body.kind || "").trim();
+      /* 手填的字段很容易漏一个。能看出来是什么就别为难她 ——
+         带了经纬度或者 arrive/leave 的，那就是在报位置 */
+      if (!kind) {
+        if (body.lat != null || body.lon != null || body.event === "arrive" || body.event === "leave") kind = "place";
+        else if (body.app) kind = body.event === "close" ? "close" : "open";
+        else if (typeof body.text === "string" && body.text) kind = "agenda";
+      }
       if (kind === "open" || kind === "close") {
         pushPhone(body.app, kind, body.at);
         sendJson(res, 200, { ok: true });
@@ -2267,7 +2274,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, items: items.length });
         return;
       }
-      sendJson(res, 400, { error: "kind 得是 open / close / place / agenda" });
+      sendJson(res, 400, { error: "没看懂这是什么。加一个字段 kind，填 open / close / place / agenda 之一" });
       return;
     }
     /* 那把钥匙：看一眼、或者换一把 */
