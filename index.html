@@ -1168,6 +1168,16 @@
           <div class="btn-row"><button class="btn" onclick="openSub('phone')">手机联动</button></div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">推送<span class="en">PUSH</span></div>
+          <div class="set-note" id="pushBrief">他主动说话的时候，手机上真的弹一条</div>
+          <div id="pushBox"></div>
+          <div class="btn-row">
+            <button class="btn" id="pushBtn" onclick="pushAsk()">开启推送</button>
+            <button class="btn ghost" onclick="pushTest()">试推一条</button>
+          </div>
+          <div class="set-note" id="pushHelp" style="margin-top:10px"></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">上网<span class="en">SEARCH</span></div>
           <div class="set-note" id="searchBrief">让他能自己上网查东西、读你丢给他的链接</div>
           <div class="btn-row"><button class="btn" onclick="openSub('search')">配一把钥匙</button></div>
@@ -1193,7 +1203,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.3（Claude 模型终于能用了 · 那个 temperature 是坑）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.4（真的会弹通知了）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2288,7 +2298,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "chat") markChatSeen();
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); phoneRefresh(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); phoneRefresh(); pushRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -4343,6 +4353,109 @@ async function phoneClear() {
 }
 
 /* ================= 她的身体 ================= */
+/* ===== 真推送 =====
+   iOS 的条件很硬，缺一条都收不到：16.4+、先「添加到主屏幕」、
+   从那个图标打开、而且授权必须她亲手点一下触发。
+   所以这里先把条件一条条查清楚再说话 —— 不然她点了没反应会很懵。 */
+var pushCur = null;
+function pushStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+function pushWhy() {
+  if (!("serviceWorker" in navigator)) return "这个浏览器不支持 Service Worker。";
+  if (!("PushManager" in window)) return "这个浏览器不支持推送。";
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (ios && !pushStandalone())
+    return "在 Safari 里打开是收不到的 —— 苹果规定必须先「添加到主屏幕」，再从那个图标点进来。";
+  if (Notification.permission === "denied")
+    return "通知权限被拒过了。去「设置 → 通知 → 晤」里重新打开。";
+  return "";
+}
+async function pushRefresh() {
+  const box = document.getElementById("pushBox"), help = document.getElementById("pushHelp");
+  const btn = document.getElementById("pushBtn"), brief = document.getElementById("pushBrief");
+  if (!box) return;
+  try { pushCur = await (await fetch("api/push")).json(); } catch { return; }
+  const why = pushWhy();
+  const subbed = await pushIsSubbed();
+  box.innerHTML = (pushCur.devices || []).length
+    ? pushCur.devices.map(d => `<div class="per-row">
+        <span class="d">${d.ua || "一台设备"}</span>
+        <span class="n">${new Date(d.at).toLocaleDateString()}</span>
+        <button onclick="pushDrop()">取消</button></div>`).join("")
+    : '<div class="set-note" style="padding:6px 2px">还没有设备开启。</div>';
+  btn.textContent = subbed ? "已开启（重新授权）" : "开启推送";
+  btn.disabled = !!why;
+  btn.style.opacity = why ? ".45" : "";
+  const others = (pushCur.count || 0) - (subbed ? 1 : 0);
+  help.innerHTML = why
+    ? "⚠️ " + why
+    : subbed
+      ? "开着。他主动说话的时候手机会弹一条 —— 锁屏也看得见。"
+      : (others > 0
+          ? "这台还没开（另外 " + others + " 台开着）。点上面那个按钮，然后选「允许」。"
+          : "点上面那个按钮，然后在弹出来的框里选「允许」。");
+  if (brief) brief.textContent = pushCur.count
+    ? "已开启 " + pushCur.count + " 台设备"
+    : "他主动说话的时候，手机上真的弹一条";
+}
+async function pushIsSubbed() {
+  try {
+    if (!("serviceWorker" in navigator)) return false;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return false;
+    return !!(await reg.pushManager.getSubscription());
+  } catch { return false; }
+}
+/* ⚠️ 这个函数必须由她亲手点击触发 —— iOS 只认用户手势里发出的授权请求 */
+async function pushAsk() {
+  const why = pushWhy();
+  if (why) { toast(why.slice(0, 40)); return; }
+  try {
+    toast("在登记…");
+    const reg = await navigator.serviceWorker.register("sw.js", { scope: "./" });
+    await navigator.serviceWorker.ready;
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { toast(perm === "denied" ? "你拒绝了" : "没选"); pushRefresh(); return; }
+    const conf = pushCur || await (await fetch("api/push")).json();
+    /* applicationServerKey 要的是原始字节，不是 base64 字符串 */
+    const key = Uint8Array.from(atob(conf.key.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    const old = await reg.pushManager.getSubscription();
+    if (old) await old.unsubscribe().catch(() => {});
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    const j = sub.toJSON();
+    const r = await fetch("api/push/sub", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth,
+        ua: /iPhone/.test(navigator.userAgent) ? "iPhone" : /iPad/.test(navigator.userAgent) ? "iPad" : "这台设备" }),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    toast("开好了。试推一条看看？");
+    pushRefresh();
+  } catch (e) {
+    toast("没开成：" + String(e.message || e).slice(0, 40));
+    noteError("推送", e);
+  }
+}
+async function pushDrop() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) { await fetch("api/push/sub", { method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint: sub.endpoint }) }); await sub.unsubscribe(); }
+    else await fetch("api/push/sub", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: "{}" });
+    toast("关掉了");
+    pushRefresh();
+  } catch (e) { toast("没关成：" + String(e.message || e).slice(0, 30)); }
+}
+async function pushTest() {
+  try {
+    const r = await (await fetch("api/push/test", { method: "POST" })).json();
+    toast(r.sent ? "推了 " + r.sent + " 台，看看手机" : (r.why || "一台都没推成" + ((r.errs || [])[0] ? "：" + r.errs[0] : "")));
+    if (r.gone) pushRefresh();
+  } catch (e) { toast("推不出去：" + String(e.message || e).slice(0, 30)); }
+}
+
 /* ===== 上网 ===== */
 async function searchRefresh() {
   try {

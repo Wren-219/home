@@ -1728,8 +1728,9 @@ async function runWake(alarm) {
     win.msgs.push({ k: "ai", t: text, ts: Date.now(), wake: true });
     writeJson("chat", chat);
     bumpWakeLog(true, billed);
-    /* 她那边还没有推送，他主动说的话只有打开 app 才看得见。
-       配了邮箱并打开这个开关的话，顺手寄一封 —— 手机的邮件提醒就是现成的推送 */
+    /* 真推送：锁屏上直接弹。她要是在手机上授过权，这是最快的一条路 */
+    pushAll("晤", text.slice(0, 120), "/").catch(e => console.error("push:", e && e.message));
+    /* 邮件那条老路留着 —— 推送没授权、或者那台设备的订阅过期了，还有个兜底 */
     const mc = mailConf();
     if (mc.on && mc.onWake && mc.user && mc.pass && mc.to) {
       sendMail(mc.to, "晤：" + text.slice(0, 20) + (text.length > 20 ? "…" : ""), text + "\n\n——\n（他刚才想起你了。回他的话去 wu-home 里说。）")
@@ -1794,6 +1795,149 @@ async function wakeTick(force) {
     saveAlarms(keep);
     return r;
   } finally { wakeBusy = false; }
+}
+
+/* ================= 真·推送（Web Push，零依赖手写） =================
+   她一直没有推送 —— 他主动说的话，不打开 app 就看不见，只能靠邮件绕。
+   这一套是真的：锁屏上会弹。
+
+   iOS 的前提（很硬，缺一条都收不到）：
+     ① iOS 16.4 以上  ② 必须先「添加到主屏幕」  ③ 从主屏幕那个图标打开
+     ④ 授权必须由她亲手点一下触发
+   浏览器里直接开的那个页面永远收不到，这是苹果定的。
+
+   协议是两份 RFC 拼起来的，没有第三方库：
+     RFC 8292 VAPID —— 用一对 P-256 密钥签个 JWT，证明「这条是我发的」
+     RFC 8291 加密 —— ECDH + HKDF + AES-128-GCM，推送服务器只是个中转，
+                      它看不见内容，只有她那台手机解得开
+     RFC 8188 封装 —— salt(16) | rs(4) | idlen(1) | 我的公钥(65) | 密文
+
+   ⚠️ HKDF 用 Node 内建的 crypto.hkdfSync（OpenSSL 的实现），不自己写 ——
+      这种地方自己写一遍，错了根本看不出来。 */
+const PUSH_TTL = 24 * 3600;
+
+function b64u(buf) { return Buffer.from(buf).toString("base64url"); }
+function unb64u(s) { return Buffer.from(String(s || ""), "base64url"); }
+
+function pushConf() {
+  const d = readJson("push", null) || {};
+  return { vapid: d.vapid || null, subs: Array.isArray(d.subs) ? d.subs : [], on: d.on !== false };
+}
+function savePush(d) { writeJson("push", d); }
+/* 这对钥匙就是这台服务器的身份。换掉的话，所有已经订阅的设备都得重订 */
+function vapidKeys() {
+  const conf = pushConf();
+  if (conf.vapid && conf.vapid.pub && conf.vapid.priv) return conf.vapid;
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const jwk = publicKey.export({ format: "jwk" });
+  const vapid = {
+    pub: b64u(Buffer.concat([Buffer.from([4]), unb64u(jwk.x), unb64u(jwk.y)])),   // 未压缩点，65 字节
+    priv: privateKey.export({ type: "pkcs8", format: "pem" }),
+  };
+  savePush({ ...pushConf(), vapid });
+  console.log("🔑 生成了推送用的 VAPID 密钥（存在 data/push.json）");
+  return vapid;
+}
+/* 把对方那 65 字节裸公钥变成 Node 认得的 KeyObject */
+function rawToKey(raw) {
+  const b = Buffer.from(raw);
+  if (b.length !== 65 || b[0] !== 4) throw new Error("公钥不是 65 字节的未压缩点");
+  return crypto.createPublicKey({ key: {
+    kty: "EC", crv: "P-256", x: b64u(b.subarray(1, 33)), y: b64u(b.subarray(33, 65)),
+  }, format: "jwk" });
+}
+/* RFC 8292：给这个推送服务签一张一次性的通行证 */
+function vapidAuth(endpoint) {
+  const v = vapidKeys();
+  const aud = new URL(endpoint).origin;
+  const head = b64u(JSON.stringify({ typ: "JWT", alg: "ES256" }));
+  const body = b64u(JSON.stringify({
+    aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: mailConf().user ? "mailto:" + mailConf().user : "mailto:wu@localhost",
+  }));
+  /* ES256 的签名必须是裸的 r||s（64 字节）。Node 默认给 DER，得显式要 ieee-p1363 */
+  const sig = crypto.sign("sha256", Buffer.from(head + "." + body),
+    { key: crypto.createPrivateKey(v.priv), dsaEncoding: "ieee-p1363" });
+  return { jwt: head + "." + body + "." + b64u(sig), pub: v.pub };
+}
+/* RFC 8291 + 8188：把一段明文加密成推送服务只能转发、看不懂的东西 */
+function pushEncrypt(plaintext, p256dhRaw, authSecret) {
+  const uaPub = Buffer.from(p256dhRaw);
+  const auth = Buffer.from(authSecret);
+  /* 每条消息一对临时密钥 —— 复用就等于把之前的消息也交出去了 */
+  const eph = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const ejwk = eph.publicKey.export({ format: "jwk" });
+  const asPub = Buffer.concat([Buffer.from([4]), unb64u(ejwk.x), unb64u(ejwk.y)]);
+  const shared = crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: rawToKey(uaPub) });
+
+  const salt = crypto.randomBytes(16);
+  const H = (ikm, s, info, len) => Buffer.from(crypto.hkdfSync("sha256", ikm, s, info, len));
+  /* key_info = "WebPush: info" || 0x00 || 她的公钥 || 我的临时公钥 */
+  const keyInfo = Buffer.concat([Buffer.from("WebPush: info\0"), uaPub, asPub]);
+  const ikm = H(shared, auth, keyInfo, 32);
+  const cek = H(ikm, salt, Buffer.from("Content-Encoding: aes128gcm\0"), 16);
+  const nonce = H(ikm, salt, Buffer.from("Content-Encoding: nonce\0"), 12);
+
+  /* 单条记录，所以明文后面跟一个 0x02 当结束符（0x01 是「还有下一条」） */
+  const padded = Buffer.concat([Buffer.from(plaintext, "utf8"), Buffer.from([2])]);
+  const c = crypto.createCipheriv("aes-128-gcm", cek, nonce);
+  const body = Buffer.concat([c.update(padded), c.final(), c.getAuthTag()]);
+
+  const rs = Buffer.alloc(4); rs.writeUInt32BE(4096);
+  return Buffer.concat([salt, rs, Buffer.from([asPub.length]), asPub, body]);
+}
+/* 推给一台设备。
+   ⚠️ 只有 410 Gone 才当「这个订阅真的死了」。
+   404 不行 —— 中间任何一层代理、任何一次网络抽风都会给 404，
+   一收到就删，等于她的设备被网络问题悄悄踢掉，以后再也收不到，
+   而她根本不知道发生过什么。（测的时候就是这样：容器出不去网，
+   两台设备一次全没了。）所以 404 要连着几次才算数。 */
+async function pushOne(sub, payload) {
+  const enc = pushEncrypt(payload, unb64u(sub.p256dh), unb64u(sub.auth));
+  const { jwt, pub } = vapidAuth(sub.endpoint);
+  const r = await fetch(sub.endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: "vapid t=" + jwt + ", k=" + pub,
+      "Content-Encoding": "aes128gcm",
+      "Content-Type": "application/octet-stream",
+      TTL: String(PUSH_TTL),
+      Urgency: "normal",
+    },
+    body: enc,
+    signal: AbortSignal.timeout(12000),
+  });
+  if (r.status === 410) return { ok: false, gone: true, code: 410 };
+  if (r.status === 404) return { ok: false, maybeGone: true, code: 404, msg: (await r.text()).slice(0, 120) };
+  if (!r.ok) return { ok: false, code: r.status, msg: (await r.text()).slice(0, 160) };
+  return { ok: true, code: r.status };
+}
+/* 推给她所有的设备。死掉的订阅顺手清掉 */
+async function pushAll(title, body, url) {
+  const conf = pushConf();
+  if (!conf.on) return { sent: 0, why: "推送被关掉了" };
+  if (!conf.subs.length) return { sent: 0, why: "还没有设备订阅" };
+  const payload = JSON.stringify({ title, body, url: url || "/", at: Date.now() });
+  const FAIL_LIMIT = 3;
+  let sent = 0;
+  const gone = [], bumped = {}, errs = [];
+  for (const s of conf.subs) {
+    try {
+      const r = await pushOne(s, payload);
+      if (r.ok) { sent++; bumped[s.endpoint] = 0; continue; }
+      if (r.gone) { gone.push(s.endpoint); continue; }
+      errs.push(r.code + " " + (r.msg || ""));
+      /* 404 连着三次才当它真没了；别的错（网络、5xx）根本不计数 */
+      if (r.maybeGone) {
+        const n = (s.fails || 0) + 1;
+        if (n >= FAIL_LIMIT) gone.push(s.endpoint); else bumped[s.endpoint] = n;
+      }
+    } catch (e) { errs.push(String(e.message || e).slice(0, 80)); }
+  }
+  const c = pushConf();
+  savePush({ ...c, subs: c.subs
+    .filter(x => !gone.includes(x.endpoint))
+    .map(x => (x.endpoint in bumped ? { ...x, fails: bumped[x.endpoint] } : x)) });
+  return { sent, gone: gone.length, errs };
 }
 
 /* ================= 把家里的东西借给他用（MCP 服务端） =================
@@ -2619,6 +2763,48 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/phone" && req.method === "DELETE") { writeJson("phone", { events: [] }); sendJson(res, 200, { ok: true }); return; }
     /* 邮箱配置。授权码只进不出，跟 API key 一个待遇 */
+    /* ---- 推送 ---- */
+    if (p === "/api/push" && req.method === "GET") {
+      const c = pushConf();
+      sendJson(res, 200, {
+        on: c.on, key: vapidKeys().pub, count: c.subs.length,
+        devices: c.subs.map(x => ({ at: x.at, ua: x.ua || "", tail: String(x.endpoint).slice(-12) })),
+      });
+      return;
+    }
+    if (p === "/api/push/sub" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 16 * 1024) || "{}");
+      const { endpoint, p256dh, auth } = body;
+      if (!endpoint || !p256dh || !auth) { sendJson(res, 400, { error: "订阅信息不全" }); return; }
+      const c = pushConf();
+      /* 同一台设备重新授权会换 endpoint，按 endpoint 去重就行 */
+      const subs = c.subs.filter(x => x.endpoint !== endpoint);
+      subs.push({ endpoint: String(endpoint).slice(0, 600), p256dh: String(p256dh), auth: String(auth),
+        at: Date.now(), ua: String(body.ua || "").slice(0, 80) });
+      savePush({ ...c, subs: subs.slice(-8) });
+      sendJson(res, 200, { ok: true, count: subs.length });
+      return;
+    }
+    if (p === "/api/push/sub" && req.method === "DELETE") {
+      const body = JSON.parse(await readBody(req, 16 * 1024) || "{}");
+      const c = pushConf();
+      const subs = body.endpoint ? c.subs.filter(x => x.endpoint !== body.endpoint) : [];
+      savePush({ ...c, subs });
+      sendJson(res, 200, { ok: true, count: subs.length });
+      return;
+    }
+    if (p === "/api/push" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 4096) || "{}");
+      const c = pushConf();
+      savePush({ ...c, on: typeof body.on === "boolean" ? body.on : c.on });
+      sendJson(res, 200, { ok: true, on: pushConf().on });
+      return;
+    }
+    if (p === "/api/push/test" && req.method === "POST") {
+      const r = await pushAll("晤", "在的。这是一条测试 —— 能看到就说明通了。", "/");
+      sendJson(res, 200, r);
+      return;
+    }
     if (p === "/api/search" && req.method === "GET") {
       const c = searchConf();
       sendJson(res, 200, {
