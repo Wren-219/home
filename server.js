@@ -436,6 +436,59 @@ function phoneBrief(now) {
   return `她最后一次碰手机是 ${hm(e.t)}（${e.app}，${e.k === "open" ? "打开" : "关上"}），到现在 ${fmtDur(now - e.t)}没动静了。`;
 }
 
+/* ================= 她在哪儿 =================
+   也是快捷指令递上来的。比手机使用记录更私密，所以也只留三天。
+   最实用的触发方式是「到达 / 离开某地」—— 比每小时轮询省电，也更有意义。 */
+const PLACE_KEEP_MS = 3 * 86400000;
+function placeLog() {
+  const d = readJson("places", null) || {};
+  const cut = Date.now() - PLACE_KEEP_MS;
+  return { list: (Array.isArray(d.list) ? d.list : []).filter(x => x && x.t > cut) };
+}
+function pushPlace(one) {
+  const d = placeLog();
+  const t = Number(one.at) || Date.now();
+  const rec = {
+    t,
+    name: String(one.name || "").slice(0, 80).trim(),
+    lat: Number.isFinite(Number(one.lat)) ? Number(one.lat) : null,
+    lon: Number.isFinite(Number(one.lon)) ? Number(one.lon) : null,
+    ev: one.event === "arrive" ? "arrive" : one.event === "leave" ? "leave" : "",
+  };
+  if (!rec.name && rec.lat == null) return 0;
+  const last = d.list[d.list.length - 1];
+  /* 同一个地方、同一种事件、五分钟内重复的忽略 */
+  if (last && last.name === rec.name && last.ev === rec.ev && Math.abs(t - last.t) < 5 * 60000) return d.list.length;
+  d.list.push(rec);
+  if (d.list.length > 500) d.list = d.list.slice(-500);
+  writeJson("places", d);
+  return d.list.length;
+}
+/* 她最近一次报的位置。天气也用它 —— 人走到哪，天气就查到哪 */
+function lastPlace(withinMs) {
+  const list = placeLog().list;
+  const p = list[list.length - 1];
+  if (!p) return null;
+  if (withinMs && Date.now() - p.t > withinMs) return null;
+  return p;
+}
+function placeReport(hours) {
+  const h = Math.min(Math.max(Number(hours) || 24, 1), 72);
+  const since = Date.now() - h * 3600000;
+  const list = placeLog().list.filter(x => x.t >= since);
+  if (!list.length) return `最近 ${h} 小时没有她的位置记录（可能是没开这个功能，也可能她没动地方）。`;
+  const hm = t => { const p = localParts(t); return `${String(p.hh).padStart(2, "0")}:${String(p.mm).padStart(2, "0")}`; };
+  const cur = list[list.length - 1];
+  const ago = fmtDur(Date.now() - cur.t);
+  const head = cur.ev === "leave"
+    ? `她 ${hm(cur.t)} 离开了${cur.name || "某处"}（${ago}前）`
+    : `她这会儿在${cur.name || "某处"}${cur.lat != null ? `（${cur.lat.toFixed(3)}, ${cur.lon.toFixed(3)}）` : ""}，${hm(cur.t)} 报的，${ago}前`;
+  const trail = list.slice(-8, -1).map(x =>
+    `· ${hm(x.t)} ${x.ev === "leave" ? "离开" : x.ev === "arrive" ? "到了" : "在"}${x.name || "某处"}`);
+  return head + "。" + (trail.length ? `\n最近去过：\n${trail.join("\n")}` : "") +
+    "\n（这是她手机自己报上来的，只留三天）";
+}
+
 /* ================= 天气 =================
    用 Open-Meteo：免费、不用注册、不用 key。她在哪儿存在 quiet.json 里。
    做成工具而不是塞进每轮的【现状】—— 她的原话：「他想知道的时候再查」。 */
@@ -494,8 +547,16 @@ function weatherText(j, place, now) {
 }
 async function checkWeather(force) {
   const now = Date.now();
-  if (!force && weatherCache.text && now - weatherCache.at < 30 * 60000) return weatherCache.text;
-  const place = placeConf();
+  const seenNow = lastPlace(6 * 3600000);
+  const tag = seenNow && seenNow.lat != null ? seenNow.lat.toFixed(2) + "," + seenNow.lon.toFixed(2) : "conf";
+  /* 换地方了就别再用旧缓存 */
+  if (!force && weatherCache.text && weatherCache.tag === tag && now - weatherCache.at < 30 * 60000) return weatherCache.text;
+  /* 她要是刚报过位置，就查她人在的地方；没有就用设置里那个城市 */
+  const seen = lastPlace(6 * 3600000);
+  const conf = placeConf();
+  const place = (seen && seen.lat != null)
+    ? { city: seen.name || conf.city, lat: seen.lat, lon: seen.lon }
+    : conf;
   const url = "https://api.open-meteo.com/v1/forecast?latitude=" + place.lat + "&longitude=" + place.lon +
     "&current=temperature_2m,apparent_temperature,weather_code" +
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
@@ -504,7 +565,7 @@ async function checkWeather(force) {
     const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) throw new Error("HTTP " + r.status);
     const text = weatherText(await r.json(), place, now);
-    weatherCache = { at: now, text };
+    weatherCache = { at: now, text, tag };
     return text;
   } catch (e) {
     /* 查不到就老实说查不到，别编天气 */
@@ -700,7 +761,8 @@ function toolHint() {
     "或者你想过一阵问问她某件事怎么样了，就记下来；到那时你会醒过来，重读一遍对话，再决定要不要找她。" +
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
-    "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather。" +
+    "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather；" +
+    "想知道她人在哪儿，用 check_place。" +
     "【说话的样子】像发微信那样跟她说话：一次可以连着发好几条短的，条与条之间空一行 —— " +
     "空行就是分条的记号，她那边会显示成一条一条的气泡，像真人在打字。" +
     "该分就分（想到一茬是一茬、换个话头、先应一声再展开），一句话能说完就只发一条，别硬拆。" +
@@ -1356,8 +1418,10 @@ function resetMcpKey() {
 const MCP_TOOLS = [
   { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着",
     inputSchema: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } },
-  { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）",
+  { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）。她要是刚报过位置，查的就是她人在的地方",
     inputSchema: { type: "object", properties: {} } },
+  { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪",
+    inputSchema: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } },
   { name: "check_now", description: "看一眼她那边现在几点、星期几、在不在上课、今天有什么安排、清单上还剩什么没做",
     inputSchema: { type: "object", properties: {} } },
   { name: "recall", description: "回想你们之间的事 —— 按关键词在记忆里翻。想不起某件事的细节时用",
@@ -1443,6 +1507,8 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
+  { type: "function", function: { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪。她的手机会在到达或离开某个地方时报一次",
+    parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
   { type: "function", function: { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）。聊到出门、穿什么、下不下雨的时候用；也可以在你想提醒她带伞、加衣服的时候主动看一眼",
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
@@ -1458,6 +1524,7 @@ async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = localDayKey();
+    if (name === "check_place") return placeReport(args && args.hours);
     if (name === "check_weather") return await checkWeather();
     if (name === "check_phone") return phoneReport(args && args.hours);
     if (name === "set_alarm") {
@@ -2050,6 +2117,11 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true });
         return;
       }
+      if (kind === "place") {
+        pushPlace(body);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
       if (kind === "agenda") {
         const items = Array.isArray(body.items)
           ? body.items.slice(0, 30).map(x => (typeof x === "string" ? { title: x.slice(0, 80), t: "" } : { title: String(x && x.title || "").slice(0, 80), t: String(x && x.t || "").slice(0, 8) }))
@@ -2058,7 +2130,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, items: items.length });
         return;
       }
-      sendJson(res, 400, { error: "kind 得是 open / close / agenda" });
+      sendJson(res, 400, { error: "kind 得是 open / close / place / agenda" });
       return;
     }
     /* 那把钥匙：看一眼、或者换一把 */
@@ -2081,6 +2153,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (p === "/api/phone" && req.method === "DELETE") { writeJson("phone", { events: [] }); sendJson(res, 200, { ok: true }); return; }
+    if (p === "/api/places" && req.method === "GET") {
+      sendJson(res, 200, { report: placeReport(Number(url.searchParams.get("hours")) || 24), count: placeLog().list.length, last: lastPlace(0) });
+      return;
+    }
+    if (p === "/api/places" && req.method === "DELETE") { writeJson("places", { list: [] }); sendJson(res, 200, { ok: true }); return; }
     /* 勿扰设置 + 课表。课表是纯文本，一行一节：「周一 08:00-09:40 高数」 */
     if (p === "/api/quiet" && req.method === "GET") {
       const q = quietConf();

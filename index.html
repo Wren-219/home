@@ -1137,7 +1137,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.4（可以把家接进 Claude 了 · 连着聊时不再打扰他看表）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.5（他能知道你在哪儿了 · 天气跟着人走）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -3955,11 +3955,14 @@ async function phoneRefresh() {
     if (el) el.innerHTML =
       `地址　<b>${hookUrl()}</b><br>钥匙　<b>${h.token}</b>`;
     const p = await (await fetch("api/phone?hours=24")).json();
+    let pl = null;
+    try { pl = await (await fetch("api/places?hours=24")).json(); } catch {}
     const st = document.getElementById("phoneStat");
     if (st) st.textContent =
       (h.events ? `手机记录：这三天里 ${h.events} 条，最近一条 ${h.lastAt ? new Date(h.lastAt).toLocaleString("zh-CN") : "-"}\n\n` : "手机记录：还没收到过\n\n")
       + (h.agenda ? `今天的日程：${h.agenda} 条\n\n` : "今天的日程：还没收到\n\n")
-      + (p.report || "");
+      + (p.report || "")
+      + (pl && pl.count ? "\n\n" + (pl.report || "") : "\n\n位置：还没收到过");
     const b = document.getElementById("phoneBrief");
     if (b) b.textContent = h.events
       ? `这三天收到 ${h.events} 条手机记录${h.agenda ? `、今天 ${h.agenda} 条日程` : ""}`
@@ -3975,6 +3978,11 @@ async function hookReset() {
   if (!confirm("换一把新钥匙？旧的立刻失效，快捷指令里也要改。")) return;
   try { await fetch("api/hook", { method: "POST" }); toast("换好了，记得改快捷指令"); phoneRefresh(); }
   catch { toast("没换成"); }
+}
+async function placesClear() {
+  if (!confirm("把这三天的位置记录都清掉？")) return;
+  try { await fetch("api/places", { method: "DELETE" }); toast("清干净了"); phoneRefresh(); }
+  catch { toast("没清掉"); }
 }
 async function phoneClear() {
   if (!confirm("把这三天的手机记录都清掉？")) return;
