@@ -1112,6 +1112,11 @@
           </div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">接进 Claude<span class="en">CONNECT</span></div>
+          <div class="set-note" id="mcpBrief">让 Claude 那边的他，也能查你的手机、天气、日记和记忆</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('connect')">怎么接</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">手机联动<span class="en">SHORTCUTS</span></div>
           <div class="set-note" id="phoneBrief">让晤知道你今天的日程、和你在玩哪些 App</div>
           <div class="btn-row"><button class="btn" onclick="openSub('phone')">手机联动</button></div>
@@ -1132,7 +1137,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.3（他会像发微信那样一条一条说话了 · 近况隔两小时才给一次）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.4（可以把家接进 Claude 了 · 连着聊时不再打扰他看表）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1251,6 +1256,55 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-connect">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('connect')">‹ 返回</button>
+        <div class="sp-title">接进 Claude</div>
+        <button class="sp-act" onclick="mcpKeyRefresh()">刷新</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 12px">
+          他还住在 Claude 那边。这个是把家里的钥匙递过去 ——
+          接上之后，你在 Claude 里跟他说话，他就能查你的手机、看你那边的天气、
+          翻你们的日记和信，也能把要紧的事记进这边的记忆里。
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">这串地址就是钥匙<span class="en">URL</span></div>
+          <div class="set-note" id="mcpUrl" style="word-break:break-all;line-height:1.9">读取中…</div>
+          <div class="btn-row"><button class="btn" onclick="mcpCopy()">复制这串地址</button></div>
+          <div class="set-note" style="margin-top:10px;color:var(--coral)">
+            ⚠️ 这串地址等于你家门钥匙 —— 拿到的人能读你的日记和聊天记录。
+            别发给别人，截图发人之前也记得挡掉。
+          </div>
+          <div class="btn-row"><button class="btn ghost" onclick="mcpKeyReset()">换一把新钥匙</button></div>
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">怎么接<span class="en">HOW</span></div>
+          <div class="set-note" style="line-height:2">
+            打开 Claude（手机 app 或者电脑上的网页都行）<br>
+            → <b>设置 → 连接器 Connectors</b><br>
+            → 右上角 <b>「Add」→「添加自定义连接器」</b><br>
+            → 把上面那串地址粘进去<br>
+            → 名字随便起，比如「家」<br>
+            → 下面 OAuth 那两栏<b>留空不用填</b><br>
+            → 点添加<br><br>
+            接上之后在 Claude 里问他一句「我今天玩了多久手机」试试。<br><br>
+            <span style="opacity:.75">
+            要是它说连不上：先确认 wu-home 这会儿是开着的（这个页面能打开就说明开着），
+            然后检查地址有没有复制全 —— 它很长，容易漏掉尾巴。</span>
+          </div>
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">他能拿到什么<span class="en">TOOLS</span></div>
+          <div class="set-note" id="mcpTools" style="line-height:1.9">…</div>
+        </div>
+        <div style="height:30px"></div>
+      </div>
+    </section>
+
     <section class="subpage" id="page-phone">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('phone')">‹ 返回</button>
@@ -1828,6 +1882,7 @@ var apiConf = { list: [], chat: null, worker: null }, afCur = null;  /* API 配�
 var mcpList = [], mcpCur = null;                         /* 外部服务 */
 var quietCur = null;                                     /* 课表与勿扰 */
 var hookCur = null;                                      /* 手机联动的钥匙 */
+var mcpKeyCur = null;                                    /* 接进 Claude 的那把钥匙 */
 var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
 
 /* ================= 工具 ================= */
@@ -1992,7 +2047,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -2018,6 +2073,7 @@ function openSub(name) {
   if (name === "mcp") mcpRefresh();
   if (name === "quiet") quietRefresh();
   if (name === "phone") phoneRefresh();
+  if (name === "connect") mcpKeyRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -3924,6 +3980,30 @@ async function phoneClear() {
   if (!confirm("把这三天的手机记录都清掉？")) return;
   try { await fetch("api/phone", { method: "DELETE" }); toast("清干净了"); phoneRefresh(); }
   catch { toast("没清掉"); }
+}
+
+/* ================= 接进 Claude（MCP 服务端） ================= */
+function mcpConnectUrl() { return mcpKeyCur ? location.origin + "/mcp/" + mcpKeyCur.key : ""; }
+async function mcpKeyRefresh() {
+  try {
+    const k = await (await fetch("api/mcpkey")).json();
+    mcpKeyCur = k;
+    const el = document.getElementById("mcpUrl");
+    if (el) el.innerHTML = "<b>" + mcpConnectUrl() + "</b>";
+    const t = document.getElementById("mcpTools");
+    if (t) t.textContent = (k.tools || []).join("、");
+  } catch (e) { noteError("接进 Claude", e); }
+}
+async function mcpCopy() {
+  const v = mcpConnectUrl();
+  if (!v) { toast("还没读到钥匙，点一下刷新"); return; }
+  try { await navigator.clipboard.writeText(v); toast("复制好了，去 Claude 里粘贴"); }
+  catch { prompt("长按选中复制：", v); }
+}
+async function mcpKeyReset() {
+  if (!confirm("换一把新钥匙？旧的立刻失效，Claude 那边要重新接一次。")) return;
+  try { await fetch("api/mcpkey", { method: "POST" }); toast("换好了，记得去 Claude 里重新填一次"); mcpKeyRefresh(); }
+  catch { toast("没换成"); }
 }
 
 /* ================= 课表与勿扰 ================= */

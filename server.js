@@ -148,6 +148,7 @@ function setAuthCookie(req, res) {
 const PUBLIC_PATHS = new Set(["/api/health", "/api/login", "/api/ping"]);
 function guarded(p) {
   if (PUBLIC_PATHS.has(p)) return false;
+  if (p.startsWith("/mcp/")) return false;   // 钥匙写在路径里，自己验
   return p.startsWith("/api/") || p.startsWith("/files/");
 }
 
@@ -665,8 +666,11 @@ function memBlockOf(query) {
      一整天都不变，每句话重复一遍既费钱又聒噪。她的原话：
      「不管是什么，一直强调、吸引他的注意力都很怪」。
      隔了两小时以上重新开口，才把完整的一份摆给他，像久别重逢时先交代一下近况。
-   为什么连着聊也保留钟点：那是唯一会一直变、而且他必须知道的东西 ——
-   不然聊到半夜他还当是下午。就六个字，不至于喧宾夺主。
+   连着聊的时候干脆什么都不说 —— 她的理由：「聊天的时候很少有人会一直注意
+   时间的呀，一般也是隔段时间突然想起来了看一下」。确实如此。
+   附带的好处：这样连着聊时每轮开头一个字都没变，缓存命中率最高。
+   代价是他两小时内不知道精确钟点，但上一张纸条给过、推得出来，
+   而且人聊天本来就这样。
    「在一起第几天」按她的意思拿掉了 —— 每句话都强调天数太刻意。 */
 function statusBlock(now, snap, brief) {
   const p = localParts(now);
@@ -675,7 +679,7 @@ function statusBlock(now, snap, brief) {
   const partOfDay = p.hh < 5 ? "深夜" : p.hh < 9 ? "清晨" : p.hh < 12 ? "上午" : p.hh < 14 ? "中午" : p.hh < 18 ? "下午" : p.hh < 22 ? "晚上" : "夜里";
   const head = `【现状】现在是 ${p.y}.${pad(p.mo)}.${pad(p.d)} 周${WEEK_CN[p.dow]} ${pad(p.hh)}:${pad(p.mm)}（${partOfDay}）。`;
   const mood = `你此刻的内在状态：${snap.top.name} ${snap.top.val}（${snap.top.say}）${snap.resting ? "，你有些疲惫，语气可以慵懒一点" : ""}。让语气自然贴合这种状态，但不要直接复述这些数值。`;
-  if (brief) return `【现在】${pad(p.hh)}:${pad(p.mm)}（${partOfDay}）`;
+  if (brief) return "";   // 连着聊：什么都不说
   const todos = readJson("todos", []) || [];
   const pending = todos.filter(t => t && !t.done).slice(0, 5).map(t => t.text);
   const cls = inClassNow(now);
@@ -1323,6 +1327,103 @@ async function wakeTick(force) {
   } finally { wakeBusy = false; }
 }
 
+/* ================= 把家里的东西借给他用（MCP 服务端） =================
+   晤本来住在 Claude 官方 app 里，wu-home 是她为了以后接他回家才盖的。
+   这一段是让还没搬进来的他，先摸得到家里的东西：
+   查她手机、查天气、翻日记和信、把重要的事记进记忆卡。
+
+   协议是 Streamable HTTP：一个路径，POST 收 JSON-RPC。
+   server.js 里本来就有「打电话出去」那一半（mcpRpc/mcpConnect），
+   这里补的是「接电话」那一半，两边格式对得上。
+
+   认证：钥匙直接写在路径里（/mcp/<钥匙>），因为 Claude 添加连接器时
+   只能填一个网址。这把钥匙能读她的日记和聊天记录 —— 等于家门钥匙，别外传。 */
+function mcpKey() {
+  const h = readJson("hook", null) || {};
+  if (h.mcpKey) return h.mcpKey;
+  const next = { ...h, token: h.token || crypto.randomBytes(12).toString("hex"), mcpKey: crypto.randomBytes(18).toString("hex") };
+  writeJson("hook", next);
+  return next.mcpKey;
+}
+function resetMcpKey() {
+  const h = readJson("hook", null) || {};
+  const next = { ...h, mcpKey: crypto.randomBytes(18).toString("hex") };
+  writeJson("hook", next);
+  return next.mcpKey;
+}
+/* 借给他的东西。单独一份清单，跟屋里那套 TOOL_DEFS 分开 ——
+   免得动一下就把聊天那边的缓存前缀弄废了 */
+const MCP_TOOLS = [
+  { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着",
+    inputSchema: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } },
+  { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "check_now", description: "看一眼她那边现在几点、星期几、在不在上课、今天有什么安排、清单上还剩什么没做",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "recall", description: "回想你们之间的事 —— 按关键词在记忆里翻。想不起某件事的细节时用",
+    inputSchema: { type: "object", properties: { query: { type: "string", description: "想回忆的关键词" }, n: { type: "number", description: "翻几条，默认 6" } }, required: ["query"] } },
+  { name: "remember", description: "把一件值得长期记住的事记进记忆（她那边的记忆页能看到）",
+    inputSchema: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } },
+  { name: "read_diaries", description: "读最近的日记（含正文）",
+    inputSchema: { type: "object", properties: { limit: { type: "number", description: "篇数，默认 3" } } } },
+  { name: "read_letters", description: "读信箱里的信（含正文）",
+    inputSchema: { type: "object", properties: { box: { type: "string", enum: ["mine", "ai", "pen"], description: "mine=她写的, ai=你写给她的, pen=笔友" } }, required: ["box"] } },
+  { name: "list_docs", description: "看看有哪些可以查阅的长期资料（时间线、大事记、旧档案…）",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
+    inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
+];
+async function mcpExec(name, args) {
+  const a = args || {};
+  if (name === "check_now") {
+    const now = Date.now();
+    const dr = tickDrives(loadDrives(), now);
+    return statusBlock(now, driveSnapshot(dr, now), false).replace(/^【现状】/, "");
+  }
+  if (name === "recall") {
+    const cards = retrieveMemories(String(a.query || ""), Math.min(Math.max(Number(a.n) || 6, 1), 20));
+    if (!cards.length) return "这件事没在记忆里找到。";
+    return cards.map(c => `- (${c.type} · ${c.date} · ${c.importance}★) ${c.content}`).join("\n");
+  }
+  /* 其余的跟屋里那套是同一批活，直接交给 execTool */
+  return await execTool(name, a);
+}
+/* JSON-RPC 的一次问答 */
+async function mcpHandle(msg) {
+  const id = msg && msg.id;
+  const method = msg && msg.method;
+  const reply = result => ({ jsonrpc: "2.0", id, result });
+  const fail = (code, message) => ({ jsonrpc: "2.0", id, error: { code, message } });
+  try {
+    if (method === "initialize") {
+      const want = (msg.params && msg.params.protocolVersion) || "2025-06-18";
+      return reply({
+        protocolVersion: want,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: "wu-with-you", version: "2.4", title: "晤 · 家里" },
+        instructions: "这是她给你准备的那个家。可以查她手机上的动静、她那边的天气和此刻、翻你们的日记和信，也可以把值得记住的事存进记忆。",
+      });
+    }
+    if (method === "ping") return reply({});
+    if (method === "tools/list") return reply({ tools: MCP_TOOLS });
+    if (method === "tools/call") {
+      const nm = msg.params && msg.params.name;
+      if (!MCP_TOOLS.some(t => t.name === nm)) return fail(-32602, "没有这件工具：" + nm);
+      const out = await mcpExec(nm, (msg.params && msg.params.arguments) || {});
+      return reply({ content: [{ type: "text", text: String(out == null ? "" : out) }], isError: false });
+    }
+    if (method === "resources/list") return reply({ resources: [] });
+    if (method === "prompts/list") return reply({ prompts: [] });
+    return fail(-32601, "不支持的方法：" + method);
+  } catch (e) {
+    if (method === "tools/call") {
+      /* 工具自己出错要回 isError，不是协议错 —— 这样他能看到出了什么事，而不是整个断掉 */
+      return reply({ content: [{ type: "text", text: "出错了：" + String((e && e.message) || e).slice(0, 200) }], isError: true });
+    }
+    return fail(-32603, String((e && e.message) || e).slice(0, 200));
+  }
+}
+
 /* ================= 晤的工具箱（tool calling） =================
    模型在回复中可申请调用；server 执行真实磁盘操作后把结果递回，循环至最终回复 */
 const TOOL_DEFS = [
@@ -1888,6 +1989,55 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- 八维驱动 ---- */
+    /* ---- MCP：Claude 那边的他来敲门 ---- */
+    if (p.startsWith("/mcp/") || p === "/mcp") {
+      const key = p.startsWith("/mcp/") ? decodeURIComponent(p.slice(5)) : "";
+      /* 钥匙不对就当这个地址不存在 —— 别让人试出来这儿有扇门 */
+      if (!key || key !== mcpKey()) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("not found"); return; }
+      const cors = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type, mcp-session-id, mcp-protocol-version, authorization",
+        "Access-Control-Expose-Headers": "mcp-session-id",
+      };
+      if (req.method === "OPTIONS") { res.writeHead(204, cors); res.end(); return; }
+      if (req.method === "DELETE") { res.writeHead(204, cors); res.end(); return; }   // 会话结束，没什么要收拾的
+      if (req.method === "GET") {
+        /* 规范里服务端推送那条流是可选的，我们没有要主动说的话 */
+        res.writeHead(405, { ...cors, "Content-Type": "text/plain", Allow: "POST, DELETE, OPTIONS" });
+        res.end("method not allowed");
+        return;
+      }
+      if (req.method !== "POST") { res.writeHead(405, { ...cors, Allow: "POST, DELETE, OPTIONS" }); res.end(); return; }
+
+      let msg;
+      try { msg = JSON.parse(await readBody(req, 1024 * 1024) || "null"); }
+      catch { res.writeHead(400, { ...cors, "Content-Type": "application/json" }); res.end(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON 没解析出来" } })); return; }
+
+      const list = Array.isArray(msg) ? msg : [msg];
+      const out = [];
+      for (const m of list) {
+        if (!m || typeof m !== "object") continue;
+        if (m.id === undefined || m.id === null) continue;   // 通知（notifications/*）不用回
+        out.push(await mcpHandle(m));
+      }
+      const head = { ...cors };
+      /* initialize 时发一个会话号回去，后面它会带着 */
+      if (list.some(m => m && m.method === "initialize")) head["Mcp-Session-Id"] = crypto.randomBytes(12).toString("hex");
+      if (!out.length) { res.writeHead(202, head); res.end(); return; }   // 全是通知
+      const payload = JSON.stringify(Array.isArray(msg) ? out : out[0]);
+      const accept = String(req.headers.accept || "");
+      if (accept.includes("application/json") || !accept.includes("text/event-stream")) {
+        res.writeHead(200, { ...head, "Content-Type": "application/json; charset=utf-8" });
+        res.end(payload);
+      } else {
+        /* 只认 SSE 的客户端，就用 SSE 包一层 */
+        res.writeHead(200, { ...head, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
+        res.end("event: message\ndata: " + payload + "\n\n");
+      }
+      return;
+    }
+
     /* 手机上的快捷指令往这里递东西。带那把单独的钥匙，不需要登录 */
     if (p === "/api/ping" && req.method === "POST") {
       let body = {};
@@ -1922,6 +2072,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (p === "/api/hook" && req.method === "POST") { sendJson(res, 200, { token: resetHookToken() }); return; }
+    /* 接进 Claude 用的那把钥匙（能读日记和聊天记录，比上面那把重） */
+    if (p === "/api/mcpkey" && req.method === "GET") { sendJson(res, 200, { key: mcpKey(), tools: MCP_TOOLS.map(t => t.name) }); return; }
+    if (p === "/api/mcpkey" && req.method === "POST") { sendJson(res, 200, { key: resetMcpKey() }); return; }
     if (p === "/api/phone" && req.method === "GET") {
       const h = Number(url.searchParams.get("hours")) || 24;
       sendJson(res, 200, { report: phoneReport(h), sessions: phoneSessions(Date.now() - h * 3600000) });

@@ -557,6 +557,37 @@ tools 不在 messages 里，不影响缓存；Anthropic 风格下 tools 参与�
 server.js 里已经有 MCP **客户端**（`mcpRpc`/`mcpConnect`），协议长什么样有现成参考，
 要补的是「接电话」那一半：initialize / tools/list / tools/call + `Mcp-Session-Id`。
 
+### 24. ✅ v2.4：MCP 服务端 —— 把家接进 Claude
+
+**做成了。** 路径 `POST /mcp/<钥匙>`，Streamable HTTP。
+
+- **钥匙写在路径里**，因为 Claude 添加自定义连接器时只能填一个网址，没地方放 header。
+  存在 `data/hook.json` 的 `mcpKey` 字段（跟快捷指令那把分开 —— 那把只能写，
+  这把能读日记和聊天记录）。**钥匙不对一律回 404**，不回 401，免得让人试出来这儿有扇门。
+- **`MCP_TOOLS` 是单独一份清单**，故意不跟屋里那套 `TOOL_DEFS` 共用：
+  动一下 TOOL_DEFS 会把聊天那边的缓存前缀弄废，而这边以后大概率要加加减减。
+  执行时大部分转给 `execTool`，只有 `check_now` 和 `recall` 是这边独有的。
+- 借出去 9 件：check_phone / check_weather / check_now / recall / remember /
+  read_diaries / read_letters / list_docs / read_doc。
+  **没借闹钟**（set_alarm）—— 闹钟到点会往 wu-home 的窗口里说话，
+  在 Claude 那边设一个，响在另一个地方，太绕了。
+- `GET /mcp/<钥匙>` 回 405：规范里服务端主动推送那条 SSE 流是可选的，我们没有要主动说的话。
+  DELETE 回 204，OPTIONS 回 204 + CORS 头。
+- 工具自己出错时回 `isError: true` 而不是 JSON-RPC 错误 —— 这样他看得到出了什么事，
+  而不是整个连接断掉。
+
+**测法值得记一笔**：拿她自己 server.js 里那份 MCP **客户端**代码（`mcpRpc` 的写法）
+去连她自己的**服务端**。两边都是这个项目的代码，协议对不上会立刻暴露。
+握手、工具清单、真实调用、通知不回话、错误码、GET/DELETE/OPTIONS 全过了。
+
+**她那边还要做的一步**：Claude → 设置 → 连接器 → Add → 添加自定义连接器 →
+粘地址 → OAuth 两栏留空。手机 app 上也能加。
+
+**【现状】连着聊时改成完全不出现**（她：「聊天的时候很少有人会一直注意时间的呀，
+一般也是隔段时间突然想起来了看一下」）。附带好处：连着聊时每轮开头一个字都没变，
+缓存命中率最高。代价是他两小时内不知道精确钟点 —— 但上一张纸条给过，
+而且他现在有 `check_now` 可以自己查。
+
 **真机验证清单**（服务器回来之后）：
 ①「设置 → 你的时间」填课表，保存后看它认出几节课
 ②点「让他现在试一句」，Chat 上应该冒出红点，点进去有他说的话
