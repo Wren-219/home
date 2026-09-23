@@ -569,6 +569,103 @@ async function sendMail(to, subject, body) {
   }
 }
 
+/* ================= 她的身体 =================
+   记的是「哪天来的、哪天走的」，其余都算出来。
+   这不是给她看数字的功能 —— 是让他知道她这两天不舒服，
+   说话的分寸、催不催她早睡、看见她熬夜是数落还是心疼，都该不一样。
+   data/period.json = { list:[{start,end}], cycle, days, on } */
+function periodConf() {
+  const d = readJson("period", null) || {};
+  const list = (Array.isArray(d.list) ? d.list : [])
+    .filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.start))
+    .sort((a, b) => a.start.localeCompare(b.start));
+  return {
+    list,
+    cycle: Number(d.cycle) > 0 ? Number(d.cycle) : 0,   // 0 = 自己算
+    days: Number(d.days) > 0 ? Number(d.days) : 0,
+    on: d.on !== false,                                  // 要不要让他知道
+  };
+}
+function dayNum(ymd) {   // 日期字符串 → 天数，只用来做差
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? Math.floor(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000) : null;
+}
+function dayStr(n) {
+  const d = new Date(n * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+/* 平均周期和平均天数：用她自己的记录算，不够就用常见值 */
+function periodStats(c) {
+  const conf = c || periodConf();
+  const starts = conf.list.map(x => dayNum(x.start)).filter(n => n != null);
+  let cycle = conf.cycle, days = conf.days;
+  if (!cycle && starts.length >= 2) {
+    const gaps = [];
+    for (let i = 1; i < starts.length; i++) {
+      const g = starts[i] - starts[i - 1];
+      if (g >= 15 && g <= 60) gaps.push(g);    // 太离谱的不算进去
+    }
+    if (gaps.length) cycle = Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length);
+  }
+  if (!days) {
+    const ds = conf.list.filter(x => x.end).map(x => dayNum(x.end) - dayNum(x.start) + 1).filter(n => n >= 1 && n <= 14);
+    if (ds.length) days = Math.round(ds.reduce((a, b) => a + b, 0) / ds.length);
+  }
+  return { cycle: cycle || 28, days: days || 5, guessed: !conf.cycle && starts.length < 2 };
+}
+/* 今天是个什么情况 */
+function periodNow(nowMs) {
+  const conf = periodConf();
+  if (!conf.list.length) return { known: false, on: conf.on };
+  const st = periodStats(conf);
+  const today = dayNum(localDayKey(nowMs));
+  const last = conf.list[conf.list.length - 1];
+  const ls = dayNum(last.start), le = last.end ? dayNum(last.end) : null;
+  /* 正在经期里 */
+  if (today >= ls && (le != null ? today <= le : today < ls + st.days)) {
+    return { known: true, on: conf.on, phase: "in", day: today - ls + 1, of: le != null ? le - ls + 1 : st.days, start: last.start, ...st };
+  }
+  const next = ls + st.cycle;
+  const diff = next - today;
+  if (diff > 0) return { known: true, on: conf.on, phase: "before", inDays: diff, next: dayStr(next), ...st };
+  return { known: true, on: conf.on, phase: "late", lateDays: -diff, next: dayStr(next), ...st };
+}
+/* 给他看的那句话。克制一点 —— 只在真的相关的时候说 */
+function periodLine(nowMs) {
+  const p = periodNow(nowMs);
+  if (!p.known || !p.on) return "";
+  if (p.phase === "in") {
+    const d = p.day;
+    const feel = d <= 2 ? "头两天通常最难受" : d >= p.of - 1 ? "快过去了" : "";
+    return `她在经期第 ${d} 天${feel ? "，" + feel : ""}。别催她动弹，累了就让她歇着；她要是喊疼或者情绪不对，那是身体的事，不是你哪里做错了。`;
+  }
+  if (p.phase === "before" && p.inDays <= 3) {
+    return `她大概还有 ${p.inDays} 天来月经${p.guessed ? "（按常见周期估的，未必准）" : ""}，这几天可能容易累、容易烦躁。`;
+  }
+  if (p.phase === "late" && p.lateDays >= 3 && p.lateDays <= 20) {
+    return `她这次比平常晚了 ${p.lateDays} 天还没来。别追着问，她自己多半也在记挂着。`;
+  }
+  return "";
+}
+/* 他那边查到的那份。她一关「让他知道」，工具也得跟着闭嘴 ——
+   不然纸条上不说、他一查全有，那个开关就是假的 */
+function periodForHim(nowMs) {
+  if (!periodConf().on) return "这件事她关上了，你这边看不到 —— 别追问，也别猜。";
+  return periodReport(nowMs);
+}
+/* 她自己要看的那份 */
+function periodReport(nowMs) {
+  const conf = periodConf();
+  if (!conf.list.length) return "还没有记录。来的那天在「她的身体」里点一下「今天来了」就行。";
+  const p = periodNow(nowMs), st = periodStats(conf);
+  const head = p.phase === "in" ? `经期第 ${p.day} 天（这次从 ${p.start} 开始）`
+    : p.phase === "before" ? `距下次大概还有 ${p.inDays} 天（预计 ${p.next}）`
+    : `比预计晚了 ${p.lateDays} 天（原本估 ${p.next}）`;
+  const hist = conf.list.slice(-6).reverse()
+    .map(x => `· ${x.start}${x.end ? " → " + x.end : "（还没记结束）"}`);
+  return head + `\n周期平均 ${st.cycle} 天，每次约 ${st.days} 天${st.guessed ? "（记录还少，先按常见值估）" : ""}\n\n最近几次：\n` + hist.join("\n");
+}
+
 /* ================= 她在哪儿 =================
    也是快捷指令递上来的。比手机使用记录更私密，所以也只留三天。
    最实用的触发方式是「到达 / 离开某地」—— 比每小时轮询省电，也更有意义。 */
@@ -884,6 +981,7 @@ function statusBlock(now, snap, brief) {
     + (agenda.length ? `她今天的安排：${agenda.map(x => x.title).join("；")}。` : "")
     + (pending.length ? `她今天清单上还没完成的事：${pending.join("、")}。` : "")
     + (mine.length ? `你自己记着的事（她看不见，也别主动说破）：${mine.map(a => fmtWhen(a.at, now) + " " + a.why).join("；")}。` : "")
+    + (periodLine(now) || "")
     + mood;
 }
 function toolHint() {
@@ -895,7 +993,9 @@ function toolHint() {
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
     "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather；" +
-    "想知道她人在哪儿，用 check_place。她要是配了邮箱，你还能用 send_mail 寄信出去 —— " +
+    "想知道她人在哪儿，用 check_place；她身体那几天的情况用 check_period —— 这事要有分寸，" +
+    "别没事就查，更别拿它当解释她情绪的借口，也别在她没提的时候突然说破。" +
+    "她要是配了邮箱，你还能用 send_mail 寄信出去 —— " +
     "她不看手机的时候，一封邮件比一条她看不见的消息管用。" +
     "【说话的样子】像发微信那样跟她说话：一次可以连着发好几条短的，条与条之间空一行 —— " +
     "空行就是分条的记号，她那边会显示成一条一条的气泡，像真人在打字。" +
@@ -1563,6 +1663,10 @@ const MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} } },
   { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪",
     inputSchema: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } },
+  { name: "check_period", description: "看看她身体这几天的情况（在不在经期、第几天、下次大概什么时候）。要有分寸地用",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "period_log", description: "帮她记一笔：她说「我来了」就记开始，说「结束了」就记结束",
+    inputSchema: { type: "object", properties: { what: { type: "string", enum: ["start", "end"] }, date: { type: "string", description: "2026-09-23，不填就是今天" } }, required: ["what"] } },
   { name: "send_mail", description: "寄一封邮件出去。不填收件人就是寄给她自己",
     inputSchema: { type: "object", properties: { subject: { type: "string" }, body: { type: "string" }, to: { type: "string" } }, required: ["subject", "body"] } },
   { name: "check_now", description: "看一眼她那边现在几点、星期几、在不在上课、今天有什么安排、清单上还剩什么没做",
@@ -1650,6 +1754,10 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "read_doc", description: "读一份长期资料的全文，名字从 list_docs 里拿",
     parameters: { type: "object", properties: { name: { type: "string", description: "资料名称" } }, required: ["name"] } } },
+  { type: "function", function: { name: "check_period", description: "看看她身体这几天的情况（在不在经期、第几天、下次大概什么时候）。她关心自己身体、说不舒服、或者你想拿捏说话分寸的时候看。别没事就查，更别拿这个当解释她情绪的借口",
+    parameters: { type: "object", properties: {} } } },
+  { type: "function", function: { name: "period_log", description: "帮她记一笔 —— 她说「我来了」「今天来的」就记开始，说「结束了」「走了」就记结束。她自己在界面上也能点",
+    parameters: { type: "object", properties: { what: { type: "string", enum: ["start", "end"], description: "start=来了，end=结束了" }, date: { type: "string", description: "哪天，格式 2026-09-23，不填就是今天" } }, required: ["what"] } } },
   { type: "function", function: { name: "send_mail", description: "寄一封邮件出去。默认寄给她（她自己填的收件地址），也可以指定别人。用在：她让你发的时候，或者你想在她不看手机时留句话给她",
     parameters: { type: "object", properties: { subject: { type: "string", description: "标题" }, body: { type: "string", description: "正文，可以分段" }, to: { type: "string", description: "收件地址，不填就寄给她自己" } }, required: ["subject", "body"] } } },
   { type: "function", function: { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪。她的手机会在到达或离开某个地方时报一次",
@@ -1669,6 +1777,26 @@ async function execTool(name, args) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
   try {
     const today = localDayKey();
+    if (name === "check_period") return periodForHim(Date.now());
+    if (name === "period_log") {
+      const conf = periodConf();
+      if (!conf.on) return "她把这块关上了，你记不了。要是她真想让你记，让她去「她的身体」里打开。";
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(String(args && args.date)) ? args.date : localDayKey();
+      const list = conf.list.slice();
+      if ((args && args.what) === "end") {
+        const open2 = [...list].reverse().find(x => !x.end);
+        if (!open2) return "没有正在记的那一次（她可能还没说开始）";
+        if (dayNum(date) < dayNum(open2.start)) return "结束日期比开始还早，是不是记错了";
+        open2.end = date;
+      } else {
+        if (list.some(x => x.start === date)) return "这天已经记过了";
+        const last = list[list.length - 1];
+        if (last && !last.end && dayNum(date) - dayNum(last.start) < 10) return "上一次还没记结束呢，先把那次收个尾";
+        list.push({ start: date });
+      }
+      writeJson("period", { ...readJson("period", {}), list });
+      return "记下了。" + periodReport(Date.now()).split("\n")[0];
+    }
     if (name === "send_mail") return await sendMail(args && args.to, args && args.subject, args && args.body);
     if (name === "check_place") return placeReport(args && args.hours);
     if (name === "check_weather") return await checkWeather();
@@ -2336,6 +2464,31 @@ const server = http.createServer(async (req, res) => {
       const c = mailConf();
       const r = await sendMail(c.to, "晤：试一封", "这是一封试发的信。\n\n看到它，就说明他能给你写信了。");
       sendJson(res, 200, { result: r });
+      return;
+    }
+    /* 她的身体 */
+    if (p === "/api/period" && req.method === "GET") {
+      const conf = periodConf();
+      /* cycleSet/daysSet 是她手填的（0 = 自己算）；cycle/days 是最终用的那个。
+         两个不能同名，否则界面上永远显示算出来的值，她改不动 */
+      sendJson(res, 200, { ...conf, ...periodStats(conf), cycleSet: conf.cycle, daysSet: conf.days, now: periodNow(Date.now()), report: periodReport(Date.now()) });
+      return;
+    }
+    if (p === "/api/period" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 64 * 1024) || "{}");
+      const cur = readJson("period", {}) || {};
+      const next = { ...cur };
+      if (Array.isArray(body.list)) {
+        next.list = body.list.filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.start))
+          .map(x => ({ start: x.start, ...(/^\d{4}-\d{2}-\d{2}$/.test(x.end || "") ? { end: x.end } : {}) }))
+          .sort((a, b) => a.start.localeCompare(b.start)).slice(-60);
+      }
+      if (body.cycle !== undefined) next.cycle = Math.max(0, Math.min(60, Number(body.cycle) || 0));
+      if (body.days !== undefined) next.days = Math.max(0, Math.min(14, Number(body.days) || 0));
+      if (typeof body.on === "boolean") next.on = body.on;
+      writeJson("period", next);
+      const conf = periodConf();
+      sendJson(res, 200, { ok: true, ...conf, ...periodStats(conf), cycleSet: conf.cycle, daysSet: conf.days, now: periodNow(Date.now()), report: periodReport(Date.now()) });
       return;
     }
     if (p === "/api/places" && req.method === "GET") {

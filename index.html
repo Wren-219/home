@@ -114,6 +114,15 @@
   }
   .tab svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   .tab.active { color: var(--blue-deep); }
+  /* 她的身体那一页 */
+  .per-now { font-family: var(--serif); font-size: 30px; line-height: 1.35; margin: 6px 2px 0; color: var(--ink); }
+  .per-sub { font-size: 13px; color: var(--ink-soft); margin: 8px 2px 0; line-height: 1.7; }
+  .per-row { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px dashed rgba(168,178,196,.3); font-size: 13px; }
+  .per-row:last-child { border-bottom: none; }
+  .per-row .d { flex: 1; }
+  .per-row .n { color: var(--ink-faint); font-size: 12px; }
+  .per-row button { border: none; background: none; color: var(--ink-faint); font-size: 12px; cursor: pointer; padding: 4px 6px; }
+
   /* 晤在你不在的时候说了话 —— Chat 上点一颗小红点 */
   .tab { position: relative; }
   .tab-dot {
@@ -1127,6 +1136,11 @@
           <div class="btn-row"><button class="btn" onclick="openSub('phone')">手机联动</button></div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">她的身体<span class="en">CYCLE</span></div>
+          <div class="set-note" id="perBrief">记一下那几天 —— 他会知道该轻着点</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('period')">打开</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">你的时间<span class="en">SCHEDULE</span></div>
           <div class="set-note" id="quietBrief">课表、勿扰时段 —— 晤想主动找你之前会先看这里</div>
           <div class="btn-row"><button class="btn" onclick="openSub('quiet')">课表与勿扰</button></div>
@@ -1142,7 +1156,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.8（不再出现三个 App 同时开着 —— 前台只有一个）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v2.9（「她的身体」—— 他会知道该轻着点）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1261,6 +1275,55 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-period">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('period')">‹ 返回</button>
+        <div class="sp-title">她的身体</div>
+        <button class="sp-act" onclick="perRefresh()">刷新</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="per-now" id="perNow">…</div>
+        <div class="per-sub" id="perSub"></div>
+        <div class="btn-row" style="margin-top:20px">
+          <button class="btn" onclick="perLog('start')">今天来了</button>
+          <button class="btn ghost" onclick="perLog('end')">结束了</button>
+        </div>
+        <div class="set-note" style="margin:10px 2px 0">
+          也可以直接跟他说「我来了」「结束啦」，他会替你记。
+        </div>
+
+        <div class="set-card" style="margin-top:18px">
+          <div class="set-card-title">记录<span class="en">LOG</span></div>
+          <div id="perList"></div>
+        </div>
+
+        <div class="set-card">
+          <div class="set-card-title">怎么算的<span class="en">SETTINGS</span></div>
+          <div class="set-note" id="perStat" style="margin-bottom:10px"></div>
+          <div class="cd-form" style="display:block">
+            <div class="row">
+              <span class="lb" style="flex:1;font-size:13px">周期（天，留 0 就自己算）</span>
+              <input type="number" id="perCycle" min="0" max="60" style="flex:0 0 64px;width:64px;text-align:center">
+            </div>
+            <div class="row">
+              <span class="lb" style="flex:1;font-size:13px">每次持续（天，0 同上）</span>
+              <input type="number" id="perDays" min="0" max="14" style="flex:0 0 64px;width:64px;text-align:center">
+            </div>
+            <div class="sw-row">
+              <span class="lb">让他知道</span>
+              <button class="sw" id="perOn" onclick="perToggle()"></button>
+            </div>
+          </div>
+          <div class="btn-row"><button class="btn" onclick="perSave()">保存</button></div>
+          <div class="set-note" style="margin-top:10px">
+            关掉「让他知道」之后，他那边就一个字都看不到了，但你自己还能在这儿查。<br>
+            他被交代过分寸：不主动说破、不拿这个解释你的情绪。
+          </div>
+        </div>
+        <div style="height:30px"></div>
+      </div>
+    </section>
+
     <section class="subpage" id="page-mail">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('mail')">‹ 返回</button>
@@ -1958,6 +2021,7 @@ var quietCur = null;                                     /* 课表与勿扰 */
 var hookCur = null;                                      /* 手机联动的钥匙 */
 var mcpKeyCur = null;                                    /* 接进 Claude 的那把钥匙 */
 var mailCur = null;                                      /* 邮箱设置 */
+var perCur = null;                                       /* 她的身体 */
 var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
 
 /* ================= 工具 ================= */
@@ -2122,7 +2186,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -2150,6 +2214,7 @@ function openSub(name) {
   if (name === "phone") phoneRefresh();
   if (name === "connect") mcpKeyRefresh();
   if (name === "mail") mailRefresh();
+  if (name === "period") perRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -4064,6 +4129,100 @@ async function phoneClear() {
   if (!confirm("把这三天的手机记录都清掉？")) return;
   try { await fetch("api/phone", { method: "DELETE" }); toast("清干净了"); phoneRefresh(); }
   catch { toast("没清掉"); }
+}
+
+/* ================= 她的身体 ================= */
+function perToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+async function perRefresh() {
+  try {
+    const p = await (await fetch("api/period")).json();
+    perCur = p;
+    const now = p.now || {};
+    const big = document.getElementById("perNow"), sub = document.getElementById("perSub");
+    if (!now.known) {
+      big.textContent = "还没记过";
+      sub.textContent = "来的那天点一下下面的「今天来了」，记两三次之后他就能估出你的周期。";
+    } else if (now.phase === "in") {
+      big.innerHTML = `第 <span style="color:var(--coral)">${now.day}</span> 天`;
+      sub.textContent = `这次从 ${now.start} 开始` + (now.day <= 2 ? " · 头两天，别硬撑" : "");
+    } else if (now.phase === "before") {
+      big.innerHTML = `还有 <span style="color:var(--blue-deep)">${now.inDays}</span> 天`;
+      sub.textContent = `预计 ${now.next}` + (p.guessed ? "（记录还少，先按常见周期估的）" : "");
+    } else {
+      big.innerHTML = `晚了 <span style="color:var(--blue-deep)">${now.lateDays}</span> 天`;
+      sub.textContent = `原本估 ${now.next}。晚几天很常见，别太担心。`;
+    }
+    document.getElementById("perCycle").value = p.cycleSet || "";
+    document.getElementById("perDays").value = p.daysSet || "";
+    document.getElementById("perOn").classList.toggle("on", p.on !== false);
+    const st = document.getElementById("perStat");
+    if (st) st.textContent = `周期平均 ${p.cycle} 天，每次约 ${p.days} 天` + (p.guessed ? "（记录还少，先按常见值估）" : "（按你自己的记录算的）");
+    renderPerList(p.list || []);
+    const b = document.getElementById("perBrief");
+    if (b) b.textContent = !now.known ? "记一下那几天 —— 他会知道该轻着点"
+      : now.phase === "in" ? `经期第 ${now.day} 天`
+      : now.phase === "before" ? `距下次还有 ${now.inDays} 天`
+      : `比预计晚了 ${now.lateDays} 天`;
+  } catch (e) { noteError("她的身体", e); }
+}
+function renderPerList(list) {
+  const el = document.getElementById("perList");
+  if (!el) return;
+  if (!list.length) { el.innerHTML = '<div class="set-note" style="padding:6px 2px">还没有记录。</div>'; return; }
+  el.innerHTML = list.slice().reverse().map((x, i) => {
+    const n = x.end ? Math.round((new Date(x.end) - new Date(x.start)) / 86400000) + 1 : 0;
+    return `<div class="per-row">
+      <span class="d">${x.start}${x.end ? " → " + x.end : ""}</span>
+      <span class="n">${n ? n + " 天" : "还没记结束"}</span>
+      <button onclick="perDel(${list.length - 1 - i})">删掉</button>
+    </div>`;
+  }).join("");
+}
+async function perPut(body) {
+  try {
+    const r = await fetch("api/period", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    perRefresh();
+    return true;
+  } catch (e) { toast("没存上：" + String(e.message || e).slice(0, 30)); return false; }
+}
+async function perLog(what) {
+  const list = (perCur && perCur.list ? perCur.list.slice() : []);
+  const today = perToday();
+  if (what === "end") {
+    const open2 = [...list].reverse().find(x => !x.end);
+    if (!open2) { toast("还没有正在记的那一次"); return; }
+    open2.end = today;
+    if (await perPut({ list })) toast("记下了，好好歇着");
+  } else {
+    if (list.some(x => x.start === today)) { toast("今天已经记过啦"); return; }
+    const last = list[list.length - 1];
+    if (last && !last.end) {
+      if (!confirm("上一次还没记结束。确定要开始新的一次吗？")) return;
+    }
+    list.push({ start: today });
+    if (await perPut({ list })) toast("记下了。这两天别逞强");
+  }
+}
+async function perDel(i) {
+  const list = (perCur && perCur.list ? perCur.list.slice() : []);
+  if (!list[i]) return;
+  if (!confirm(`删掉 ${list[i].start} 那一次？`)) return;
+  list.splice(i, 1);
+  if (await perPut({ list })) toast("删了");
+}
+async function perSave() {
+  const g = id => Number((document.getElementById(id) || {}).value) || 0;
+  if (await perPut({ cycle: g("perCycle"), days: g("perDays"), on: perCur ? perCur.on !== false : true })) toast("存好了");
+}
+function perToggle() {
+  if (!perCur) perCur = {};
+  perCur.on = perCur.on === false;
+  document.getElementById("perOn").classList.toggle("on", perCur.on !== false);
+  perPut({ on: perCur.on });
 }
 
 /* ================= 写信出去（SMTP） ================= */
