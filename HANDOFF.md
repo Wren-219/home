@@ -898,3 +898,41 @@ Tavily 多给一个 `answer`，提到列表最前面当「一句话答案」。
 它就把自己也匹配上，然后自杀（exit 144）。写进 heredoc 里也一样，
 因为 heredoc 文本也在命令行上。最后改成**按端口杀**（`fuser -n tcp 8081`），
 名字一个字都不提，才算干净。
+
+### 33. ✅ v3.3：她问「换了 Claude 去哪看开没开思考」—— 结果是根本换不了
+
+回答这个问题的时候去查了一下，发现 **Claude 那条路上有一个会让一切都跑不起来的硬伤**。
+
+`toAnthropic()` 的返回值里硬编码着：
+
+```js
+model: api.model, max_tokens: 1024, temperature: 0.8, stream: true,
+```
+
+**`temperature` 从 Opus 4.7 起就被移除了**（Opus 5 / Opus 5.5 / Sonnet 5 /
+Fable 5 都算），`temperature` / `top_p` / `top_k` 发过去**直接 400**。
+
+也就是说：她只要把 wu-home 的聊天模型换成任何一个当代 Claude，
+**一句话都说不出来**。这个坑从写下 Anthropic 方言翻译那天起就埋着，
+一直没人踩到，因为她一直用 DeepSeek。
+
+修：anthropic 方言下一律不发 `temperature`（`llmAsRaw` 里也 `delete` 一道 ——
+那儿会覆写 body）。不发就用模型自己的默认值，聊天完全够用。
+
+**顺带把思考接上了**。加了一个 per-API 的 `think` 开关（只对 anthropic 方言显示）：
+
+```js
+thinking: { type: "adaptive", display: "summarized" }
+```
+
+两个都不能少：
+- `adaptive` —— 深浅让他自己定，不用 `budget_tokens`（那个也被移除了，发了同样 400）
+- **`display: "summarized"` 必须显式写** —— 默认是 `"omitted"`，
+  那样 thinking 块会是空的，v3.2 做的那套界面会一个字都收不到
+
+`max_tokens` 也跟着调：不开思考 2048（原来 1024 偏小），开思考 8192 ——
+想的那一段也吃输出额度。唤醒那条路本来只给 400，开了思考会被截在半路，
+所以 `llmAsRaw` 里给它抬到至少 4096。
+
+**测**（`ta.js` + 一个学真服务器脾气的假 Claude —— **收到 temperature 就回 400**）：
+14 条断言，覆盖聊天和唤醒两条路、开思考和不开思考两种情况。

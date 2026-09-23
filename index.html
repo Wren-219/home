@@ -1193,7 +1193,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.2（看得见他在想什么了）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.3（Claude 模型终于能用了 · 那个 temperature 是坑）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1683,10 +1683,18 @@
           <div class="row"><input type="password" id="afKey" placeholder="API Key" autocomplete="off"></div>
           <div class="row"><input type="text" id="afModel" placeholder="模型名，如 deepseek-chat"></div>
           <div class="row">
-            <select id="afDialect">
+            <select id="afDialect" onchange="afThinkSync()">
               <option value="openai">OpenAI 格式（DeepSeek / 中转站 / 绝大多数）</option>
               <option value="anthropic">Anthropic 格式（Claude 官方）</option>
             </select>
+          </div>
+          <div class="sw-row" id="afThinkRow" style="display:none">
+            <span class="lb">让他先想一想</span>
+            <button class="sw" id="afThink" onclick="this.classList.toggle('on')"></button>
+          </div>
+          <div class="set-note" id="afThinkNote" style="display:none;margin:-4px 2px 10px">
+            Claude 开口前先想一段（adaptive，深浅他自己定）。
+            聊天界面里能看到那段想法，也能关掉不看。想的那部分也算输出 token。
           </div>
           <div style="font-size:11px;color:var(--ink-faint);margin:2px 2px 8px">价格（每百万 token，留空按 0 算）</div>
           <div class="row">
@@ -3785,7 +3793,7 @@ async function apiRefresh() {
         ${a.isChat ? '<span class="tag">聊天</span>' : ""}
         ${a.isWorker ? '<span class="tag w">干活</span>' : ""}
       </div>
-      <div class="sub"><span class="mo"></span> · ${a.keyMask || "没填 Key"} · ${a.dialect === "anthropic" ? "Anthropic 格式" : "OpenAI 格式"}</div>
+      <div class="sub"><span class="mo"></span> · ${a.keyMask || "没填 Key"} · ${a.dialect === "anthropic" ? "Anthropic 格式" : "OpenAI 格式"}${a.think ? " · 会先想一想" : ""}</div>
       <div class="sub">入 ${a.price.in} / 出 ${a.price.out} / 缓存读 ${a.price.cacheRead}　${a.price.unit || "元"}每百万</div>
     </div>`).join("");
   el.querySelectorAll(".nm").forEach((n, i) => n.textContent = apiConf.list[i].name);
@@ -3814,6 +3822,8 @@ function apiNew() {
   ["afName", "afBase", "afKey", "afModel", "afIn", "afOut", "afCR", "afCW"].forEach(i => document.getElementById(i).value = "");
   document.getElementById("afUnit").value = "元";
   document.getElementById("afDialect").value = "openai";
+  document.getElementById("afThink").classList.remove("on");
+  afThinkSync();
   document.getElementById("afKey").placeholder = "API Key";
   document.getElementById("afDel").style.display = "none";
   apiFormShow();
@@ -3828,6 +3838,8 @@ function apiEdit(id) {
   document.getElementById("afKey").placeholder = "留空 = 不改动（当前 " + (a.keyMask || "未填") + "）";
   document.getElementById("afModel").value = a.model;
   document.getElementById("afDialect").value = a.dialect;
+  document.getElementById("afThink").classList.toggle("on", a.think === true);
+  afThinkSync();
   document.getElementById("afIn").value = a.price.in || "";
   document.getElementById("afOut").value = a.price.out || "";
   document.getElementById("afCR").value = a.price.cacheRead || "";
@@ -3836,12 +3848,20 @@ function apiEdit(id) {
   document.getElementById("afDel").style.display = "";
   apiFormShow();
 }
+/* 「先想一想」只有 Claude 那条路有得选 —— OpenAI 格式那边，
+   会不会想是模型自己定的（deepseek-reasoner 会，deepseek-chat 不会） */
+function afThinkSync() {
+  const on = document.getElementById("afDialect").value === "anthropic";
+  document.getElementById("afThinkRow").style.display = on ? "" : "none";
+  document.getElementById("afThinkNote").style.display = on ? "" : "none";
+}
 function apiCancel() { document.getElementById("apiForm").style.display = "none"; afCur = null; }
 function apiBody() {
   const v = id => document.getElementById(id).value.trim();
   return {
     name: v("afName") || "未命名", base: v("afBase"), key: v("afKey"), model: v("afModel"),
     dialect: document.getElementById("afDialect").value,
+    think: document.getElementById("afThink").classList.contains("on"),
     price: { in: +v("afIn") || 0, out: +v("afOut") || 0, cacheRead: +v("afCR") || 0, cacheWrite: +v("afCW") || 0, unit: v("afUnit") || "元" },
   };
 }

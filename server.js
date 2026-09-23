@@ -185,6 +185,9 @@ function newApi(d, keep) {
     key: (d.key && String(d.key).trim()) ? String(d.key).trim() : (keep ? keep.key : ""),
     model: String(d.model || "").trim().slice(0, 80),
     dialect: d.dialect === "anthropic" ? "anthropic" : (d.dialect === "openai" ? "openai" : guessDialect(d.base)),
+    /* 只对 Claude 有意义：让他开口前先想一段。DeepSeek 那边会不会想
+       是模型自己定的（deepseek-reasoner 会，deepseek-chat 不会），没得配 */
+    think: d.think === true,
     price,
     created: (keep && keep.created) || new Date().toISOString(),
   };
@@ -210,6 +213,7 @@ function activeApi(role) {
 function publicApi(a, conf) {
   return {
     id: a.id, name: a.name, base: a.base, model: a.model, dialect: a.dialect,
+    think: a.think === true,
     keyMask: maskKey(a.key), hasKey: !!a.key, price: a.price,
     isChat: conf.chat === a.id, isWorker: conf.worker === a.id,
   };
@@ -1464,8 +1468,19 @@ function toAnthropic(msgs, api, tools) {
     }
     break;
   }
+  /* ⚠️ temperature 绝对不能发给 Claude。
+     Opus 4.7 起（Opus 5 / Sonnet 5 / Fable 5 都算）temperature / top_p / top_k
+     全被移除了，发过去直接 400。这里原本硬编码着 temperature: 0.8 ——
+     等于她只要把聊天模型换成新的 Claude，一句话都说不出来。
+     不发就用模型自己的默认值，对聊天完全够用。
+     thinking 也在这儿开：adaptive 让他自己决定想多深；
+     display 必须显式写 summarized —— 默认是 omitted，
+     那样 thinking 块会是空的，她那边什么都看不到。 */
+  const think = api.think === true;
   return {
-    model: api.model, max_tokens: 1024, temperature: 0.8, stream: true,
+    model: api.model, stream: true,
+    max_tokens: think ? 8192 : 2048,
+    ...(think ? { thinking: { type: "adaptive", display: "summarized" } } : {}),
     ...(sys.length ? { system: sys } : {}),
     messages: out,
     ...(tools ? { tools: tools.map(t => ({
@@ -1524,8 +1539,10 @@ async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3, tool
   const api = activeApi(role);
   if (!api.key) throw new Error("没有可用的模型（" + role + "）");
   const req = upstreamReq(api, messages, tools, false);
-  req.body.max_tokens = maxTokens;
-  req.body.temperature = temperature;
+  /* 开了思考的话，想的那一段也吃输出额度 —— 按 400 给会被截在半路 */
+  req.body.max_tokens = (api.dialect === "anthropic" && api.think) ? Math.max(maxTokens, 4096) : maxTokens;
+  if (api.dialect === "anthropic") delete req.body.temperature;   /* 同上：发了就 400 */
+  else req.body.temperature = temperature;
   const resp = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
   if (!resp.ok) throw new Error("LLM HTTP " + resp.status + "：" + (await resp.text()).slice(0, 160));
   const j = await resp.json();
