@@ -4249,6 +4249,7 @@ async function searchRefresh() {
     const st = document.getElementById("searchStat");
     st.textContent = !c.hasKey ? "还没配钥匙 —— 他那边看不到「上网」这两件工具。"
       : c.on === false ? "钥匙存着，但你把上网关掉了。"
+      : c.fromEnv ? "配好了 —— 这把钥匙来自 Zeabur 的环境变量。在这儿填一把新的就以新的为准。"
       : "配好了。他现在能自己上网查东西。";
     const b = document.getElementById("searchBrief");
     if (b) b.textContent = c.ready ? "已配好（" + (c.vendors.find(v => v.id === c.vendor) || {}).label + "）—— 他能自己上网了"

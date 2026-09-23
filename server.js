@@ -10,6 +10,9 @@
  *   WU_PERSONA                         选填，晤的人设（覆盖默认）
  *   WU_PIN                             选填，四位页面密码；设了就以它为准（忘记密码时的后门），
  *                                      不设则用 data/auth.json 里的，默认 0527
+ *   WU_SEARCH_KEY                      选填，搜索服务的 API Key；界面上填过就以界面的为准，
+ *                                      这条是给「前端打不开、但想让他能上网」时兜底的
+ *   WU_SEARCH_VENDOR                   选填，tavily / brave / bocha，默认 tavily
  *   DATA_DIR                           选填，数据目录；Zeabur 挂载 /app/data 时自动使用
  *   HISTORY_BUDGET                     选填，每轮送给模型的聊天历史额度（token），默认 30000
  *   PORT                               选填，默认 8080
@@ -808,10 +811,15 @@ const SEARCH_VENDORS = {
   brave:  { label: "Brave",  home: "https://brave.com/search/api/", note: "每月 2000 次免费，注册要验证卡；服务器在海外" },
   bocha:  { label: "博查",   home: "https://open.bochaai.com", note: "国内的，直连不用绕；按次计费，很便宜" },
 };
+/* 钥匙也能从环境变量来 —— 前端打不开的时候（比如平台在闹脾气），
+   在 Zeabur 的环境变量里填一次照样能用。存盘的优先，环境变量兜底 */
+const ENV_SEARCH_KEY = (process.env.WU_SEARCH_KEY || "").trim();
+const ENV_SEARCH_VENDOR = (process.env.WU_SEARCH_VENDOR || "").trim();
 function searchConf() {
   const d = readJson("search", null) || {};
-  const vendor = SEARCH_VENDORS[d.vendor] ? d.vendor : "tavily";
-  return { vendor, key: String(d.key || ""), on: d.on !== false };
+  const vendor = SEARCH_VENDORS[d.vendor] ? d.vendor
+    : SEARCH_VENDORS[ENV_SEARCH_VENDOR] ? ENV_SEARCH_VENDOR : "tavily";
+  return { vendor, key: String(d.key || "") || ENV_SEARCH_KEY, on: d.on !== false, fromEnv: !d.key && !!ENV_SEARCH_KEY };
 }
 function searchReady() { const c = searchConf(); return !!(c.on && c.key); }
 
@@ -2552,7 +2560,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/search" && req.method === "GET") {
       const c = searchConf();
       sendJson(res, 200, {
-        on: c.on, vendor: c.vendor, hasKey: !!c.key, ready: searchReady(),
+        on: c.on, vendor: c.vendor, hasKey: !!c.key, ready: searchReady(), fromEnv: c.fromEnv,
         vendors: Object.keys(SEARCH_VENDORS).map(k => ({ id: k, ...SEARCH_VENDORS[k] })),
       });
       return;
