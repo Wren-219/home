@@ -12,6 +12,7 @@ const GOOD = {
   check_place: { hours: 6 }, check_weather: {}, check_phone: { hours: 3 },
   set_alarm: { at: '+90', why: '她说回家再说' }, cancel_alarm: { why: '回家' },
   remember: { content: '她喜欢柠檬塔', type: '喜好', importance: 3, tags: ['甜点'] },
+  send_voice: { text: '（小声）晚安' }, call_her: { why: '想听你声音' },
 };
 const WEIRD = [{}, { text: null, title: 123, content: ['x'], box: 'zzz', what: 'maybe', at: '明年', url: 'javascript:1', hours: 'abc', limit: -5, name: '../../etc/passwd', query: '', importance: 99, type: '不存在', tags: 'notarray' }];
 (async () => {

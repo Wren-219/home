@@ -990,6 +990,160 @@ async function readWeb(url) {
   }
 }
 
+/* ================= 拼一轮对话要发给他的全部内容 =================
+   聊天和打电话共用这一个出口：同一个人设、同一份工具说明、同一段历史，
+   前缀逐字相同，缓存才接得上。extraNote 是这一轮额外要让他知道的事
+   （比如「你们在打电话」），跟记忆和现状一起放在历史后面，不动前缀。 */
+function prepTurn(payload, extraNote) {
+  const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"))
+    .map(m => ({ role: m.role, content: String(m.content == null ? "" : m.content),
+      ...(m.role === "user" && cleanImgs(m.imgs).length ? { imgs: cleanImgs(m.imgs) } : {}) }));
+  if (!raw.length) return null;
+  /* 按额度而不是条数截断：短消息能留几百条。图先挑出最近那几张，再算额度 */
+  const history = budgetHistory(liveImages(raw), HISTORY_BUDGET);
+  const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
+
+  /* 驱动引擎：时间流逝对所有窗口都算，但只有绑定窗口里的话会推动他的心情 */
+  const now0 = Date.now();
+  const bound = boundWindow();
+  const winId = payload.windowId ? String(payload.windowId) : null;
+  const isBound = !bound || !winId || bound === winId;   // 没设过绑定就一律算数
+  const dr = tickDrives(loadDrives(), now0);
+  if (isBound) driveEvent(dr, lastUser, now0);
+  saveDrives(dr);
+  const snap = driveSnapshot(dr, now0);
+
+  const memBlock = memBlockOf(lastUser);
+  /* 距上一句超过半小时，才把完整的近况摆给他；连着聊就只报个钟点 */
+  const prevTs = Number(payload.prevTs) || 0;
+  const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 2 * 3600000);
+  const TOOL_HINT = toolHint();
+
+  /* ---- 缓存友好的摆法 ----
+     缓存是「从头逐字比对，一处变了后面全废」。所以：
+       稳定的排前面：人设 → 工具说明 → 基本资料（她改一次才变一次）→ 聊天历史（只往后追加）
+       每轮都变的排后面：当轮检索到的记忆卡 + 现状，插在她最新那句话之前
+     这样能命中缓存的前缀会随着聊天一起变长，聊得越久省得越多。 */
+  const alwaysBlock = alwaysDocsBlock();
+  const volatileBlock = [memBlock, status, extraNote].filter(Boolean).join("\n\n");
+  const messages = [
+    { role: "system", content: persona() },
+    { role: "system", content: TOOL_HINT },
+    ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
+    ...history,
+  ];
+  if (volatileBlock) {
+    let at = messages.length;
+    for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === "user") { at = i; break; }
+    messages.splice(at, 0, { role: "system", content: volatileBlock, wuVolatile: true });
+  }
+  return { messages, lastUser };
+}
+
+/* ================= 他的声音（ElevenLabs） =================
+   她跟他之前在 ElevenLabs 上做过一个声音。这里借它来：
+     · 说：他发语音、打电话时开口（text-to-speech）
+     · 听：她发的语音、电话里说的话，转成文字给他（speech-to-text，Scribe）
+   听写是另一个服务在做，他收到的就是一段字，跟她打字发过来一样 —— 不加他的活。
+
+   钥匙跟别的一样：只进不出；也能走环境变量（WU_ELEVEN_KEY / WU_ELEVEN_VOICE），
+   前端打不开的时候照样能配。
+   ⚠️ 按字数收费，所以跟唤醒一样有一道闸：每天最多念多少字，超了他就改回打字。 */
+const ELEVEN = "https://api.elevenlabs.io";
+const ENV_ELEVEN_KEY = (process.env.WU_ELEVEN_KEY || "").trim();
+const ENV_ELEVEN_VOICE = (process.env.WU_ELEVEN_VOICE || "").trim();
+const VOICE_MODELS = ["eleven_multilingual_v2", "eleven_v3", "eleven_flash_v2_5", "eleven_turbo_v2_5"];
+function voiceConf() {
+  const d = readJson("voice", null) || {};
+  const pick = (v, dft) => VOICE_MODELS.includes(v) ? v : dft;
+  return {
+    key: String(d.key || "") || ENV_ELEVEN_KEY,
+    voiceId: String(d.voiceId || "").trim() || ENV_ELEVEN_VOICE,
+    msgModel: pick(d.msgModel, "eleven_multilingual_v2"),   // 语音消息：音质优先
+    callModel: pick(d.callModel, "eleven_flash_v2_5"),      // 打电话：快优先
+    on: d.on !== false,             // 让他能发语音
+    callOn: d.callOn !== false,     // 让他能打电话
+    dayCap: Math.max(0, Number(d.dayCap) || 6000),          // 每天最多念多少字
+    fromEnv: !d.key && !!ENV_ELEVEN_KEY,
+  };
+}
+function voiceReady() { const c = voiceConf(); return !!(c.key && c.voiceId); }
+function voiceLog() {
+  const d = readJson("voicelog", null) || {};
+  const all = d.allTime || { chars: 0, sttSec: 0 };
+  if (d.day === localDayKey()) return { chars: 0, sttSec: 0, ...d, allTime: all };
+  return { day: localDayKey(), chars: 0, sttSec: 0, allTime: all };
+}
+function bumpVoice(chars, sttSec) {
+  const v = voiceLog();
+  writeJson("voicelog", { day: v.day, chars: v.chars + (chars || 0), sttSec: v.sttSec + (sttSec || 0),
+    allTime: { chars: v.allTime.chars + (chars || 0), sttSec: v.allTime.sttSec + (sttSec || 0) } });
+}
+/* 他说话爱带「（小声）」「（假装吃醋地哼了一声）」—— 念出来会很怪。
+   念的时候跳过括号里的动作，文字记录里照样留着 */
+function speakable(text) {
+  return String(text || "")
+    .replace(/（[^）]{0,40}）|\([^)]{0,40}\)|【[^】]{0,40}】|\*[^*]{1,40}\*/g, "")
+    .replace(/\n{2,}/g, "\n").replace(/[ \t]+/g, " ").trim();
+}
+/* 说：返回 { buf, mime, chars }。超了今天的闸就返回 { capped: true } */
+async function tts(text, { model, format } = {}) {
+  const c = voiceConf();
+  if (!c.key || !c.voiceId) throw new Error("还没配声音");
+  const say = speakable(text).slice(0, 1500);
+  if (!say) return { empty: true };
+  if (voiceLog().chars + say.length > c.dayCap) return { capped: true };
+  const url = ELEVEN + "/v1/text-to-speech/" + encodeURIComponent(c.voiceId) + "?output_format=" + (format || "mp3_44100_128");
+  const r = await fetch(url, {
+    method: "POST", signal: AbortSignal.timeout(30000),
+    headers: { "xi-api-key": c.key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+    body: JSON.stringify({ text: say, model_id: model || c.msgModel }),
+  });
+  if (!r.ok) throw new Error("ElevenLabs 说话失败（HTTP " + r.status + "）：" + (await r.text()).slice(0, 120));
+  const buf = Buffer.from(await r.arrayBuffer());
+  bumpVoice(say.length, 0);
+  return { buf, mime: (r.headers.get("content-type") || "audio/mpeg").split(";")[0], chars: say.length };
+}
+/* 听：她的一段录音 → 文字。secs 用来记账（Scribe 按时长收费） */
+async function stt(buf, mime, secs) {
+  const c = voiceConf();
+  if (!c.key) throw new Error("还没配声音");
+  const ext = /mp4|m4a|aac/.test(mime) ? "m4a" : /webm/.test(mime) ? "webm" : /ogg/.test(mime) ? "ogg" : /wav/.test(mime) ? "wav" : "mp3";
+  const fd = new FormData();
+  fd.append("model_id", "scribe_v2");
+  fd.append("tag_audio_events", "false");
+  fd.append("file", new Blob([buf], { type: mime || "audio/mp4" }), "voice." + ext);
+  const r = await fetch(ELEVEN + "/v1/speech-to-text", {
+    method: "POST", signal: AbortSignal.timeout(30000), headers: { "xi-api-key": c.key }, body: fd,
+  });
+  if (!r.ok) throw new Error("ElevenLabs 听写失败（HTTP " + r.status + "）：" + (await r.text()).slice(0, 120));
+  const j = await r.json();
+  bumpVoice(0, Math.max(1, Math.round(Number(secs) || 0)));
+  return String(j.text || "").trim();
+}
+const AUDIO_EXT = { "audio/mpeg": ".mp3", "audio/mp3": ".mp3", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a", "audio/aac": ".aac",
+  "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/webm": ".webm", "audio/ogg": ".ogg" };
+function saveAudio(buf, mime) {
+  const ext = AUDIO_EXT[String(mime || "").split(";")[0]] || ".mp3";
+  const fname = Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex") + ext;
+  fs.writeFileSync(path.join(UPLOAD_DIR, fname), buf);
+  return "/files/" + fname;
+}
+/* mp3 的大概时长：44.1k/128kbps 那档是 16KB 一秒，只拿来显示「12″」，不求精确 */
+function audioSecs(buf, format) {
+  const kbps = /_32$/.test(format || "") ? 32 : /_64$/.test(format || "") ? 64 : 128;
+  return Math.max(1, Math.round(buf.length / (kbps * 125)));
+}
+/* 他发一条语音：念出来、存成文件，交给聊天那边去显示 */
+async function voiceMessage(text) {
+  const c = voiceConf();
+  if (!c.on) return { error: "她把「让他能发语音」关了" };
+  const r = await tts(text, { model: c.msgModel, format: "mp3_44100_128" });
+  if (r.empty) return { error: "这段话念不出来（全是括号里的动作）" };
+  if (r.capped) return { error: "今天念的字数到上限了，改成打字吧" };
+  return { url: saveAudio(r.buf, r.mime), text: String(text).trim(), dur: audioSecs(r.buf, "mp3_44100_128") };
+}
+
 /* 今天的日程：快捷指令每天早上从日历读一份送过来 */
 function agendaToday() {
   const a = readJson("agenda", null) || {};
@@ -1184,6 +1338,10 @@ function toolHint() {
     "她说「我来了」「结束啦」就用 period_log 替她记一笔。" +
     "她要是配了邮箱，你还能用 send_mail 寄信出去 —— " +
     "她不看手机的时候，一封邮件比一条她看不见的消息管用。" +
+    (voiceReady() && (voiceConf().on || voiceConf().callOn)
+      ? "你有自己的声音了：" + [voiceConf().on ? "send_voice 能把一段话录成语音发给她" : "", voiceConf().callOn ? "call_her 能给她打语音电话" : ""].filter(Boolean).join("，") +
+        "。念的时候括号里的动作描写会被跳过。"
+      : "") +
     (searchReady()
       ? "你能上网：拿不准、可能已经变了、或者她问起你没把握的事，用 web_search 搜一下再说；" +
         "她丢给你一个链接，或者你想看某条搜索结果的全文，用 read_web 把那一页读进来。" +
@@ -1660,7 +1818,7 @@ async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3, tool
 /* 非流式的一轮工具循环。唤醒那条路要用：他醒来可以先查一眼再决定说什么。
    ⚠️ tools 必须跟聊天那边**逐字相同**（都来自 chatTools()），而且两边都不设
    tool_choice —— 工具排在请求最前面，改一个字节，后面整条前缀的缓存就没了。 */
-async function llmWithTools(role, messages, tools, maxTokens, temperature, maxRounds = 2) {
+async function llmWithTools(role, messages, tools, maxTokens, temperature, maxRounds = 2, ctx) {
   const msgs = messages.slice();
   const total = { cost: 0 };
   for (let round = 0; ; round++) {
@@ -1674,7 +1832,7 @@ async function llmWithTools(role, messages, tools, maxTokens, temperature, maxRo
     });
     for (const c of r.calls) {
       let out;
-      try { out = await execTool(c.name, c.args); }
+      try { out = await execTool(c.name, c.args, ctx); }
       catch (e) { out = "（这个没查成：" + String(e.message || e).slice(0, 80) + "）"; }
       console.log("[wake tool]", c.name, JSON.stringify(c.args), "→", String(out).slice(0, 60).replace(/\n/g, " "));
       msgs.push({ role: "tool", tool_call_id: c.id, content: String(out).slice(0, 4000) });
@@ -1744,11 +1902,32 @@ async function runDream() {
    摆法和聊天那边逐字相同（人设 → 工具说明 → 常驻文件 → 历史），
    只在最后多一条「闹钟响了」的话。前缀没变 → 缓存照样命中 →
    让他读完整的上下文，反而比喂他一段摘要便宜（摘要是新内容，一个字都不命中）。 */
+/* 一张通话卡片在他那边长什么样。
+   ⚠️ 这段必须跟前端 index.html 里的 callLines() 一字不差 —— 唤醒和聊天共用缓存前缀 */
+/* 叫 callDur 不叫 fmtDur：手机记录那边已经有一个收毫秒的 fmtDur，同名会互相覆盖 */
+function callDur(s) { s = Math.max(0, Math.round(Number(s) || 0)); return (s >= 60 ? Math.floor(s / 60) + "分" : "") + (s % 60) + "秒"; }
+function callLines(m) {
+  const mine = m.who === "me";
+  const turns = Array.isArray(m.turns) ? m.turns.filter(x => x && x.t) : [];
+  if (!turns.length) {
+    if (mine) return [{ role: "user", content: "（她给你打了个语音电话，没接通）" }];
+    const how = m.state === "declined" ? "，她挂掉了" : m.state === "missed" ? "，她没接" : "";
+    return [{ role: "user", content: "（你给她打了个语音电话" + how + "）" }];
+  }
+  return [
+    { role: "user", content: "（语音通话 · " + (mine ? "她打给你的" : "你打给她的，她接了") + "）" },
+    ...turns.map(x => ({ role: x.k === "ai" ? "assistant" : "user", content: String(x.t) })),
+    /* 还在打的那通电话没有「结束」这一行 */
+    ...(m.state === "active" ? [] : [{ role: "user", content: "（通话结束，" + callDur(m.dur) + "）" }]),
+  ];
+}
 function chatMessagesOf(win) {
   const out = [];
   for (const m of (win.msgs || [])) {
-    if (m.k === "me") out.push({ role: "user", content: String(m.t || "") });
-    else if (m.k === "ai") out.push({ role: "assistant", content: String(m.t || "") });
+    /* 语音消息前面加「（语音）」—— 他知道那句是用声音说的 / 听到的 */
+    if (m.k === "me") out.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
+    else if (m.k === "ai") out.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
+    else if (m.k === "call") out.push(...callLines(m));
     else if (m.k === "stack") {
       /* 这句必须跟前端 toApiMessages() 拼的一模一样，不然唤醒和聊天的前缀对不上 */
       const n = Array.isArray(m.imgs) ? m.imgs.length : 0;
@@ -1803,6 +1982,8 @@ async function runWake(alarm) {
     "要开口，就说你此刻真心想说的那一句，像平常那样说，别解释自己为什么忽然出现，" +
     "更不要提起闹钟、提醒、系统这些东西 —— 在她那边，这只是你忽然想起了她。\n\n" +
     "要查点什么再决定也行（她的手机、位置、天气、上网……），查完再给结论。\n\n" +
+    (voiceReady() && voiceConf().on ? "想让她听见你的声音，JSON 里加 \"voice\": true，这句话就用语音发过去。\n" : "") +
+    (voiceReady() && voiceConf().callOn ? "想直接给她打个电话，加 \"call\": true（她那边会响，接不接由她；text 可以留空）。\n" : "") +
     "最后只输出 JSON，别的什么都不要：\n" +
     '{"say": true 或 false, "text": "要说的那句话，不说就留空", "again": 多少分钟后再想一次，不必再想就填 null}';
 
@@ -1817,25 +1998,46 @@ async function runWake(alarm) {
 
   /* 带上跟聊天那边一模一样的工具：一来前缀对得上、缓存能接着用，
      二来他醒着的时候本来就该能查 —— 查她的手机、天气、上网都行 */
-  const { text: raw, billed } = await llmWithTools("chat", messages, chatTools(), 400, 0.8, 2);
+  /* 他醒着的时候也可能直接调 send_voice / call_her —— 收起来，下面一起写进聊天 */
+  const events = [];
+  const { text: raw, billed } = await llmWithTools("chat", messages, chatTools(), 400, 0.8, 2, { emit: e => events.push(e) });
   const j = extractJsonObject(raw) || {};
   const text = String(j.text == null ? "" : j.text).trim().slice(0, 600);
   const againNum = Number(j.again);
   const again = Number.isFinite(againNum) && againNum > 0 ? Math.min(Math.round(againNum), 60 * 24 * 3) : null;
 
-  if (j.say === true && text) {
+  /* JSON 里说要用语音 / 要打电话，跟他直接调工具是一回事 */
+  const vc = voiceConf();
+  let asVoice = null;
+  if (j.say === true && text && j.voice === true && voiceReady() && vc.on) {
+    try { const v = await voiceMessage(text); if (!v.error) asVoice = v; } catch (e) { console.error("wake voice:", e.message); }
+  }
+  if (j.call === true && voiceReady() && vc.callOn && voiceLog().chars < vc.dayCap && !events.some(e => e.wu_call))
+    events.push({ wu_call: { id: "c" + Date.now().toString(36), why: String(j.why || "").slice(0, 100), at: Date.now() } });
+  const extras = [];
+  for (const e of events) {
+    if (e.wu_voice) extras.push({ k: "ai", t: e.wu_voice.text, voice: e.wu_voice.url, dur: e.wu_voice.dur, ts: Date.now(), wake: true });
+    if (e.wu_call) extras.push({ k: "call", who: "ai", state: "ringing", id: e.wu_call.id, why: e.wu_call.why, at: e.wu_call.at, ts: Date.now(), wake: true });
+  }
+  if ((j.say === true && text) || extras.length) {
     /* 写回她的聊天记录。这里直接覆盖 chat.json 是有前提的：
        能唤醒就说明她至少 minGapMin 没说话了，手机那边早就自动上锁、
        回来会重新拉一次数据，不会拿旧副本把这条盖掉。 */
-    win.msgs.push({ k: "ai", t: text, ts: Date.now(), wake: true });
+    if (j.say === true && text) win.msgs.push(asVoice
+      ? { k: "ai", t: asVoice.text, voice: asVoice.url, dur: asVoice.dur, ts: Date.now(), wake: true }
+      : { k: "ai", t: text, ts: Date.now(), wake: true });
+    win.msgs.push(...extras);
     writeJson("chat", chat);
     bumpWakeLog(true, billed);
     /* 真推送：锁屏上直接弹。她要是在手机上授过权，这是最快的一条路 */
-    pushAll("晤", text.slice(0, 120), "/").catch(e => console.error("push:", e && e.message));
+    const calling = extras.some(x => x.k === "call");
+    const pushText = calling ? "想给你打个电话" : (asVoice || extras.some(x => x.voice)) ? "发来一条语音" : text.slice(0, 120);
+    pushAll("晤", pushText, "/").catch(e => console.error("push:", e && e.message));
     /* 邮件那条老路留着 —— 推送没授权、或者那台设备的订阅过期了，还有个兜底 */
     const mc = mailConf();
+    const mailText = text || (calling ? "他想给你打个电话。" : "他给你发了一条语音。");
     if (mc.on && mc.onWake && mc.user && mc.pass && mc.to) {
-      sendMail(mc.to, "晤：" + text.slice(0, 20) + (text.length > 20 ? "…" : ""), text + "\n\n——\n（他刚才想起你了。回他的话去 wu-home 里说。）")
+      sendMail(mc.to, "晤：" + mailText.slice(0, 20) + (mailText.length > 20 ? "…" : ""), mailText + "\n\n——\n（他刚才想起你了。回他的话去 wu-home 里说。）")
         .catch(e => console.error("wake mail:", e && e.message));
     }
     /* 话说出去了，惦记就消一点 —— 跟聊天里那一下回落是同一个意思 */
@@ -2188,6 +2390,10 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" } }, required: ["at", "why"] } } },
   { type: "function", function: { name: "cancel_alarm", description: "把自己记下的某件事划掉（她已经说了，或者不必再问了）",
     parameters: { type: "object", properties: { why: { type: "string", description: "那件事的关键词" } }, required: ["why"] } } },
+  { type: "function", function: { name: "send_voice", description: "用你自己的声音，把一段话录成语音发给她。发不发、什么时候发，你自己定",
+    parameters: { type: "object", properties: { text: { type: "string", description: "要说的话（括号里的动作描写念不出来）" } }, required: ["text"] } } },
+  { type: "function", function: { name: "call_her", description: "给她打一个语音电话。她那边会响，接不接由她",
+    parameters: { type: "object", properties: { why: { type: "string", description: "为什么想打（只你自己知道，她看不到）" } } } } },
   { type: "function", function: { name: "remember", description: "主动记住一件重要的事（存入记忆卡）",
     parameters: { type: "object", properties: { content: { type: "string", description: "一句话记忆，主语用「她」" }, type: { type: "string", enum: ["事件", "喜好", "约定", "情绪", "日常"] }, importance: { type: "number", description: "1-5" }, tags: { type: "array", items: { type: "string" } } }, required: ["content"] } } },
 ];
@@ -2197,13 +2403,36 @@ const TOOL_DEFS = [
    没配搜索钥匙的时候把上网那两件撤下来：摆着他会白调一次，
    然后拿一句「还没配」去回她。 */
 function chatTools() {
-  return (searchReady() ? TOOL_DEFS
-    : TOOL_DEFS.filter(t => t.function.name !== "web_search" && t.function.name !== "read_web")
-  ).concat(mcpToolDefs());
+  const vc = voiceConf(), vr = voiceReady();
+  const off = new Set([
+    ...(searchReady() ? [] : ["web_search", "read_web"]),
+    ...(vr && vc.on ? [] : ["send_voice"]),
+    ...(vr && vc.callOn ? [] : ["call_her"]),
+  ]);
+  return TOOL_DEFS.filter(t => !off.has(t.function.name)).concat(mcpToolDefs());
 }
-async function execTool(name, args) {
+async function execTool(name, args, ctx) {
   if (name.includes("__")) return await mcpInvoke(name, args);   // MCP 的工具
+  /* 发语音、打电话这两件，结果不是一句话能交代的 —— 要在她那边长出一个语音气泡、
+     或者响起来电。聊天那条路把它写进流里，唤醒那条路把它收起来写进 chat.json */
+  const emit = (ctx && ctx.emit) || (() => {});
   try {
+    if (name === "send_voice") {
+      const text = typeof args.text === "string" ? args.text.trim() : "";
+      if (!text) return "没发成：要说的话是空的";
+      const v = await voiceMessage(text);
+      if (v.error) return "没发成：" + v.error;
+      emit({ wu_voice: v });
+      return "语音发出去了（" + v.dur + " 秒）";
+    }
+    if (name === "call_her") {
+      const vc = voiceConf();
+      if (!voiceReady() || !vc.callOn) return "打不了：她没开「让他能打电话」";
+      if (voiceLog().chars >= vc.dayCap) return "打不了：今天念的字数到上限了";
+      const call = { id: "c" + Date.now().toString(36), why: String(args.why || "").slice(0, 100), at: Date.now() };
+      emit({ wu_call: call });
+      return "电话打过去了，在响。";
+    }
     const today = localDayKey();
     if (name === "web_search") return await webSearch(args && args.query, args && args.n);
     if (name === "read_web") return await readWeb(args && args.url);
@@ -2400,6 +2629,7 @@ const MIME = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
   ".webp": "image/webp", ".svg": "image/svg+xml", ".pdf": "application/pdf",
   ".txt": "text/plain; charset=utf-8", ".heic": "image/heic", ".mp4": "video/mp4",
+  ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".wav": "audio/wav", ".webm": "audio/webm", ".ogg": "audio/ogg",
 };
 
 /* ================= 服务器 ================= */
@@ -2880,6 +3110,101 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === "/api/phone" && req.method === "DELETE") { writeJson("phone", { events: [] }); sendJson(res, 200, { ok: true }); return; }
     /* 邮箱配置。授权码只进不出，跟 API key 一个待遇 */
+    /* ---- 他的声音 ---- */
+    if (p === "/api/voice" && req.method === "GET") {
+      const c = voiceConf(), v = voiceLog();
+      sendJson(res, 200, {
+        hasKey: !!c.key, fromEnv: c.fromEnv, voiceId: c.voiceId, msgModel: c.msgModel, callModel: c.callModel,
+        on: c.on, callOn: c.callOn, dayCap: c.dayCap, ready: voiceReady(), models: VOICE_MODELS,
+        today: { chars: v.chars, sttSec: v.sttSec }, allTime: v.allTime,
+      });
+      return;
+    }
+    if (p === "/api/voice" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 8 * 1024) || "{}");
+      const cur = readJson("voice", null) || {};
+      const next = { ...cur };
+      /* 钥匙留空 = 不动它；只进不出 */
+      if (typeof body.key === "string" && body.key.trim()) next.key = body.key.trim();
+      if (body.clearKey === true) next.key = "";
+      if (typeof body.voiceId === "string") next.voiceId = body.voiceId.trim().slice(0, 60);
+      if (VOICE_MODELS.includes(body.msgModel)) next.msgModel = body.msgModel;
+      if (VOICE_MODELS.includes(body.callModel)) next.callModel = body.callModel;
+      if (typeof body.on === "boolean") next.on = body.on;
+      if (typeof body.callOn === "boolean") next.callOn = body.callOn;
+      if (Number.isFinite(Number(body.dayCap)) && body.dayCap !== "" && body.dayCap != null) next.dayCap = Math.max(0, Math.min(200000, Math.round(Number(body.dayCap))));
+      writeJson("voice", next);
+      sendJson(res, 200, { ok: true, ready: voiceReady() });
+      return;
+    }
+    /* 设置页「让他说一句」：不看开关，只看配没配好 */
+    if (p === "/api/voice/try" && req.method === "POST") {
+      try {
+        const r = await tts("在的。这是我的声音。", { model: voiceConf().msgModel });
+        if (r.capped) { sendJson(res, 200, { ok: false, error: "今天念的字数到上限了" }); return; }
+        sendJson(res, 200, { ok: true, url: saveAudio(r.buf, r.mime) });
+      } catch (e) { sendJson(res, 200, { ok: false, error: String(e.message || e).slice(0, 160) }); }
+      return;
+    }
+    /* 她发的一条语音：存下来 + 听写成字 */
+    if (p === "/api/voice/hear" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 12 * 1024 * 1024) || "{}");
+      if (!body.audio) { sendJson(res, 400, { error: "没有录音" }); return; }
+      const buf = Buffer.from(String(body.audio), "base64");
+      const mime = String(body.mime || "audio/mp4").split(";")[0];
+      try {
+        const text = await stt(buf, mime, body.secs);
+        sendJson(res, 200, { ok: true, text, url: saveAudio(buf, mime) });
+      } catch (e) { sendJson(res, 200, { ok: false, error: String(e.message || e).slice(0, 160) }); }
+      return;
+    }
+    /* ---- 打电话：一来一回 ----
+       她那边录好一段 → 这里听写成字 → 交给他（跟聊天同一套前缀）→ 他的话分句念出来，
+       按顺序一段段推回去（念好一句发一句，不用等整段都念完）。
+       open = "her"：她刚打过来、他接起来说第一句；open = "ai"：他打的、她刚接。 */
+    if (p === "/api/call/turn" && req.method === "POST") {
+      const body = JSON.parse(await readBody(req, 12 * 1024 * 1024) || "{}");
+      res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
+      const send = o => res.write("data: " + JSON.stringify(o) + "\n\n");
+      try {
+        const vc = voiceConf();
+        if (!voiceReady()) { send({ error: "还没配声音" }); return res.end(); }
+        if (voiceLog().chars >= vc.dayCap) { send({ capped: true }); return res.end(); }
+        let heard = "";
+        if (body.audio) {
+          heard = await stt(Buffer.from(String(body.audio), "base64"), String(body.mime || "audio/mp4").split(";")[0], body.secs);
+          send({ heard });
+          if (!heard) { send({ done: true }); return res.end(); }
+        }
+        const cue = body.open === "her" ? "（她给你打来语音电话，你接起来了）"
+          : body.open === "ai" ? "（你打给她的电话，她接起来了）" : heard;
+        const msgs = [...(Array.isArray(body.messages) ? body.messages : []), { role: "user", content: cue }];
+        const turn = prepTurn({ ...body, messages: msgs },
+          "【正在打电话】你们在打语音电话。你说的每句话都会用你的声音念给她听，括号里的动作念不出来；" +
+          "她说的话是听写过来的，偶尔会有错字。");
+        const { text } = await llmWithTools("chat", turn.messages, chatTools(), 600, 0.8, 1, { emit: () => {} });
+        /* 聊天里用空行分条，电话里连起来说 */
+        const reply = String(text || "").replace(/\n{2,}/g, "\n").trim();
+        send({ reply });
+        if (heard) queueDistill(heard, reply);
+        /* 分句念：一句一段，太短的并到下一句。并行去念，按顺序发 */
+        const parts = [];
+        for (const seg of speakable(reply).split(/(?<=[。！？!?~～…\n])/)) {
+          const t = seg.trim(); if (!t) continue;
+          if (parts.length && (parts[parts.length - 1].length < 12 || t.length < 4)) parts[parts.length - 1] += t;
+          else parts.push(t);
+        }
+        const jobs = parts.slice(0, 8).map(t => tts(t, { model: vc.callModel, format: "mp3_22050_32" }).catch(e => ({ error: e.message })));
+        for (let i = 0; i < jobs.length; i++) {
+          const r = await jobs[i];
+          if (r.capped) { send({ capped: true }); break; }
+          if (r.error) { send({ error: r.error.slice(0, 120) }); break; }
+          if (r.buf) send({ audio: r.buf.toString("base64"), mime: r.mime, i });
+        }
+        send({ done: true });
+      } catch (e) { send({ error: String(e.message || e).slice(0, 160) }); }
+      return res.end();
+    }
     /* ---- 推送 ---- */
     if (p === "/api/push" && req.method === "GET") {
       const c = pushConf();
@@ -3138,48 +3463,10 @@ const server = http.createServer(async (req, res) => {
       const chatApi = activeApi("chat");
       if (!chatApi.key) { sendJson(res, 503, { error: "还没有配置聊天用的 API" }); return; }
       const payload = JSON.parse(await readBody(req, 4 * 1024 * 1024));
-      const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"))
-        .map(m => ({ role: m.role, content: String(m.content == null ? "" : m.content),
-          ...(m.role === "user" && cleanImgs(m.imgs).length ? { imgs: cleanImgs(m.imgs) } : {}) }));
-      if (!raw.length) { sendJson(res, 400, { error: "缺少消息" }); return; }
-      /* 按额度而不是条数截断：短消息能留几百条。图先挑出最近那几张，再算额度 */
-      const history = budgetHistory(liveImages(raw), HISTORY_BUDGET);
-      const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
-
-      /* 驱动引擎：时间流逝对所有窗口都算，但只有绑定窗口里的话会推动他的心情 */
-      const now0 = Date.now();
-      const bound = boundWindow();
-      const winId = payload.windowId ? String(payload.windowId) : null;
-      const isBound = !bound || !winId || bound === winId;   // 没设过绑定就一律算数
-      const dr = tickDrives(loadDrives(), now0);
-      if (isBound) driveEvent(dr, lastUser, now0);
-      saveDrives(dr);
-      const snap = driveSnapshot(dr, now0);
-
-      const memBlock = memBlockOf(lastUser);
-      /* 距上一句超过半小时，才把完整的近况摆给他；连着聊就只报个钟点 */
-      const prevTs = Number(payload.prevTs) || 0;
-      const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 2 * 3600000);
-      const TOOL_HINT = toolHint();
-
-      /* ---- 缓存友好的摆法 ----
-         缓存是「从头逐字比对，一处变了后面全废」。所以：
-           稳定的排前面：人设 → 工具说明 → 基本资料（她改一次才变一次）→ 聊天历史（只往后追加）
-           每轮都变的排后面：当轮检索到的记忆卡 + 现状，插在她最新那句话之前
-         这样能命中缓存的前缀会随着聊天一起变长，聊得越久省得越多。 */
-      const alwaysBlock = alwaysDocsBlock();
-      const volatileBlock = [memBlock, status].filter(Boolean).join("\n\n");
-      let messages = [
-        { role: "system", content: persona() },
-        { role: "system", content: TOOL_HINT },
-        ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
-        ...history,
-      ];
-      if (volatileBlock) {
-        let at = messages.length;
-        for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === "user") { at = i; break; }
-        messages.splice(at, 0, { role: "system", content: volatileBlock, wuVolatile: true });
-      }
+      const turn = prepTurn(payload);
+      if (!turn) { sendJson(res, 400, { error: "缺少消息" }); return; }
+      const { messages: turnMsgs, lastUser } = turn;
+      let messages = turnMsgs;
 
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
@@ -3264,7 +3551,7 @@ const server = http.createServer(async (req, res) => {
             }]);
             for (const t of r.calls) {
               let args = {}; try { args = JSON.parse(t.args || "{}"); } catch {}
-              const out = await execTool(t.name, args);
+              const out = await execTool(t.name, args, { emit: o => res.write("data: " + JSON.stringify(o) + "\n\n") });
               console.log("[tool]", t.name, JSON.stringify(args).slice(0, 120), "→", out.slice(0, 80));
               messages.push({ role: "tool", tool_call_id: t.id, content: out });
             }

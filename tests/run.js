@@ -40,6 +40,8 @@ const SUITE = [
   ['唤醒', 'wake-budget', '醒了不说话也算钱，一天有上限', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'night-peek', '夜里她还在玩手机，他可以冒出来', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'status-note', '【现状】纸条：隔久了给全、连着聊不说', true, { apis: API_M1 }, OPENAI],
+  ['声音', 'voice', '他发语音、她按住说话、省钱闸', true, { apis: API_M1 }, OPENAI],
+  ['声音', 'call', '语音通话：打、接、挂、打断、未接、醒着打过来', true, { apis: API_M1 }, OPENAI],
   ['联动', 'push', '推送：订阅、失败处理、sw.js 弹通知', true, { apis: API_M1 }, ['fake-push.js', 'mock-think.js']],
   ['联动', 'phone-hook', '快捷指令钥匙、App 打开关闭配对', true, { apis: API_M1 }, OPENAI],
   ['联动', 'phone-close-only', '只配了「关闭」的情况', true, { apis: API_M1 }, OPENAI],
@@ -60,7 +62,7 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
   try {
     /* 干净的假数据 */
     fs.rmSync(DAT, { recursive: true, force: true }); fs.mkdirSync(DAT + '/uploads', { recursive: true });
-    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'last.json']) fs.rmSync(path.join(WORK, f), { force: true });
+    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'last.json', 'eleven.json', 'stt.txt']) fs.rmSync(path.join(WORK, f), { force: true });
     fs.writeFileSync(DAT + '/chat.json', JSON.stringify(chat()));
     if (seed.apis) fs.writeFileSync(DAT + '/apis.json', JSON.stringify(seed.apis));
     if (seed.period) fs.writeFileSync(DAT + '/period.json', JSON.stringify(seed.period));

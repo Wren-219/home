@@ -27,3 +27,43 @@ global.fetch = async (url, opt) => {
   if (u.includes('gone.example')) return new Response('nope', { status: 404, headers: { 'content-type': 'text/html' } });
   return real(url, opt);
 };
+
+/* ---- 假 ElevenLabs：说（TTS）回一小段真能放的 WAV，听（STT）回 WORK/stt.txt 里那句话。
+       每次请求都记进 WORK/eleven.json，测试拿来看发过去的是什么 ---- */
+{
+  const fs = require('fs');
+  const { WORK } = require('./env');
+  const LOG = WORK + '/eleven.json';
+  const wav = secs => {   /* 一段 440Hz 的小声，采样率 8k，够放、够短 */
+    const sr = 8000, n = Math.round(sr * secs), b = Buffer.alloc(44 + n * 2);
+    b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16);
+    b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28);
+    b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+    for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.sin(i / sr * 2 * Math.PI * 440) * 3000), 44 + i * 2);
+    return b;
+  };
+  const prev = global.fetch;
+  global.fetch = async (url, opt) => {
+    const u = String(url && url.url ? url.url : url);
+    if (!u.includes('api.elevenlabs.io')) return prev(url, opt);
+    const h = (opt && opt.headers) || {};
+    const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, 'utf8')) : [];
+    const R = (o, s) => new Response(JSON.stringify(o), { status: s || 200, headers: { 'content-type': 'application/json' } });
+    if (h['xi-api-key'] !== 'el-good') { log.push({ path: new URL(u).pathname, bad: true }); fs.writeFileSync(LOG, JSON.stringify(log)); return R({ detail: 'invalid api key' }, 401); }
+    if (u.includes('/v1/text-to-speech/')) {
+      const body = JSON.parse(opt.body);
+      const q = new URL(u);
+      log.push({ path: q.pathname, format: q.searchParams.get('output_format'), text: body.text, model: body.model_id });
+      fs.writeFileSync(LOG, JSON.stringify(log));
+      return new Response(wav(Math.min(1.2, 0.2 + body.text.length * 0.03)), { status: 200, headers: { 'content-type': 'audio/wav' } });
+    }
+    if (u.includes('/v1/speech-to-text')) {
+      const fd = opt.body, file = fd.get('file');
+      log.push({ path: '/v1/speech-to-text', model: fd.get('model_id'), size: file ? file.size : 0, type: file ? file.type : '' });
+      fs.writeFileSync(LOG, JSON.stringify(log));
+      const text = fs.existsSync(WORK + '/stt.txt') ? fs.readFileSync(WORK + '/stt.txt', 'utf8') : '我今天有点累';
+      return R({ text, language_code: 'zho' });
+    }
+    return R({ detail: 'not found' }, 404);
+  };
+}

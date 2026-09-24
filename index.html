@@ -806,6 +806,58 @@
   .sw.on::after { transform: translateX(18px); }
   /* 每条消息底下的用量 */
   .bub-usage { font-size: 9.5px; color: var(--ink-faint); margin: -6px 0 2px 4px; align-self: flex-start; letter-spacing: .02em; }
+  /* ===== 语音气泡 ===== */
+  .bub.voice { display: flex; align-items: center; gap: 8px; cursor: pointer; min-width: 84px; user-select: none; }
+  .bub.voice .vi { font-size: 13px; opacity: .75; width: 14px; text-align: center; }
+  .bub.voice .vw { display: flex; align-items: center; gap: 2px; height: 16px; }
+  .bub.voice .vw i { display: block; width: 2px; border-radius: 2px; background: currentColor; opacity: .45; }
+  .bub.voice.playing .vw i { animation: vwave .9s ease-in-out infinite; opacity: .8; }
+  .bub.voice.playing .vw i:nth-child(2n) { animation-delay: .15s; } .bub.voice.playing .vw i:nth-child(3n) { animation-delay: .3s; }
+  @keyframes vwave { 50% { transform: scaleY(.35); } }
+  .bub.voice .vd { font-size: 12px; opacity: .6; margin-left: auto; }
+  .bub.me.voice { flex-direction: row-reverse; } .bub.me.voice .vd { margin-left: 0; margin-right: auto; }
+  .v-text { font-size: 12px; color: var(--ink-soft); line-height: 1.6; max-width: 78%; margin: -4px 4px 2px; }
+  .v-text.me { align-self: flex-end; text-align: right; }
+  .v-text.ai { align-self: flex-start; }
+  .v-text .tog { color: var(--ink-faint); cursor: pointer; }
+  /* ===== 通话卡片 ===== */
+  .call-card { align-self: center; font-size: 12px; color: var(--ink-soft); background: rgba(255,255,255,.55);
+    border: 1px solid rgba(255,255,255,.8); border-radius: 999px; padding: 6px 14px; cursor: pointer; max-width: 86%; }
+  .call-card.missed { color: var(--coral); }
+  .call-card button { margin-left: 8px; border: none; background: var(--blue-deep); color: #fff; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+  .call-log { align-self: stretch; margin: -2px 10px 4px; padding: 10px 14px; border-radius: 14px; background: rgba(255,255,255,.4);
+    font-size: 12.5px; line-height: 1.8; color: var(--ink-soft); display: none; }
+  .call-log.open { display: block; }
+  .call-log b { color: var(--ink); font-weight: 500; }
+  /* ===== 按住说话 ===== */
+  #holdTip { position: absolute; left: 50%; bottom: calc(var(--navspace) + 120px); transform: translateX(-50%); z-index: 40;
+    background: rgba(60,69,87,.82); color: #fff; border-radius: 18px; padding: 16px 22px; font-size: 13px; text-align: center;
+    display: none; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); min-width: 150px; }
+  #holdTip.on { display: block; } #holdTip.cancel { background: rgba(217,119,87,.9); }
+  #holdTip .lv { height: 22px; display: flex; justify-content: center; align-items: center; gap: 3px; margin-bottom: 8px; }
+  #holdTip .lv i { width: 3px; border-radius: 2px; background: #fff; height: 4px; transition: height .08s; }
+  body.kb-open #holdTip { bottom: 110px; }
+  .in-ic.rec { color: var(--coral); }
+  /* ===== 通话界面 ===== */
+  #callView { position: absolute; inset: 0; z-index: 80; display: none; flex-direction: column; align-items: center;
+    padding: calc(var(--sat) + 70px) 28px calc(var(--sab) + 40px);
+    background: radial-gradient(120% 60% at 50% 0%, #3E4A60 0%, #1F2533 70%); color: #fff; }
+  #callView.on { display: flex; }
+  #callView .cv-av { width: 104px; height: 104px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 46px; background: rgba(255,255,255,.1); box-shadow: 0 0 0 0 rgba(169,189,216,.5); }
+  #callView.talking .cv-av { animation: cvpulse 1.4s ease-out infinite; }
+  #callView.listening .cv-av { box-shadow: 0 0 0 6px rgba(169,189,216,.25); }
+  @keyframes cvpulse { 0% { box-shadow: 0 0 0 0 rgba(169,189,216,.55); } 100% { box-shadow: 0 0 0 26px rgba(169,189,216,0); } }
+  #callView .cv-name { font-family: var(--serif); font-size: 28px; margin-top: 18px; letter-spacing: .08em; }
+  #callView .cv-st { font-size: 13px; opacity: .7; margin-top: 8px; min-height: 18px; letter-spacing: .06em; }
+  #callView .cv-sub { flex: 1; width: 100%; margin-top: 28px; overflow-y: auto; font-size: 14px; line-height: 1.8; opacity: .88;
+    display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; }
+  #callView .cv-sub .me { text-align: right; opacity: .7; }
+  #callView .cv-btns { display: flex; gap: 46px; margin-top: 18px; }
+  #callView .cv-btn { width: 64px; height: 64px; border-radius: 50%; border: none; font-size: 24px; color: #fff; cursor: pointer; }
+  #callView .cv-btn.end { background: #E0544B; } #callView .cv-btn.ok { background: #4CB86B; }
+  #callView .cv-btn.mute { background: rgba(255,255,255,.16); } #callView .cv-btn.mute.on { background: #fff; color: #1F2533; }
+  #callView .cv-hint { font-size: 11px; opacity: .5; margin-top: 12px; min-height: 14px; }
   /* 他想事情的那一段。默认卷起来只剩一行，点一下展开 */
   .think { align-self: flex-start; max-width: 82%; margin: 2px 0 6px 2px; }
   .think-head {
@@ -990,6 +1042,9 @@
           <span class="chev">›</span>
         </button>
         <span class="sp"></span>
+        <button class="glasskey hd-btn" id="callBtn" title="语音通话" style="display:none" onclick="callStart()">
+          <svg viewBox="0 0 24 24"><path d="M6.6 3.8h2.6l1.4 4.1-1.9 1.3a11 11 0 0 0 6.1 6.1l1.3-1.9 4.1 1.4v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 6a2 2 0 0 1 2-2.2z"/></svg>
+        </button>
         <button class="glasskey hd-btn" id="newWinBtn" title="开启新对话">
           <svg viewBox="0 0 24 24"><path d="M4.5 18.5v-3.2A7.5 7.5 0 1 1 12 19.5H8l-3.5 2.2z"/><path d="M12 8.6v5.2M9.4 11.2h5.2"/></svg>
         </button>
@@ -1017,7 +1072,7 @@
           <div class="in-row">
             <button class="plus-btn" id="plusBtn">＋</button>
             <span class="sp"></span>
-            <button class="in-ic" title="语音">
+            <button class="in-ic" id="micBtn" title="按住说话">
               <svg viewBox="0 0 24 24"><rect x="9.2" y="3.5" width="5.6" height="11" rx="2.8"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
             </button>
             <button class="send" id="sendBtn" title="发送">↑</button>
@@ -1177,6 +1232,11 @@
           <div class="btn-row"><button class="btn" onclick="openSub('phone')">手机联动</button></div>
         </div>
         <div class="set-card">
+          <div class="set-card-title">声音<span class="en">VOICE</span></div>
+          <div class="set-note" id="voiceBrief">让他用你们做的那个声音说话、打电话</div>
+          <div class="btn-row"><button class="btn" onclick="openSub('voice')">声音设置</button></div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">推送<span class="en">PUSH</span></div>
           <div class="set-note" id="pushBrief">他主动说话的时候，手机上真的弹一条</div>
           <div id="pushBox"></div>
@@ -1212,7 +1272,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.6（全面体检 · 堵上了数据目录外泄）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.7（他有声音了：语音消息、语音通话）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1334,6 +1394,47 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-voice">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('voice')">‹ 返回</button>
+        <div class="sp-title">声音</div>
+        <button class="sp-act" onclick="voiceSave()">保存</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 14px">
+          用你们在 ElevenLabs 上做的那个声音。配好之后：他能发语音、能给你打电话；
+          聊天框里的🎙按住就能说话，右上角的电话按钮能打给他。<br>
+          你说的话由 ElevenLabs 转成字给他 —— 他收到的就是一段字，不加他的活。
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">ElevenLabs<span class="en">KEY</span></div>
+          <div class="field"><label>API Key</label><input type="password" id="vKey" placeholder="还没填" autocomplete="off"></div>
+          <div class="field"><label>声音 ID（Voices 里那个声音的 Voice ID）</label><input type="text" id="vVoice" placeholder="比如 21m00Tcm4TlvDq8ikWAM"></div>
+          <div class="btn-row">
+            <button class="btn" onclick="voiceSave()">保存</button>
+            <button class="btn ghost" onclick="voiceTry(this)">让他说一句</button>
+          </div>
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">怎么用<span class="en">USE</span></div>
+          <div class="sw-row"><span class="lb">让他能发语音</span><button class="sw" id="vOn" onclick="this.classList.toggle('on')"></button></div>
+          <div class="sw-row"><span class="lb">让他能给你打电话</span><button class="sw" id="vCallOn" onclick="this.classList.toggle('on')"></button></div>
+          <div class="field"><label>语音消息用的模型（音质优先）</label><select class="set-sel" id="vMsgModel"></select></div>
+          <div class="field"><label>打电话用的模型（快优先）</label><select class="set-sel" id="vCallModel"></select></div>
+          <div class="set-note" style="margin:-4px 2px 10px">
+            multilingual_v2 音质最好；flash_v2_5 最快（打电话用它，一句话零点几秒就念好）；
+            v3 最有感情，但慢一些。
+          </div>
+        </div>
+        <div class="set-card">
+          <div class="set-card-title">省着点<span class="en">BUDGET</span></div>
+          <div class="field"><label>他一天最多念多少字（到了就改回打字，电话也打不了）</label><input type="number" id="vCap" min="0" inputmode="numeric"></div>
+          <div class="set-note" id="vStat"></div>
+          <div class="set-note" style="margin-top:8px">ElevenLabs 按字收费（念）、按时长收费（听写）。打十分钟电话，他大概念一两千字。</div>
+        </div>
+        <div style="height:30px"></div>
+      </div>
+    </section>
     <section class="subpage" id="page-search">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('search')">‹ 返回</button>
@@ -1890,6 +1991,16 @@
     <div class="vw-foot" id="vwFoot"></div>
   </div>
 
+  <div id="holdTip"><div class="lv"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="tx">松开发送，上滑取消</div></div>
+  <!-- 通话：打出去、来电、通话中，都是这一个界面 -->
+  <div id="callView">
+    <div class="cv-av">🌿</div>
+    <div class="cv-name">晤</div>
+    <div class="cv-st" id="cvSt"></div>
+    <div class="cv-sub" id="cvSub"></div>
+    <div class="cv-btns" id="cvBtns"></div>
+    <div class="cv-hint" id="cvHint"></div>
+  </div>
   <div id="toast"></div>
 </div>
 
@@ -2306,7 +2417,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period", "search"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period", "search", "voice"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -2336,6 +2447,7 @@ function openSub(name) {
   if (name === "mail") mailRefresh();
   if (name === "period") perRefresh();
   if (name === "search") searchRefresh();
+  if (name === "voice") voiceRefresh();
 }
 function closeSub(name, instant) {
   const el = document.getElementById("page-" + name);
@@ -3085,6 +3197,8 @@ function msgNode(m) {
     if (m.url) { f.style.cursor = "pointer"; f.onclick = () => window.open(m.url, "_blank"); }
     return f;
   }
+  if (m.k === "call") return callCardNode(m);
+  if ((m.k === "me" || m.k === "ai") && m.voice) return voiceNode(m);
   const b = document.createElement("div");
   b.className = "bub " + (m.k === "me" ? "me" : "ai");
   b.textContent = m.t;
@@ -3112,6 +3226,84 @@ function thinkNode(text, secs) {
   d.querySelector(".think-head").onclick = () => d.classList.toggle("open");
   return d;
 }
+/* ===== 语音气泡 =====
+   她的：识别出来的字直接显示在下面（方便看他听没听错）。
+   他的：先收着，点「转文字」才看 —— 先听声音。 */
+function voiceNode(m) {
+  const wrap = document.createElement("div");
+  wrap.style.display = "contents";
+  const b = document.createElement("div");
+  const side = m.k === "me" ? "me" : "ai";
+  b.className = "bub voice " + side;
+  const bars = [6, 11, 8, 14, 9, 12, 7].slice(0, Math.min(7, 3 + Math.round((m.dur || 3) / 4)));
+  b.innerHTML = '<span class="vi">▶</span><span class="vw">' + bars.map(h => '<i style="height:' + h + 'px"></i>').join("") +
+    '</span><span class="vd">' + (m.dur || 1) + '″</span>';
+  b.style.minWidth = Math.min(210, 84 + (m.dur || 1) * 5) + "px";
+  b.addEventListener("click", () => playVoice(m.voice, b));
+  wrap.appendChild(b);
+  const tx = document.createElement("div");
+  tx.className = "v-text " + side;
+  if (side === "me") tx.textContent = m.t || "";
+  else {
+    tx.innerHTML = '<span class="tog">转文字</span>';
+    tx.querySelector(".tog").onclick = () => { tx.textContent = m.t || ""; };
+  }
+  wrap.appendChild(tx);
+  return wrap;
+}
+var vAudio = null, vPlayingEl = null;
+/* 用 fetch → blob 播，不直接给 <audio> 地址：iOS 播媒体要服务器支持分段请求（Range），
+   我们的 /files/ 不支持，直接给地址在 iPhone 上会放不出来 */
+async function playVoice(url, el) {
+  if (!vAudio) vAudio = new Audio();
+  if (vPlayingEl === el) { vAudio.pause(); el.classList.remove("playing"); vPlayingEl = null; return; }
+  if (vPlayingEl) vPlayingEl.classList.remove("playing");
+  vPlayingEl = el; el.classList.add("playing");
+  try {
+    const blob = await (await fetch(url)).blob();
+    if (vPlayingEl !== el) return;
+    if (vAudio.src && vAudio.src.startsWith("blob:")) URL.revokeObjectURL(vAudio.src);
+    vAudio.src = URL.createObjectURL(blob);
+    vAudio.onended = () => { el.classList.remove("playing"); if (vPlayingEl === el) vPlayingEl = null; };
+    await vAudio.play();
+  } catch (e) { el.classList.remove("playing"); vPlayingEl = null; toast("放不出来：" + String(e.message || e).slice(0, 30)); }
+}
+/* ===== 通话卡片 ===== */
+function callCardNode(m) {
+  const wrap = document.createElement("div");
+  wrap.style.display = "contents";
+  const c = document.createElement("div");
+  const turns = (m.turns || []).filter(x => x && x.t);
+  const fresh = m.who === "ai" && m.state === "ringing" && Date.now() - (m.at || m.ts || 0) < CALL_WAIT;
+  const label = m.state === "active" ? "📞 通话中…"
+    : turns.length ? "📞 语音通话 " + callClock(m.dur || 0)
+    : m.who === "me" ? "📞 没接通"
+    : m.state === "declined" ? "📞 你挂掉了他的电话"
+    : fresh ? "📞 晤 想给你打个电话" : "📞 未接来电";
+  c.className = "call-card" + (!turns.length && m.who === "ai" && !fresh ? " missed" : "");
+  c.textContent = label;
+  if (fresh) {
+    const btn = document.createElement("button");
+    btn.textContent = "接听";
+    btn.onclick = e => { e.stopPropagation(); callIncoming(m); };
+    c.appendChild(btn);
+  }
+  wrap.appendChild(c);
+  if (turns.length) {
+    const log = document.createElement("div");
+    log.className = "call-log";
+    turns.forEach(x => {
+      const line = document.createElement("div");
+      const who = document.createElement("b"); who.textContent = x.k === "ai" ? "晤：" : "我：";
+      line.appendChild(who); line.appendChild(document.createTextNode(x.t));
+      log.appendChild(line);
+    });
+    c.onclick = () => log.classList.toggle("open");
+    wrap.appendChild(log);
+  }
+  return wrap;
+}
+function callClock(s) { s = Math.max(0, Math.round(s)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
 function usageNode(u) {
   const d = document.createElement("div");
   d.className = "bub-usage";
@@ -3160,6 +3352,8 @@ function rerenderChat() {
   });
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
   requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+  /* 他打来的电话还在响吗 */
+  setTimeout(() => { if (typeof checkRinging === "function") checkRinging(); }, 400);
 }
 
 /* ================= 长按一条消息 ================= */
@@ -3308,12 +3502,30 @@ function estTokens(s) {
   for (const ch of s) if (CJK_RE.test(ch)) cjk++;
   return Math.ceil(cjk + (s.length - cjk) / 3.5);
 }
+/* 一张通话卡片在他那边长什么样。
+   ⚠️ 必须跟 server.js 的 callLines() / callDur() 一字不差 —— 唤醒和聊天共用缓存前缀 */
+function callDur(s) { s = Math.max(0, Math.round(Number(s) || 0)); return (s >= 60 ? Math.floor(s / 60) + "分" : "") + (s % 60) + "秒"; }
+function callLines(m) {
+  const mine = m.who === "me";
+  const turns = Array.isArray(m.turns) ? m.turns.filter(x => x && x.t) : [];
+  if (!turns.length) {
+    if (mine) return [{ role: "user", content: "（她给你打了个语音电话，没接通）" }];
+    const how = m.state === "declined" ? "，她挂掉了" : m.state === "missed" ? "，她没接" : "";
+    return [{ role: "user", content: "（你给她打了个语音电话" + how + "）" }];
+  }
+  return [
+    { role: "user", content: "（语音通话 · " + (mine ? "她打给你的" : "你打给她的，她接了") + "）" },
+    ...turns.map(x => ({ role: x.k === "ai" ? "assistant" : "user", content: String(x.t) })),
+    ...(m.state === "active" ? [] : [{ role: "user", content: "（通话结束，" + callDur(m.dur) + "）" }]),
+  ];
+}
 function toApiMessages() {
   const msgs = [];
   /* 送足够多，具体留多少由服务器按额度决定 */
   chatLog.slice(-600).forEach(m => {
-    if (m.k === "me") msgs.push({ role: "user", content: m.t });
-    else if (m.k === "ai") msgs.push({ role: "assistant", content: m.t });
+    if (m.k === "me") msgs.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
+    else if (m.k === "ai") msgs.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
+    else if (m.k === "call") msgs.push(...callLines(m));
     else if (m.k === "stack") {
       /* 这句必须跟 server.js 的 chatMessagesOf() 一模一样 —— 唤醒和聊天共用缓存前缀 */
       const n = Array.isArray(m.imgs) ? m.imgs.length : 0;
@@ -3361,6 +3573,7 @@ async function aiReply() {
     /* 他要是先想了一会儿，那段实时摊开给她看；等正文开始流，就自动卷起来。
        第一段思考到来时才建这个块 —— 不会思考的模型这儿什么都不长 */
     let thinkAcc = "", thinkEl = null, thinkAt = 0;
+    let ringAfter = null;   /* 他在这轮里打了电话 —— 等他这轮说完再响 */
     const onThink = txt => {
       if (!SHOW_THINK) return;
       if (!thinkEl) {
@@ -3422,6 +3635,21 @@ async function aiReply() {
           const j = JSON.parse(d);
           if (j.wu_usage) { lastUsage = j.wu_usage; continue; }
           if (j.wu_think) { onThink(j.wu_think); continue; }
+          /* 他发了语音 / 打了电话：先把他前面已经说出来的字定稿，再把语音插进去，先后顺序才对 */
+          if (j.wu_voice || j.wu_call) {
+            foldThink();
+            if (acc.trim()) { sealBubble(acc.trim()); acc = ""; curBub = newBubble(); }
+            const m = j.wu_voice
+              ? { k: "ai", t: j.wu_voice.text, voice: j.wu_voice.url, dur: j.wu_voice.dur, ts: Date.now() }
+              : { k: "call", who: "ai", state: "ringing", id: j.wu_call.id, why: j.wu_call.why, at: j.wu_call.at, ts: Date.now() };
+            chatLog.push(m); saveChat();
+            const node = msgNode(m);
+            bindLongPress(node, chatLog.length - 1);
+            chatMsgs.insertBefore(node, curBub);
+            chatMsgs.scrollTop = chatMsgs.scrollHeight;
+            if (j.wu_call) ringAfter = m;
+            continue;
+          }
           const delta = j.choices?.[0]?.delta?.content;
           if (!delta) continue;
           foldThink();
@@ -3442,8 +3670,10 @@ async function aiReply() {
     foldThink();   /* 想了半天一个字没说的情况，也得把它收起来 */
     const tail = acc.trim();
     if (tail) sealBubble(tail);
-    else if (!sent) sealBubble("……");
+    else if (!sent && !ringAfter && !chatLog.length) sealBubble("……");
+    else if (!sent && !ringAfter && chatLog[chatLog.length - 1].k === "me") sealBubble("……");
     else curBub.remove();                    /* 最后那个空气泡，撤掉 */
+    if (ringAfter) { const r = ringAfter; setTimeout(() => callIncoming(r), 700); }
     if (lastUsage) {
       const last = chatLog[chatLog.length - 1];
       if (last) { last.u = lastUsage; saveChat(); }
@@ -4324,6 +4554,7 @@ function bootData() {
   });
   step("连接检查", checkHealth);
   step("拉数据", pullState);
+  step("声音", () => voiceRefresh(true));
 }
 async function pullState() {
   try {
@@ -4427,6 +4658,366 @@ async function phoneClear() {
 }
 
 /* ================= 她的身体 ================= */
+/* ================= 声音：按住说话 + 语音通话 ================= */
+var VOICE_READY = false, VOICE_CALL = false;
+const CALL_WAIT = 10 * 60 * 1000;          /* 他打来的电话响多久算「未接」 */
+var micStream = null, audioCtx = null, callAudio = null;
+function recMime() {
+  if (typeof MediaRecorder === "undefined") return "";
+  for (const t of ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"]) if (MediaRecorder.isTypeSupported(t)) return t;
+  return "";
+}
+function blobToB64(b) {
+  return new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.readAsDataURL(b); });
+}
+/* iOS 只肯在「她亲手点的那一下」里放声音、开 AudioContext。
+   所以在点「打电话 / 接听」的那一刻先解锁一次，后面就能一直用同一个播放器 */
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch {}
+  if (!callAudio) callAudio = new Audio();
+  try {
+    callAudio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+    const p = callAudio.play(); if (p) p.catch(() => {});
+  } catch {}
+}
+async function micOpen() {
+  if (micStream && micStream.getAudioTracks().some(t => t.readyState === "live")) return micStream;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    return micStream;
+  } catch (e) {
+    toast(/denied|NotAllowed/i.test(String(e && e.name + e.message)) ? "没给麦克风权限 —— 去 设置 → 晤 里打开" : "麦克风打不开");
+    return null;
+  }
+}
+function micClose() { if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; } }
+/* 从麦克风取音量（0~1 左右），给按住说话的音量条和电话里的「说完了没」用 */
+function levelMeter(stream) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const src = audioCtx.createMediaStreamSource(stream);
+    const an = audioCtx.createAnalyser(); an.fftSize = 1024;
+    src.connect(an);
+    const buf = new Float32Array(an.fftSize);
+    return { read() { an.getFloatTimeDomainData(buf); let s = 0; for (const v of buf) s += v * v; return Math.sqrt(s / buf.length); },
+             stop() { try { src.disconnect(); } catch {} } };
+  } catch { return { read: () => 0, stop() {} }; }
+}
+
+/* ---------- 按住说话（跟微信一样：按住录，松开发，往上滑取消） ---------- */
+(function holdToTalk() {
+  const btn = document.getElementById("micBtn"), tip = document.getElementById("holdTip");
+  if (!btn) return;
+  let rec = null, chunks = [], t0 = 0, y0 = 0, cancel = false, meter = null, raf = 0, pid = null;
+  const bars = [...tip.querySelectorAll(".lv i")];
+  const draw = () => { const v = meter ? meter.read() : 0; bars.forEach((b, i) => b.style.height = Math.min(22, 4 + v * 260 * (0.6 + ((i * 37) % 7) / 10)) + "px"); raf = requestAnimationFrame(draw); };
+  btn.addEventListener("pointerdown", async e => {
+    e.preventDefault();
+    if (!VOICE_READY) { toast("先在「设置 → 声音」里配好 ElevenLabs"); return; }
+    if (curWin().archived) { toast("这个窗口已经封存了"); return; }
+    if (typeof MediaRecorder === "undefined" || !recMime()) { toast("这个浏览器录不了音"); return; }
+    pid = e.pointerId; try { btn.setPointerCapture(pid); } catch {}
+    const firstTime = !micStream;
+    const s = await micOpen();
+    if (!s) return;
+    /* 头一回会弹出麦克风授权框，手指早松开了 —— 这次只拿权限，让她再按一次 */
+    if (firstTime && pid === null) { toast("好了，再按住说一次"); return; }
+    cancel = false; y0 = e.clientY; chunks = []; t0 = Date.now();
+    rec = new MediaRecorder(s, { mimeType: recMime() });
+    rec.ondataavailable = ev => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    rec.start(200);
+    meter = levelMeter(s); draw();
+    tip.classList.add("on"); tip.classList.remove("cancel"); tip.querySelector(".tx").textContent = "松开发送，上滑取消";
+    btn.classList.add("rec");
+  });
+  btn.addEventListener("pointermove", e => {
+    if (!rec) return;
+    cancel = y0 - e.clientY > 60;
+    tip.classList.toggle("cancel", cancel);
+    tip.querySelector(".tx").textContent = cancel ? "松开手指，取消发送" : "松开发送，上滑取消";
+  });
+  const finish = async () => {
+    pid = null;
+    if (!rec) return;
+    const r = rec; rec = null;
+    cancelAnimationFrame(raf); if (meter) meter.stop(); meter = null;
+    tip.classList.remove("on"); btn.classList.remove("rec");
+    const secs = (Date.now() - t0) / 1000;
+    const stopped = new Promise(ok => { r.onstop = ok; });
+    r.stop(); await stopped;
+    /* 录完就把麦关掉 —— 不然 iPhone 顶上那个橙色小点会一直亮着 */
+    if (!callSt) micClose();
+    if (cancel) return;
+    if (secs < 0.8) { toast("说话时间太短"); return; }
+    const blob = new Blob(chunks, { type: r.mimeType || recMime() });
+    toast("在听你说什么…");
+    try {
+      const j = await (await fetch("api/voice/hear", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio: await blobToB64(blob), mime: blob.type, secs }) })).json();
+      if (!j.ok) { toast("没发成：" + String(j.error || "").slice(0, 40)); return; }
+      if (!j.text) { toast("没听清，再说一次？"); return; }
+      appendMsg({ k: "me", t: j.text, voice: j.url, dur: Math.max(1, Math.round(secs)) });
+      aiReply();
+    } catch (e) { toast("没发成：" + String(e.message || e).slice(0, 30)); }
+  };
+  btn.addEventListener("pointerup", finish);
+  btn.addEventListener("pointercancel", () => { cancel = true; finish(); });
+  btn.addEventListener("contextmenu", e => e.preventDefault());
+})();
+
+/* ---------- 语音通话 ----------
+   一来一回：在听 → 她说完（安静 0.9 秒）→ 发给服务器听写、他想、念出来 → 放完 → 再听。
+   他说话的时候不开麦（免得把他的声音当成她在说），想打断就点一下屏幕。 */
+var callSt = null;
+const cv = () => document.getElementById("callView");
+function cvShow(status, btns, hint) {
+  const v = cv(); v.classList.add("on");
+  document.getElementById("cvSt").textContent = status || "";
+  document.getElementById("cvHint").textContent = hint || "";
+  const box = document.getElementById("cvBtns"); box.innerHTML = "";
+  for (const [cls, label, fn] of btns || []) {
+    const b = document.createElement("button"); b.className = "cv-btn " + cls; b.textContent = label;
+    b.onclick = e => { e.stopPropagation(); fn(); }; box.appendChild(b);
+  }
+}
+function cvSub(k, t) {
+  const box = document.getElementById("cvSub");
+  const d = document.createElement("div"); d.className = k; d.textContent = t;
+  box.appendChild(d);
+  while (box.children.length > 6) box.firstChild.remove();
+}
+function cvPhase(ph) {
+  if (!callSt) return;
+  callSt.phase = ph;
+  const v = cv(); v.classList.toggle("talking", ph === "talk"); v.classList.toggle("listening", ph === "listen");
+  const words = { think: "他在想…", talk: "他在说…", listen: callSt.muted ? "静音中" : "在听…", hear: "听你说完了…" }[ph] || "";
+  const clock = callSt.t0 ? callClock((Date.now() - callSt.t0) / 1000) + " · " : "";
+  document.getElementById("cvSt").textContent = clock + words;
+  document.getElementById("cvHint").textContent = ph === "talk" ? "点一下屏幕可以打断他" : ph === "listen" ? "说完停一下，他就会接话" : "";
+}
+function liveButtons() {
+  return [["mute" + (callSt && callSt.muted ? " on" : ""), "🎙", () => { callSt.muted = !callSt.muted; cvShow("", liveButtons()); cvPhase(callSt.phase); }],
+          ["end", "✕", () => callEnd()]];
+}
+/* 她打给他 */
+async function callStart() {
+  if (!VOICE_READY) { toast("先在「设置 → 声音」里配好 ElevenLabs"); return; }
+  if (callSt) return;
+  if (curWin().archived) { toast("这个窗口已经封存了"); return; }
+  unlockAudio();
+  const card = { k: "call", who: "me", state: "active", turns: [], at: Date.now() };
+  appendMsg(card);
+  callSt = { card, phase: "dial", muted: false, t0: 0, q: [], done: false };
+  document.getElementById("cvSub").innerHTML = "";
+  cvShow("正在呼叫…", [["end", "✕", () => callEnd()]]);
+  if (!(await micOpen())) { callEnd(); return; }
+  callSt.t0 = Date.now(); startClock();
+  cvShow("", liveButtons());
+  callTurn({ open: "her" });
+}
+/* 他打来的 */
+function callIncoming(card) {
+  if (callSt || !card || card.state !== "ringing") return;
+  if (Date.now() - (card.at || card.ts || 0) > CALL_WAIT) { card.state = "missed"; saveChat(); rerenderChat(); return; }
+  callSt = { card, phase: "ring", muted: false, t0: 0, q: [], done: false };
+  document.getElementById("cvSub").innerHTML = "";
+  cvShow("邀请你语音通话", [["end", "✕", callDecline], ["ok", "✆", callAccept]]);
+}
+function callDecline() {
+  if (!callSt) return;
+  callSt.card.state = "declined"; saveChat();
+  callSt = null; cv().classList.remove("on"); rerenderChat();
+}
+async function callAccept() {
+  if (!callSt) return;
+  unlockAudio();
+  if (!(await micOpen())) { callDecline(); return; }
+  callSt.card.state = "active"; callSt.card.turns = []; saveChat();
+  callSt.t0 = Date.now(); startClock();
+  cvShow("", liveButtons());
+  callTurn({ open: "ai" });
+}
+function startClock() { clearInterval(callSt.clock); callSt.clock = setInterval(() => cvPhase(callSt && callSt.phase), 1000); }
+function callEnd(why) {
+  const st = callSt; if (!st) return;
+  callSt = null;
+  clearInterval(st.clock);
+  if (st.rec && st.rec.state !== "inactive") { st.stopReason = "end"; try { st.rec.stop(); } catch {} }
+  if (st.meter) st.meter.stop();
+  if (st.abort) st.abort.abort();
+  if (callAudio) { callAudio.pause(); callAudio.onended = null; }
+  micClose();
+  st.card.state = "ended";
+  st.card.dur = st.t0 ? Math.round((Date.now() - st.t0) / 1000) : 0;
+  saveChat();
+  cv().classList.remove("on", "talking", "listening");
+  rerenderChat();
+  if (why) toast(why);
+}
+/* 一轮：把录音（或者「刚接通」）交给服务器，一段段接住他念好的声音 */
+async function callTurn(extra) {
+  const st = callSt; if (!st) return;
+  cvPhase(extra.audio ? "hear" : "think");
+  st.q = []; st.done = false;
+  st.abort = new AbortController();
+  try {
+    const resp = await fetch("api/call/turn", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: st.abort.signal,
+      body: JSON.stringify({ messages: toApiMessages(), windowId: chatData.active, prevTs: Date.now(), ...extra }),
+    });
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const ln of lines) {
+        if (!ln.startsWith("data:")) continue;
+        let j; try { j = JSON.parse(ln.slice(5).trim()); } catch { continue; }
+        if (callSt !== st) return;
+        if ("heard" in j) {
+          if (!j.heard) { callListen(); return; }
+          st.card.turns.push({ k: "me", t: j.heard }); saveChat(); cvSub("me", j.heard); cvPhase("think");
+        }
+        if (j.reply) { st.card.turns.push({ k: "ai", t: j.reply }); saveChat(); cvSub("ai", j.reply); }
+        if (j.audio) {
+          const bin = Uint8Array.from(atob(j.audio), c => c.charCodeAt(0));
+          st.q.push(URL.createObjectURL(new Blob([bin], { type: j.mime || "audio/mpeg" })));
+          if (st.phase !== "talk") callPlayNext();
+        }
+        if (j.capped) { callEnd("今天念的字数到上限了，先打字吧"); return; }
+        if (j.error) document.getElementById("cvHint").textContent = "（" + String(j.error).slice(0, 40) + "）";
+        if (j.done) st.done = true;
+      }
+    }
+    st.done = true;
+    if (st.phase !== "talk" && callSt === st) callListen();
+  } catch (e) {
+    /* 被她打断时这里会收到 AbortError —— 打断那边已经开始听了，别再开一次 */
+    if (callSt !== st || (e && e.name === "AbortError")) return;
+    document.getElementById("cvHint").textContent = "（没连上，再说一次）";
+    callListen();
+  }
+}
+function callPlayNext() {
+  const st = callSt; if (!st) return;
+  const url = st.q.shift();
+  if (!url) { if (st.done) callListen(); else cvPhase("think"); return; }
+  cvPhase("talk");
+  callAudio.onended = () => { URL.revokeObjectURL(url); callPlayNext(); };
+  callAudio.src = url;
+  const p = callAudio.play(); if (p) p.catch(() => { URL.revokeObjectURL(url); callPlayNext(); });
+}
+/* 打断他：停掉正在放的，扔掉还没放的，直接开始听 */
+function callInterrupt() {
+  const st = callSt; if (!st || st.phase !== "talk") return;
+  callAudio.pause(); callAudio.onended = null;
+  st.q.forEach(u => URL.revokeObjectURL(u)); st.q = [];
+  if (st.abort) st.abort.abort();
+  callListen();
+}
+/* 听她说：音量明显高过底噪算开始说话；说过话之后安静 0.9 秒算说完 */
+function callListen() {
+  const st = callSt; if (!st || !micStream) return;
+  cvPhase("listen");
+  const rec = new MediaRecorder(micStream, { mimeType: recMime() });
+  const chunks = [];
+  rec.ondataavailable = ev => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+  st.rec = rec; st.stopReason = "";
+  const meter = st.meter || levelMeter(micStream); st.meter = meter;
+  let floor = 0, n = 0, talking = false, loudMs = 0, quietMs = 0, spokeMs = 0;
+  const t0 = Date.now();
+  rec.start(250);
+  const tick = setInterval(() => {
+    if (callSt !== st || st.rec !== rec) { clearInterval(tick); return; }
+    const v = st.muted ? 0 : meter.read();
+    if (Date.now() - t0 < 450) { floor += v; n++; return; }                 /* 先听半秒底噪 */
+    const base = Math.min(0.08, Math.max(0.012, (floor / Math.max(1, n)) * 2.5));
+    if (v > base) { loudMs += 60; quietMs = 0; if (loudMs >= 120) talking = true; }
+    else { loudMs = 0; if (talking) quietMs += 60; }
+    if (talking) spokeMs += 60;
+    const long = Date.now() - t0 > 40000;
+    if ((talking && quietMs >= 900 && spokeMs >= 300) || long) {
+      clearInterval(tick);
+      st.stopReason = talking ? "done" : "idle";
+      rec.stop();
+    }
+  }, 60);
+  rec.onstop = async () => {
+    clearInterval(tick);
+    if (callSt !== st || st.stopReason === "end") return;
+    if (st.stopReason !== "done") { callListen(); return; }            /* 40 秒一句没说：接着听 */
+    const blob = new Blob(chunks, { type: rec.mimeType || recMime() });
+    callTurn({ audio: await blobToB64(blob), mime: blob.type, secs: (Date.now() - t0) / 1000 });
+  };
+}
+/* 通话界面点一下：他在说就打断 */
+document.getElementById("callView").addEventListener("click", () => callInterrupt());
+
+/* 他打来的电话：打开 app / 拉到新数据时看一眼，还在响就弹来电，响太久了记成未接 */
+function checkRinging() {
+  if (!chatReady || callSt) return;
+  let changed = false;
+  for (const m of chatLog) {
+    if (m.k !== "call") continue;
+    /* 打到一半锁屏 / 划掉了 app：这通电话其实已经断了，收个尾 */
+    if (m.state === "active") { m.state = "ended"; m.dur = m.dur || 0; changed = true; continue; }
+    if (m.who === "ai" && m.state === "ringing" && Date.now() - (m.at || m.ts || 0) > CALL_WAIT) { m.state = "missed"; changed = true; }
+  }
+  if (changed) { saveChat(); rerenderChat(); }
+  const ring = [...chatLog].reverse().find(m => m.k === "call" && m.who === "ai" && m.state === "ringing");
+  if (ring) callIncoming(ring);
+}
+
+/* ---------- 设置：声音 ---------- */
+var voiceCur = null;
+async function voiceRefresh(quiet) {
+  try {
+    const c = await (await fetch("api/voice")).json();
+    voiceCur = c;
+    VOICE_READY = !!c.ready; VOICE_CALL = !!(c.ready && c.callOn);
+    const cb = document.getElementById("callBtn"); if (cb) cb.style.display = c.ready ? "" : "none";
+    const brief = document.getElementById("voiceBrief");
+    if (brief) brief.textContent = c.ready ? "配好了 · 今天念了 " + c.today.chars + " / " + c.dayCap + " 字" : "让他用你们做的那个声音说话、打电话";
+    if (quiet) return;
+    const opt = (sel, v) => { const el = document.getElementById(sel); el.innerHTML = c.models.map(m => `<option value="${m}">${m}</option>`).join(""); el.value = v; };
+    opt("vMsgModel", c.msgModel); opt("vCallModel", c.callModel);
+    const key = document.getElementById("vKey"); key.value = "";
+    key.placeholder = c.hasKey ? (c.fromEnv ? "已存（来自 Zeabur 环境变量）" : "已存（要换就填新的）") : "还没填";
+    document.getElementById("vVoice").value = c.voiceId || "";
+    document.getElementById("vCap").value = c.dayCap;
+    document.getElementById("vOn").classList.toggle("on", c.on);
+    document.getElementById("vCallOn").classList.toggle("on", c.callOn);
+    document.getElementById("vStat").innerHTML =
+      `今天念了 <b>${c.today.chars}</b> / ${c.dayCap} 字，听写了 <b>${c.today.sttSec}</b> 秒<br>` +
+      `一共念了 ${c.allTime.chars} 字，听写了 ${c.allTime.sttSec} 秒`;
+  } catch (e) { if (!quiet) noteError("声音", e); }
+}
+async function voiceSave() {
+  const v = id => document.getElementById(id).value.trim();
+  const body = { voiceId: v("vVoice"), msgModel: v("vMsgModel"), callModel: v("vCallModel"), dayCap: v("vCap"),
+    on: document.getElementById("vOn").classList.contains("on"), callOn: document.getElementById("vCallOn").classList.contains("on") };
+  if (v("vKey")) body.key = v("vKey");
+  try {
+    await fetch("api/voice", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    toast("存好了"); voiceRefresh();
+  } catch (e) { toast("没存上：" + String(e.message || e).slice(0, 30)); }
+}
+async function voiceTry(el) {
+  toast("让他说一句…");
+  try {
+    const j = await (await fetch("api/voice/try", { method: "POST" })).json();
+    if (!j.ok) { toast("没说出来：" + String(j.error || "").slice(0, 40)); return; }
+    playVoice(j.url, el);
+    voiceRefresh();
+  } catch (e) { toast("没说出来：" + String(e.message || e).slice(0, 30)); }
+}
+
 /* ===== 真推送 =====
    iOS 的条件很硬，缺一条都收不到：16.4+、先「添加到主屏幕」、
    从那个图标打开、而且授权必须她亲手点一下触发。

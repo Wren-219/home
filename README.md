@@ -94,6 +94,12 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
   配好邮箱和授权码，晤就能用 `send_mail` 往外寄信。
   可以打开「他主动找我时顺手寄一封」—— 手机的邮件提醒就是现成的推送，
   省掉整套 Service Worker。授权码只进不出，界面上永远只显示「已存」
+- **声音**（设置 → 声音）：借 ElevenLabs 用她们做的那个声音。他有 `send_voice`（发语音）和
+  `call_her`（打电话）两件工具，唤醒时 JSON 里也能 `voice: true` / `call: true`；
+  她按住🎙说话（Scribe 听写成字给他），右上角电话按钮打给他。通话是一来一回的：
+  前端听出她说完了（音量 + 静 0.9 秒）→ `/api/call/turn` 听写、交给他（跟聊天同一个 `prepTurn()`
+  前缀）、分句念、按顺序推回。念的时候跳过括号里的动作。每天有念字上限。
+  钥匙只进不出，也能走 `WU_ELEVEN_KEY` / `WU_ELEVEN_VOICE`
 - **体检**（`tests/`）：29 组、三百多条检查，全用假数据和假服务，不碰真数据、不花钱。
   定期跑一次就好：`cd tests && npm install && npm run check`，说明见 `tests/README.md`
 - **静态文件只发白名单**：`/`、`/admin`、`/sw.js`、两张图标，别的一律 404。
