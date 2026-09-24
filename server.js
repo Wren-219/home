@@ -1064,6 +1064,9 @@ function voiceConf() {
     on: d.on !== false,             // 让他能发语音
     callOn: d.callOn !== false,     // 让他能打电话
     dayCap: Math.max(0, Number(d.dayCap) || 6000),          // 每天最多念多少字
+    /* 语气：account = 用她在 ElevenLabs 上给这个声音存的设置（不另外指定）；
+       steady = 稳一点（音量、语气更平均，不会忽大忽小）；lively = 更有感情（起伏大） */
+    tone: ["account", "steady", "lively"].includes(d.tone) ? d.tone : "account",
     fromEnv: !d.key && !!ENV_ELEVEN_KEY,
   };
 }
@@ -1087,7 +1090,14 @@ function speakable(text) {
     .replace(/\n{2,}/g, "\n").replace(/[ \t]+/g, " ").trim();
 }
 /* 说：返回 { buf, mime, chars }。超了今天的闸就返回 { capped: true } */
-async function tts(text, { model, format } = {}) {
+/* 语气档位 → ElevenLabs 的 voice_settings。
+   eleven_v3 的 stability 只认 0 / 0.5 / 1 三档（创意 / 自然 / 稳），别的模型是 0~1 连续的 */
+function toneSettings(tone, model) {
+  if (tone === "steady") return { stability: model === "eleven_v3" ? 1 : 0.75, similarity_boost: 0.8, style: 0, use_speaker_boost: true };
+  if (tone === "lively") return { stability: model === "eleven_v3" ? 0 : 0.35, similarity_boost: 0.75, style: 0.35, use_speaker_boost: true };
+  return null;
+}
+async function tts(text, { model, format, prev, next } = {}) {
   const c = voiceConf();
   if (!c.key || !c.voiceId) throw new Error("还没配声音");
   const say = speakable(text).slice(0, 1500);
@@ -1097,7 +1107,14 @@ async function tts(text, { model, format } = {}) {
   const r = await fetch(url, {
     method: "POST", signal: AbortSignal.timeout(30000),
     headers: { "xi-api-key": c.key, "Content-Type": "application/json", Accept: "audio/mpeg" },
-    body: JSON.stringify({ text: say, model_id: model || c.msgModel }),
+    body: JSON.stringify({
+      text: say, model_id: model || c.msgModel,
+      ...(toneSettings(c.tone, model || c.msgModel) ? { voice_settings: toneSettings(c.tone, model || c.msgModel) } : {}),
+      /* 一段话拆成几句分开念时，把前后文递过去，句与句之间的音量、语气才接得上。
+         v3 不一定支持，只给别的模型 */
+      ...((model || c.msgModel) !== "eleven_v3" && prev ? { previous_text: String(prev).slice(-300) } : {}),
+      ...((model || c.msgModel) !== "eleven_v3" && next ? { next_text: String(next).slice(0, 300) } : {}),
+    }),
   });
   if (!r.ok) throw new Error("ElevenLabs 说话失败（HTTP " + r.status + "）：" + (await r.text()).slice(0, 120));
   const buf = Buffer.from(await r.arrayBuffer());
@@ -3115,7 +3132,7 @@ const server = http.createServer(async (req, res) => {
       const c = voiceConf(), v = voiceLog();
       sendJson(res, 200, {
         hasKey: !!c.key, fromEnv: c.fromEnv, voiceId: c.voiceId, msgModel: c.msgModel, callModel: c.callModel,
-        on: c.on, callOn: c.callOn, dayCap: c.dayCap, ready: voiceReady(), models: VOICE_MODELS,
+        on: c.on, callOn: c.callOn, dayCap: c.dayCap, tone: c.tone, ready: voiceReady(), models: VOICE_MODELS,
         today: { chars: v.chars, sttSec: v.sttSec }, allTime: v.allTime,
       });
       return;
@@ -3132,6 +3149,7 @@ const server = http.createServer(async (req, res) => {
       if (VOICE_MODELS.includes(body.callModel)) next.callModel = body.callModel;
       if (typeof body.on === "boolean") next.on = body.on;
       if (typeof body.callOn === "boolean") next.callOn = body.callOn;
+      if (["account", "steady", "lively"].includes(body.tone)) next.tone = body.tone;
       if (Number.isFinite(Number(body.dayCap)) && body.dayCap !== "" && body.dayCap != null) next.dayCap = Math.max(0, Math.min(200000, Math.round(Number(body.dayCap))));
       writeJson("voice", next);
       sendJson(res, 200, { ok: true, ready: voiceReady() });
@@ -3194,7 +3212,11 @@ const server = http.createServer(async (req, res) => {
           if (parts.length && (parts[parts.length - 1].length < 12 || t.length < 4)) parts[parts.length - 1] += t;
           else parts.push(t);
         }
-        const jobs = parts.slice(0, 8).map(t => tts(t, { model: vc.callModel, format: "mp3_22050_32" }).catch(e => ({ error: e.message })));
+        /* 以前是 mp3_22050_32（为了传得快）—— 手机外放出来发糙、发吵。改成跟语音消息一样的 128k。
+           每句带上前后文一起念，句与句之间才不会一句大一句小 */
+        const use = parts.slice(0, 8);
+        const jobs = use.map((t, i) => tts(t, { model: vc.callModel, format: "mp3_44100_128",
+          prev: use.slice(0, i).join(""), next: use.slice(i + 1).join("") }).catch(e => ({ error: e.message })));
         for (let i = 0; i < jobs.length; i++) {
           const r = await jobs[i];
           if (r.capped) { send({ capped: true }); break; }

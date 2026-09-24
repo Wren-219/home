@@ -38,13 +38,15 @@
   /* html 也上底色：body 是 fixed，iOS 键盘收起后视口偶尔会短暂露出 body 之外的区域，
      露出来的其实是 html 的默认白底 —— 那就是页面底部那块白。上了色就不刺眼了 */
   html, body { height: 100%; }
-  html { background: #E9EDF3; overscroll-behavior: none; }
+  /* html 的底色也是 iPhone 最底下那条带子的颜色（见 fitScreen）—— 调成跟页面底部一样，看着是连着的 */
+  html { background: #E6ECF3; overscroll-behavior: none; }
+  /* 那条带子本身就在 home 条的位置上，导航栏不用再给 home 条留地方了 */
+  html.ios-gap { --sab: 0px; }
   /* 固定整个页面：防止 iOS Safari 整页橡皮筋滚动 / 键盘顶飞布局 */
   body {
     font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased;
     position: fixed; top: 0; left: 0; right: 0; width: 100%; overflow: hidden; overscroll-behavior: none;
-    /* 高度不用 inset:0 —— 见 fitScreen()：iOS 主屏幕模式下那样会在底下空出一截 */
-    height: var(--appH, 100%);
+    height: 100%;
   }
 
   #frame {
@@ -819,7 +821,8 @@
   .v-text { font-size: 12px; color: var(--ink-soft); line-height: 1.6; max-width: 78%; margin: -4px 4px 2px; }
   .v-text.me { align-self: flex-end; text-align: right; }
   .v-text.ai { align-self: flex-start; }
-  .v-text .tog { color: var(--ink-faint); cursor: pointer; }
+  .v-text .tog { color: var(--ink-faint); cursor: pointer; padding: 2px 0; }
+  .v-text .tog:not(:first-child) { margin-left: 8px; }
   /* ===== 通话卡片 ===== */
   .call-card { align-self: center; font-size: 12px; color: var(--ink-soft); background: rgba(255,255,255,.55);
     border: 1px solid rgba(255,255,255,.8); border-radius: 999px; padding: 6px 14px; cursor: pointer; max-width: 86%; }
@@ -1272,7 +1275,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.7（他有声音了：语音消息、语音通话）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.8（底部那条带子 · 转文字能收起 · 声音更稳）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1423,7 +1426,17 @@
           <div class="field"><label>打电话用的模型（快优先）</label><select class="set-sel" id="vCallModel"></select></div>
           <div class="set-note" style="margin:-4px 2px 10px">
             multilingual_v2 音质最好；flash_v2_5 最快（打电话用它，一句话零点几秒就念好）；
-            v3 最有感情，但慢一些。
+            v3 最有感情，但慢一些，也最容易忽大忽小。
+          </div>
+          <div class="field"><label>语气</label>
+            <select class="set-sel" id="vTone">
+              <option value="account">按 ElevenLabs 上这个声音存的设置</option>
+              <option value="steady">稳一点（音量、语气平均，不忽大忽小）</option>
+              <option value="lively">更有感情（起伏大一些）</option>
+            </select>
+          </div>
+          <div class="set-note" style="margin:-4px 2px 10px">
+            他的声音要是一会儿大一会儿小、或者发糙，先试「稳一点」，再点上面的「让他说一句」听听。
           </div>
         </div>
         <div class="set-card">
@@ -3241,13 +3254,21 @@ function voiceNode(m) {
   b.style.minWidth = Math.min(210, 84 + (m.dur || 1) * 5) + "px";
   b.addEventListener("click", () => playVoice(m.voice, b));
   wrap.appendChild(b);
+  /* 每条都能单独展开 / 收起，选过的记在这条消息上（m.showText），刷新也还是那样。
+     她的默认展开（看他听没听错），他的默认收起（先听声音）。
+     这个字段只给界面用，toApiMessages 只取 t，不会进他的记录 */
   const tx = document.createElement("div");
   tx.className = "v-text " + side;
-  if (side === "me") tx.textContent = m.t || "";
-  else {
-    tx.innerHTML = '<span class="tog">转文字</span>';
-    tx.querySelector(".tog").onclick = () => { tx.textContent = m.t || ""; };
-  }
+  const paint = () => {
+    const shown = side === "me" ? m.showText !== false : m.showText === true;
+    tx.textContent = "";
+    if (shown) tx.appendChild(document.createTextNode(m.t || ""));
+    const tog = document.createElement("span");
+    tog.className = "tog"; tog.textContent = shown ? "收起" : "转文字";
+    tog.onclick = e => { e.stopPropagation(); m.showText = !shown; saveChat(); paint(); };
+    tx.appendChild(tog);
+  };
+  paint();
   wrap.appendChild(tx);
   return wrap;
 }
@@ -4991,6 +5012,7 @@ async function voiceRefresh(quiet) {
     key.placeholder = c.hasKey ? (c.fromEnv ? "已存（来自 Zeabur 环境变量）" : "已存（要换就填新的）") : "还没填";
     document.getElementById("vVoice").value = c.voiceId || "";
     document.getElementById("vCap").value = c.dayCap;
+    document.getElementById("vTone").value = c.tone || "account";
     document.getElementById("vOn").classList.toggle("on", c.on);
     document.getElementById("vCallOn").classList.toggle("on", c.callOn);
     document.getElementById("vStat").innerHTML =
@@ -5000,7 +5022,7 @@ async function voiceRefresh(quiet) {
 }
 async function voiceSave() {
   const v = id => document.getElementById(id).value.trim();
-  const body = { voiceId: v("vVoice"), msgModel: v("vMsgModel"), callModel: v("vCallModel"), dayCap: v("vCap"),
+  const body = { voiceId: v("vVoice"), msgModel: v("vMsgModel"), callModel: v("vCallModel"), dayCap: v("vCap"), tone: v("vTone"),
     on: document.getElementById("vOn").classList.contains("on"), callOn: document.getElementById("vCallOn").classList.contains("on") };
   if (v("vKey")) body.key = v("vKey");
   try {
@@ -5492,18 +5514,20 @@ function isTyping() {
   if (a.tagName === "TEXTAREA" || a.isContentEditable) return true;
   return a.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/i.test(a.type || "");
 }
-/* iOS 主屏幕模式 + 状态栏透明（black-translucent）的老毛病：页面从屏幕最顶上画起，
-   高度却按「屏幕减状态栏」算，底下就空出一截、露出 html 的底色 ——
-   就是页面最下面那条颜色断开的带子。
-   主屏幕模式、竖屏、键盘没开的时候，直接按整块屏幕的高度铺满。
-   没这个毛病的设备上 innerHeight 本来就等于屏幕高，这里什么都不会改。 */
+/* iOS 主屏幕模式 + 状态栏透明（black-translucent）的毛病：页面从屏幕最顶上画起，
+   高度却按「屏幕减状态栏」算，最底下空出一条（她的手机上正好 62pt，一个状态栏高）。
+   ⚠️ 那一条网页根本画不进去 —— v3.6 试过把页面撑到整屏高，结果页面在带子上沿被截断，
+   导航栏被切掉一半。所以不跟它抢：
+     · 导航栏老老实实待在能画的范围里，而且不再给 home 条留位置（带子就在 home 条那儿）
+     · 带子的颜色是 html 的底色，调成跟页面底部一样，看着是连着的
+   没这个毛病的设备、Safari 里直接开的，什么都不变。 */
 function fitScreen() {
+  if (document.body.classList.contains("kb-open")) return;   /* 键盘开着时窗口本来就缩了，别误判 */
   const standalone = navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
   const portrait = window.innerHeight > window.innerWidth;
   const gap = screen.height - window.innerHeight;
-  const on = standalone && portrait && !document.body.classList.contains("kb-open")
-    && gap > 0 && gap < 160 && Math.abs(screen.width - window.innerWidth) < 2;
-  document.documentElement.style.setProperty("--appH", on ? screen.height + "px" : "100%");
+  const on = standalone && portrait && gap > 20 && gap < 160 && Math.abs(screen.width - window.innerWidth) < 2;
+  document.documentElement.classList.toggle("ios-gap", on);
 }
 function kbSync() {
   const kb = isTyping();

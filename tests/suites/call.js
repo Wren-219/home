@@ -38,7 +38,7 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
 
   console.log('[她打给他]');
   fs.writeFileSync(WORK + '/stt.txt', '今天好累呀');
-  plan(['喂？怎么啦', '那就早点歇着。我陪你说会儿话，好不好？', '嗯嗯。', '好。']);
+  plan(['喂？怎么啦', '那就早点歇着吧，今天辛苦你了。我陪你说会儿话，好不好呀，想听你说说。', '嗯嗯。', '好。']);
   await page.click('#callBtn');
   ok(await waitFor(() => document.getElementById('callView').classList.contains('on'), 3000), '通话界面出来了');
   const callReq = await (async () => { await waitFor(() => callSt && callSt.card.turns.length >= 1, 8000); return last(); })();
@@ -54,8 +54,11 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
   ok(await page.evaluate(() => callSt.card.turns.find(t => t.k === 'me').t === '今天好累呀'), '听写成「今天好累呀」交给了他');
   ok(await waitFor(() => callSt && callSt.card.turns.filter(t => t.k === 'ai').length >= 2, 10000), '他接着回了话');
   const tts = eleven().filter(x => x.text);
-  const callTts = tts.filter(x => x.format === 'mp3_22050_32');
-  ok(callTts.length >= 2 && callTts.every(x => x.model === 'eleven_flash_v2_5'), '电话里用的是最快的 flash 模型、小码率（' + callTts.length + ' 段）');
+  const callTts = tts.filter(x => x.model === 'eleven_flash_v2_5');
+  ok(callTts.length >= 3, '电话里用的是最快的 flash 模型（' + callTts.length + ' 段）');
+  ok(callTts.every(x => x.format === 'mp3_44100_128'), '码率跟语音消息一样是 128k（以前 32k，外放发糙）');
+  const p1 = callTts.find(x => x.text === '那就早点歇着吧，今天辛苦你了。'), p2 = callTts.find(x => x.text === '我陪你说会儿话，好不好呀，想听你说说。');
+  ok(p1 && p2 && p1.next === p2.text && p2.prev === p1.text, '分句念的时候带着前后文，句与句之间音量语气接得上');
   ok(await page.evaluate(() => document.getElementById('cvSub').textContent.includes('今天好累呀')), '通话界面上有字幕');
   ok(/\d\d:\d\d/.test(await page.textContent('#cvSt')), '有通话计时：' + await page.textContent('#cvSt'));
 

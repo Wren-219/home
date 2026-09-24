@@ -53,7 +53,8 @@ global.fetch = async (url, opt) => {
     if (u.includes('/v1/text-to-speech/')) {
       const body = JSON.parse(opt.body);
       const q = new URL(u);
-      log.push({ path: q.pathname, format: q.searchParams.get('output_format'), text: body.text, model: body.model_id });
+      log.push({ path: q.pathname, format: q.searchParams.get('output_format'), text: body.text, model: body.model_id,
+        settings: body.voice_settings || null, prev: body.previous_text || '', next: body.next_text || '' });
       fs.writeFileSync(LOG, JSON.stringify(log));
       return new Response(wav(Math.min(1.2, 0.2 + body.text.length * 0.03)), { status: 200, headers: { 'content-type': 'audio/wav' } });
     }

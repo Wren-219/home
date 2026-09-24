@@ -73,6 +73,10 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
   ok(await page.evaluate(() => !!vPlayingEl), '点一下能放');
   await page.click('.v-text.ai .tog');
   ok((await page.textContent('.v-text.ai')).includes('晚安'), '「转文字」点开能看到字');
+  ok((await page.textContent('.v-text.ai .tog')) === '收起', '展开之后有「收起」');
+  await page.click('.v-text.ai .tog');
+  ok(!(await page.textContent('.v-text.ai')).includes('晚安') && (await page.textContent('.v-text.ai .tog')) === '转文字', '点「收起」又收回去了');
+  await page.click('.v-text.ai .tog');   /* 再展开，留着这个状态，待会儿刷新看记不记得 */
   const api1 = await page.evaluate(() => toApiMessages().map(m => m.content).filter(c => c.includes('晚安')));
   ok(api1[0] === '（语音）（小声）晚安，早点睡。', '他那边的记录里：' + api1[0]);
 
@@ -92,6 +96,17 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
   const heard = eleven().filter(x => x.path === '/v1/speech-to-text').pop();
   ok(heard && heard.model === 'scribe_v2' && heard.size > 1000, '交给 ElevenLabs 听写了（scribe_v2，' + (heard && heard.size) + ' 字节）');
   ok((await page.textContent('.v-text.me')).includes('今天好累呀'), '她自己那条下面直接显示识别出来的字');
+  await page.click('.v-text.me .tog');
+  ok(!(await page.textContent('.v-text.me')).includes('今天好累呀'), '她那条也能收起来');
+  await page.waitForTimeout(1500);   /* 等聊天记录同步到服务器 */
+  await page.reload({ waitUntil: 'networkidle' });
+  for (const d of ['0','5','2','7']) await page.click(`#keypad .key:text-is("${d}")`);
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => document.querySelector('.tab[data-page="chat"]').click());
+  await page.waitForTimeout(600);
+  ok((await page.textContent('.v-text.ai')).includes('晚安') && !(await page.textContent('.v-text.me')).includes('今天好累呀'),
+     '刷新之后，每条展开还是收起都记得（他那条开着、她那条收着）');
+  ok(!(await page.evaluate(() => JSON.stringify(toApiMessages()))).includes('showText'), '展开收起只是界面上的事，不会进他的记录');
   ok(await page.evaluate(() => chatLog[chatLog.length - 1].t === '辛苦啦'), '然后他照常回了话');
   const sent = last().messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n');
   ok(sent.includes('（语音）今天好累呀'), '他收到的是「（语音）今天好累呀」');
@@ -112,6 +127,17 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
   ok((await page.textContent('#holdTip .tx')).includes('取消'), '滑上去提示变成「松开手指，取消发送」');
   await page.mouse.up(); await page.waitForTimeout(800);
   ok((await page.evaluate(() => chatLog.length)) === before, '松手也没发');
+
+  console.log('\n[语气]');
+  const say1 = async () => { await api('api/voice/try', 'POST'); return eleven().filter(x => x.text).pop(); };
+  ok((await say1()).settings === null, '默认不另外指定，用她在 ElevenLabs 上给这个声音存的设置');
+  await api('api/voice', 'PUT', { tone: 'steady' });
+  let st = await say1();
+  ok(st.settings && st.settings.stability === 0.75 && st.settings.use_speaker_boost === true, '「稳一点」：稳定度 0.75 —— ' + JSON.stringify(st.settings));
+  await api('api/voice', 'PUT', { msgModel: 'eleven_v3' });
+  st = await say1();
+  ok(st.settings.stability === 1 && st.model === 'eleven_v3', 'v3 只认 0 / 0.5 / 1 三档，「稳一点」就给 1');
+  await api('api/voice', 'PUT', { tone: 'account', msgModel: 'eleven_multilingual_v2' });
 
   console.log('\n[省钱闸]');
   await api('api/voice', 'PUT', { dayCap: 5 });

@@ -25,12 +25,16 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
     body: document.body.getBoundingClientRect().height,
     frame: document.getElementById('frame').getBoundingClientRect().bottom,
     tab: document.getElementById('tabbar').getBoundingClientRect().bottom,
-    appH: getComputedStyle(document.documentElement).getPropertyValue('--appH').trim(),
+    gap: document.documentElement.classList.contains('ios-gap'),
+    sab: getComputedStyle(document.documentElement).getPropertyValue('--sab').trim(),
   }));
   console.log('      ' + JSON.stringify(g));
-  ok(g.body === 956, '页面铺满了整块屏幕（956），不再停在 887');
-  ok(g.frame === 956, '背景一直画到屏幕最底下');
-  ok(g.tab > 887 && g.tab < 956, '导航栏落在该在的位置（离屏幕底 ' + (956 - g.tab) + 'px，靠着 home 条）');
+  /* v3.6 试过把页面撑到 956 —— 真 iPhone 上那一条根本画不进去，导航栏被切掉一半。
+     现在：页面待在能画的 887 里，认出这条带子，导航栏不再给 home 条留位置 */
+  ok(g.gap, '认出了底下那条带子（窗口比屏幕矮 69）');
+  ok(g.body === 887 && g.frame === 887, '页面不往带子里撑（那一条 iPhone 不让画）');
+  ok(g.tab <= 887 && 887 - g.tab <= 10, '导航栏整个都在能画的范围里，贴着底（离底 ' + (887 - g.tab) + 'px）');
+  ok(g.sab === '0px', '导航栏不再额外给 home 条留位置（带子就在 home 条那儿）');
 
   console.log('\n[打字的时候]');
   await page.focus('#chatInput');
@@ -47,7 +51,7 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   console.log('      ' + JSON.stringify(k));
   ok(k.kb, '窗口缩了之后，还认得出键盘开着（以前这里会被撤掉）');
   ok(k.tab === 'none', '导航栏藏起来了，不会被顶到键盘上面');
-  ok(k.body === 520, '这时候页面跟着键盘缩，不去撑满屏幕');
+  ok(k.body === 520, '这时候页面跟着键盘缩');
   ok(k.inBottom <= 520 && k.inBottom > 480, '输入框贴着键盘（底边 ' + Math.round(k.inBottom) + '）');
   await page.screenshot({ path: 'ui-键盘.png' });
 
@@ -81,7 +85,7 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
     body: document.body.getBoundingClientRect().height,
   }));
   ok(!c.kb && c.tab !== 'none', '导航栏回来了');
-  ok(c.body === 956, '又铺满整块屏幕');
+  ok(c.body === 887 && await page.evaluate(() => document.documentElement.classList.contains('ios-gap')), '收起键盘后回到原样，带子照样认得出');
   await page.screenshot({ path: 'ui-底部.png' });
 
   console.log('\n[设置页里的输入框也一样]');
@@ -100,11 +104,11 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   await ctx2.addInitScript(() => Object.defineProperty(navigator, 'standalone', { get: () => true }));
   const p2 = await ctx2.newPage();
   await p2.goto('http://localhost:8081', { waitUntil: 'networkidle' });
-  ok((await p2.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--appH').trim())) === '100%', '窗口本来就等于屏幕高：不动');
+  ok(!(await p2.evaluate(() => document.documentElement.classList.contains('ios-gap'))), '窗口本来就等于屏幕高：不动');
   const ctx3 = await b.newContext({ viewport: { width: 440, height: 887 }, screen: { width: 440, height: 956 }, isMobile: true });
   const p3 = await ctx3.newPage();
   await p3.goto('http://localhost:8081', { waitUntil: 'networkidle' });
-  ok((await p3.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--appH').trim())) === '100%', 'Safari 里直接开（不是主屏幕模式）：也不动，那里的底下是浏览器工具栏');
+  ok(!(await p3.evaluate(() => document.documentElement.classList.contains('ios-gap'))), 'Safari 里直接开（不是主屏幕模式）：也不动，那里的底下是浏览器工具栏');
 
   console.log('\n页面错误：' + (errs.length ? errs.join(' | ') : '无'));
   await b.close();
