@@ -14,6 +14,10 @@ const t0 = Date.now();
 const API_M1 = { list: [{ id: 'm1', name: '假模型', base: 'http://localhost:8099', key: 'sk-test', model: 'fake', dialect: 'openai',
   price: { in: 1, out: 2, cacheRead: 0.1, cacheWrite: 1, unit: '￥' } }], chat: 'm1', worker: 'm1' };
 const NO_API = { list: [], chat: null, worker: null };
+const API_EYES = { list: [
+  { id: 'm1', name: '假模型', base: 'http://localhost:8099', key: 'sk-test', model: 'fake', dialect: 'openai', price: { in: 1, out: 2, cacheRead: 0.1, unit: '￥' } },
+  { id: 'v1', name: '眼睛', base: 'http://localhost:8093', key: 'sk-v', model: 'vfake', dialect: 'openai', vision: true, price: { in: 0, out: 0, unit: '￥' } },
+], chat: 'm1', worker: 'm1', vision: 'v1' };
 const P4 = { list: [{ start: '2026-06-05', end: '2026-06-10' }, { start: '2026-07-04', end: '2026-07-09' }, { start: '2026-08-02', end: '2026-08-06' }, { start: '2026-08-31', end: '2026-09-04' }], on: true };
 const THINK = { i: 0, steps: [{ think: '她问我在不在。这个点她应该刚下课…上次她说今天有实验课，可能会累。别问太多，先应一声。' + '再想想要不要问她吃饭没有。她有时候会忘。'.repeat(3), text: '在呀。\n\n今天怎么样' }, { text: '嗯。' }] };
 const OPENAI = ['mock-openai.js'];
@@ -32,6 +36,7 @@ const SUITE = [
   ['界面', 'chat-open', '打开聊天停在最新一条；开着 app 也收得到他的话', true, { apis: API_M1 }, OPENAI],
   ['界面', 'thinking-ui', '思考过程的展开 / 收起', true, { apis: API_M1, plan: THINK }, ['mock-think.js']],
   ['界面', 'vision', '看图：小图、字节不变、开关、攒 8 张砍回 4 张', true, { apis: NO_API }, ['mock-claude.js', 'mock-openai-log.js']],
+  ['联动', 'eyes-peek', '他的眼睛把图读成文字 · 偷看一眼屏幕 · 醒来做了什么', true, { apis: API_EYES }, ['mock-openai.js', 'mock-vision.js', 'fake-smtp.js']],
   ['界面', 'period-ui', '「她的身体」页面', true, { period: P4 }],
   ['界面', 'calendar-period', '日历上标经期', true, { period: { ...P4, list: P4.list.slice(1) } }],
   ['界面', 'search-ui', '「上网」设置页', true, {}],
@@ -73,7 +78,7 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
   try {
     /* 干净的假数据 */
     fs.rmSync(DAT, { recursive: true, force: true }); fs.mkdirSync(DAT + '/uploads', { recursive: true });
-    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'treqs.json', 'last.json', 'eleven.json', 'stt.txt', 'smtp']) fs.rmSync(path.join(WORK, f), { force: true, recursive: true });
+    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'treqs.json', 'last.json', 'eleven.json', 'stt.txt', 'smtp', 'vdesc.txt', 'vseen.json']) fs.rmSync(path.join(WORK, f), { force: true, recursive: true });
     fs.writeFileSync(DAT + '/chat.json', JSON.stringify(chat()));
     if (seed.apis) fs.writeFileSync(DAT + '/apis.json', JSON.stringify(seed.apis));
     if (seed.period) fs.writeFileSync(DAT + '/period.json', JSON.stringify(seed.period));

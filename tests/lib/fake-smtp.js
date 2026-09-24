@@ -17,6 +17,7 @@ net.createServer(sock => {
         const end = buf.indexOf('\r\n.\r\n');
         if (end < 0) { data += buf; buf = ''; return; }
         data += buf.slice(0, end); buf = buf.slice(end + 5); inData = false;
+        fs.mkdirSync(DIR, { recursive: true });   // 测试可能把目录删了
         fs.writeFileSync(path.join(DIR, (++n) + '.eml'), data.replace(/\r\n\.\./g, '\r\n.'));
         data = ''; say('250 queued'); continue;
       }

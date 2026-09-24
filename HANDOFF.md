@@ -1390,3 +1390,33 @@ https 下加 `Strict-Transport-Security`。没上 CSP —— 页面全是内联�
 **② 备份**：`backupTick` 改成 22 点（23 点补一次）。邮件附件是 `.json`，存进「文件」后在「恢复」里选它。
 
 新组 `chase`（17）；`backup-mail` 的时间断言改成晚上十点（29）。
+
+### 47. ✅ v3.16：他的眼睛 · 看一眼她的屏幕 · 醒来做了什么
+
+她找来一份教程：「服务器发邮件 → iPhone 快捷指令收到后自动截屏 → 传回服务器」。她要：屏幕看过要留卡片让她知道；
+薅免费看图模型的羊毛（home 目前都是测试，聊天还是 DS）；醒来做了什么要有一行简短的流程。
+
+**① 眼睛（看图模型）**：新角色 `vision`（`apisConf().vision`、`envApi("vision")` 读 `VISION_*` 环境变量、`visionReady()`）。
+`describeImage(url, hint)` 用 `llmAs("vision")` 把图读成两三句中文，存 `data/imgdesc.json`（一张只读一次，最多留 60 条）。
+`/api/upload` 收到图片后后台先读；`imgParts` 在聊天模型看不了图时把描述塞进文字「（图片内容：…）」，没描述才说「看不到」。
+设置页「看图用」下拉框 + 一行提示。
+
+**② 看一眼屏幕**（`peekConf/peekReady/requestPeek/receiveScreen`，`data/peek.json`，配置在 quiet.json：`peekOn` 默认关、`peekMax` 3、`peekKw` "wupeek"）
+- 工具 `peek_screen`（`peekReady()` 才给他）：开关 / 眼睛 / 邮箱 / 预算 / 一天上限 / 三分钟内不重复 → 给 `mailConf().to`（她的 iCloud）
+  发一封主题带 `[wupeek]` 的邮件，记 `pending`（窗口、时间）。告诉他「传回来之后你会再醒一下」
+- `POST /api/screen?token=<快捷指令钥匙>`（公开路径，自己验钥匙）：body 直接是图片（快捷指令「获取 URL 内容」请求体选「文件」），
+  也认 JSON `{image: base64}`。没有 15 分钟内的 pending 就 409（防止乱传）
+- 收到后：存 `uploads/peek-*.jpg`（只留最近 6 张）→ 眼睛读 → 聊天里写一张 `{k:"peek", url, desc}` 卡片（进 `unsent`，开着 app 也收得到）
+  → `runWake({ peek: { desc } })`，纸条写「你看到的是…，她知道你看了一眼，别像在监视她」
+- 卡片 `k:"peek"` 不进 `toApiMessages` / `chatMessagesOf`（两边都只认 me/ai/call/stack/file），不影响缓存
+- 「你的时间」页：开关、一天最多几次、「怎么设置」展开的一步步说明（iCloud 邮箱、看图模型、自动化、上传地址带钥匙、关两个通知）
+
+**③ 醒来做了什么**：`llmWithTools` 的 ctx 加 `onTool`，`runWake` 按 `TOOL_TRACE` 收集（只报动作：看了眼你在忙什么 / 查了下天气 /
+记了件事 / 看了一眼你的屏幕…），他开口的那条消息带 `trace`，前端在气泡上面一行「醒来 · …」。没开口的唤醒照旧不留痕。
+
+**④ 顺带修的真 bug：`smtpSend` 对方中途断开会永远卡住。** 以前 `close` 事件里只 `clearTimeout`，没做完就不给结论，
+20 秒超时也被清掉了 —— 偷看那次就是这样整轮卡死（测试把假邮件服务器的存信目录删了，它收信时崩掉断开）。
+现在中途断开直接报错「邮件服务器中途断开了（第 N 步）」。真的邮箱服务器掉线也会触发这条。
+
+测试：`mock-openai.js` 非流式分支补上了工具调用（唤醒走非流式，以前没法测「醒来调工具」）；新假服务 `mock-vision.js`（8093）；
+新组 `eyes-peek`（24，含浏览器里卡片和那行小字）。只跑了相关的十来组，没做完整体检。

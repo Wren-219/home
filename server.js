@@ -33,6 +33,11 @@ const MODEL = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-c
 const WORKER_KEY = process.env.WORKER_API_KEY || API_KEY;
 const WORKER_BASE = (process.env.WORKER_BASE_URL || API_BASE).replace(/\/$/, "");
 const WORKER_MODEL = process.env.WORKER_MODEL || MODEL;
+/* 看图模型（「他的眼睛」）：DS 这类看不了图的聊天模型，靠它把图片写成一段文字。
+   挑个便宜或免费的看图模型：智谱 glm-4v-flash、阿里云百炼 qwen-vl 之类。不配就没有眼睛（发图他只知道「她发了图」） */
+const VISION_KEY = process.env.VISION_API_KEY || "";
+const VISION_BASE = (process.env.VISION_BASE_URL || "").replace(/\/$/, "");
+const VISION_MODEL = process.env.VISION_MODEL || "";
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync("/app/data") ? "/app/data" : path.join(__dirname, "data"));
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
 /* 开机第一件事就建目录，但这一步**不许**把服务弄死：
@@ -178,7 +183,7 @@ function loginFailed(req, now) {
 }
 /* 公开：健康检查（不带细节）与登录本身；页面文件本身不含数据，也放行 */
 /* /api/ping 也放行 —— 手机上的快捷指令带不了登录 cookie，它自己验一把单独的钥匙 */
-const PUBLIC_PATHS = new Set(["/api/health", "/api/login", "/api/ping"]);
+const PUBLIC_PATHS = new Set(["/api/health", "/api/login", "/api/ping", "/api/screen"]);
 function guarded(p) {
   if (PUBLIC_PATHS.has(p)) return false;
   if (p.startsWith("/mcp/")) return false;   // 钥匙写在路径里，自己验
@@ -200,7 +205,7 @@ function maskKey(k) {
 const PRICE0 = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, unit: "元" };
 function apisConf() {
   const a = readJson("apis", null);
-  return (a && Array.isArray(a.list)) ? a : { list: [], chat: null, worker: null };
+  return (a && Array.isArray(a.list)) ? a : { list: [], chat: null, worker: null, vision: null };
 }
 function saveApis(a) { writeJson("apis", a); }
 function newApi(d, keep) {
@@ -227,15 +232,16 @@ function newApi(d, keep) {
 }
 /* 环境变量那套永远留着当兜底，界面上配错了也不会把晤弄哑 */
 function envApi(role) {
-  const isW = role === "worker";
+  const cfg = role === "worker" ? { base: WORKER_BASE, key: WORKER_KEY, model: WORKER_MODEL }
+    : role === "vision" ? { base: VISION_BASE, key: VISION_KEY, model: VISION_MODEL }
+    : { base: API_BASE, key: API_KEY, model: MODEL };
   return {
     id: "env-" + role, name: "环境变量（Zeabur）", fromEnv: true,
-    base: isW ? WORKER_BASE : API_BASE,
-    key: isW ? WORKER_KEY : API_KEY,
-    model: isW ? WORKER_MODEL : MODEL,
-    dialect: guessDialect(isW ? WORKER_BASE : API_BASE),
+    base: cfg.base, key: cfg.key, model: cfg.model,
+    dialect: guessDialect(cfg.base),
+    vision: role === "vision" ? true : undefined,   // 眼睛这套默认就当能看图
     /* 环境变量那套没地方填价格，以前一直是 0 —— 花费永远显示 0 元。现在在「这个月」那张卡上能填 */
-    price: { ...PRICE0, ...((readJson("envprice", null) || {}).price || {}) },
+    price: { ...PRICE0, ...((readJson(role === "vision" ? "envprice_vision" : "envprice", null) || {}).price || {}) },
   };
 }
 /* Key 留空、地址跟环境变量那套一样 → 借用环境变量里那把。
@@ -253,9 +259,10 @@ function publicApi(a, conf) {
     id: a.id, name: a.name, base: a.base, model: a.model, dialect: a.dialect,
     think: a.think === true, vision: visionOn(a),
     keyMask: borrowsEnvKey(a) ? "用服务器上那把 Key" : maskKey(a.key), hasKey: !!withKey(a).key, price: a.price,
-    isChat: conf.chat === a.id, isWorker: conf.worker === a.id,
+    isChat: conf.chat === a.id, isWorker: conf.worker === a.id, isVision: conf.vision === a.id,
   };
 }
+function visionReady() { const a = activeApi("vision"); return !!(a.key && a.base && a.model); }
 
 /* ================= 用量与花费 =================
    每次对话记一笔，累计存 data/usage.json。价格按每百万 token 计，
@@ -524,6 +531,28 @@ function imgOf(url) {
   if (imgCache.size > 40) imgCache.delete(imgCache.keys().next().value);
   return out;
 }
+/* 他的眼睛：拿看图模型把一张图写成一段中文，存 data/imgdesc.json（一张只写一次，省钱）。
+   看不了图的聊天模型（比如 DS）就靠这段文字「看见」。没配眼睛就返回空。 */
+function imgDescs() { return readJson("imgdesc", null) || {}; }
+function imgDescOf(url) { const d = imgDescs()[url]; return d && d.text ? d.text : ""; }
+async function describeImage(url, hint) {
+  if (!cleanImgs([url]).length) return "";
+  const cur = imgDescs();
+  if (cur[url] && cur[url].text) return cur[url].text;
+  if (!visionReady()) return "";
+  let text = "";
+  try {
+    text = String(await llmAs("vision", [{ role: "user",
+      content: "用中文描述这张图里有什么" + (hint ? "（" + hint + "）" : "") + "。两三句话说清楚：是什么内容、她在看什么/做什么。只描述你看到的，别评论、别猜她的心情。",
+      imgs: [url] }], 300, 0.3)).trim().slice(0, 600);
+  } catch (e) { console.error("vision:", e.message); return ""; }
+  if (text) {
+    const all = imgDescs(); all[url] = { text, at: Date.now() };
+    const keys = Object.keys(all); while (keys.length > 60) delete all[keys.shift()];
+    writeJson("imgdesc", all);
+  }
+  return text;
+}
 /* 从最早往后数，第几张之前的只留文字。这条线只跟「一共发过几张」有关，
    所以同一段历史每次算出来都一样 —— 两次砍之间，前缀一个字节都不变 */
 function liveCut(total) {
@@ -547,13 +576,14 @@ function liveImages(msgs) {
 /* 一条带图的消息，按这套模型的本事拆成 [{kind:"img", media, data}, {kind:"text", text}] */
 function imgParts(m, api) {
   const text = String(m.content == null ? "" : m.content);
-  const imgs = (m.imgs || []).map(imgOf).filter(Boolean);
+  const urls = cleanImgs(m.imgs);
+  const imgs = urls.map(imgOf).filter(Boolean);
   if (!m.imgs || !m.imgs.length) return null;
-  if (!visionOn(api) || !imgs.length) {
-    /* 不是嘱托，是事实 —— 免得他假装看见了，张口就夸 */
-    return [{ kind: "text", text: text + "（你这边看不到图片内容，只知道她发了）" }];
-  }
-  return [...imgs.map(x => ({ kind: "img", ...x })), { kind: "text", text }];
+  if (visionOn(api) && imgs.length) return [...imgs.map(x => ({ kind: "img", ...x })), { kind: "text", text }];
+  /* 看不了图：眼睛描述过就把描述给他，没有就只说她发了图（别让他假装看见，张口就夸） */
+  const descs = urls.map(imgDescOf).filter(Boolean);
+  const note = descs.length ? "（图片内容：" + descs.join("；") + "）" : "（你这边看不到图片内容，只知道她发了）";
+  return [{ kind: "text", text: text + note }];
 }
 /* 从最新往回收，收到装不下为止；至少留住最后一条 */
 /* 超了额度，以前是「从最新往回装，装不下就停」—— 聊得够长以后，每说一句最早那句就掉一句，
@@ -920,7 +950,12 @@ function smtpSend(conf, to, subject, body, connectFn, attachments) {
     sock = (connectFn || ((o, cb) => tls.connect(o, cb)))({ host: conf.host, port: conf.port, servername: conf.host }, () => {});
     sock.setEncoding("utf8");
     sock.on("error", e => { clearTimeout(timer); finish(new Error("连不上邮件服务器：" + e.message)); });
-    sock.on("close", () => { clearTimeout(timer); if (step >= steps.length) finish(null, { ok: true, log: lines }); });
+    /* 对方中途断开：以前这里只清掉计时器、不给结论，发信的人就永远等下去（偷看那次就卡死在这儿） */
+    sock.on("close", () => {
+      clearTimeout(timer);
+      if (step >= steps.length) finish(null, { ok: true, log: lines });
+      else finish(new Error("邮件服务器中途断开了（第 " + (step + 1) + " 步）"));
+    });
     sock.on("data", chunk => {
       buf += chunk;
       /* 多行响应的最后一行长这样：「250 空格」，中间几行是「250-」 */
@@ -1666,6 +1701,9 @@ function quietConf() {
     chaseOn: q.chaseOn !== false,        // 聊着聊着她不回了，他可以追问一句
     chaseMin: num(q.chaseMin, 15),       // 隔几分钟算「不回了」
     chaseMax: num(q.chaseMax, 4),        // 一天最多追问几次
+    peekOn: q.peekOn === true,           // 他能不能偷看一眼她的屏幕（要先配好 iCloud + 快捷指令）
+    peekMax: num(q.peekMax, 3),          // 一天最多偷看几次
+    peekKw: typeof q.peekKw === "string" && q.peekKw.trim() ? q.peekKw.trim().slice(0, 40) : "wupeek",
   };
 }
 const DOW_CN = { "日": 0, "天": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6 };
@@ -2332,6 +2370,7 @@ async function llmWithTools(role, messages, tools, maxTokens, temperature, maxRo
       try { out = await execTool(c.name, c.args, ctx); }
       catch (e) { out = "（这个没查成：" + String(e.message || e).slice(0, 80) + "）"; }
       console.log("[wake tool]", c.name, JSON.stringify(c.args), "→", String(out).slice(0, 60).replace(/\n/g, " "));
+      if (ctx && ctx.onTool) ctx.onTool(c.name, c.args);
       msgs.push({ role: "tool", tool_call_id: c.id, content: String(out).slice(0, 4000) });
     }
   }
@@ -2476,7 +2515,11 @@ async function runWake(alarm) {
     `你当时记下的是：${alarm.why}\n` +
     `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
     (phone ? "上面【她的手机】那一段是她这会儿的动静 —— 要是你惦记的正是她睡没睡，看那里。\n\n" : "") +
-    (alarm.chase
+    (alarm.peek
+      ? "你刚才想看看她在干嘛。她的手机替你拍了一眼这会儿的屏幕，你看到的是：\n「" + (alarm.peek.desc || "（没看清）") + "」\n\n" +
+        "她知道你看了一眼（聊天里会留个记号）。看着这个，你可以轻声说句话、逗她一下，也可以就安静放心地待着 —— 别像在监视她。\n" +
+        "像平常那样说，别提屏幕、截图、系统这些词。\n\n"
+      : alarm.chase
       ? "你们刚才还在聊，她已经 " + Math.max(1, Math.round((now - (alarm.since || now)) / 60000)) + " 分钟没回你了。\n\n" +
         (phone ? "上面【她的手机】是她这会儿的动静 —— 她是去忙了、睡着了，还是在刷别的 App 不理你，看那里就知道。\n\n"
           : "想知道她这会儿在干嘛，可以用 check_phone 看一眼她的手机。\n\n") +
@@ -2512,7 +2555,11 @@ async function runWake(alarm) {
      二来他醒着的时候本来就该能查 —— 查她的手机、天气、上网都行 */
   /* 他醒着的时候也可能直接调 send_voice / call_her —— 收起来，下面一起写进聊天 */
   const events = [];
-  const { text: raw, billed } = await llmWithTools("chat", messages, chatTools(), 400, 0.8, 2, { emit: e => events.push(e) });
+  const did = [];
+  const seenTool = new Set();
+  const onTool = (name) => { const lb = TOOL_TRACE[name]; if (lb && !seenTool.has(name)) { seenTool.add(name); did.push(lb); } };
+  const { text: raw, billed } = await llmWithTools("chat", messages, chatTools(), 400, 0.8, 2,
+    { emit: e => events.push(e), onTool, win: win.id || alarm.win, reason: alarm.why });
   const j = extractJsonObject(raw) || {};
   const text = String(j.text == null ? "" : j.text).trim().slice(0, 600);
   const againNum = Number(j.again);
@@ -2536,9 +2583,11 @@ async function runWake(alarm) {
        能唤醒就说明她至少 minGapMin 没说话了，手机那边早就自动上锁、
        回来会重新拉一次数据，不会拿旧副本把这条盖掉。 */
     const fresh = [];
+    /* 「醒来做了什么」：这一次醒来他动过的那几件事，串成一行小字，跟着他这句话 */
+    const trace = did.length ? did : undefined;
     if (j.say === true && text) fresh.push(asVoice
-      ? { k: "ai", t: asVoice.text, voice: asVoice.url, dur: asVoice.dur, ts: Date.now(), wake: true }
-      : { k: "ai", t: text, ts: Date.now(), wake: true });
+      ? { k: "ai", t: asVoice.text, voice: asVoice.url, dur: asVoice.dur, ts: Date.now(), wake: true, ...(trace ? { trace } : {}) }
+      : { k: "ai", t: text, ts: Date.now(), wake: true, ...(trace ? { trace } : {}) });
     fresh.push(...extras);
     win.msgs.push(...fresh);
     writeJson("chat", chat);
@@ -2566,6 +2615,59 @@ async function runWake(alarm) {
   bumpWakeLog(false, billed);
   saveDrives(dr);
   return { ok: true, said: false, again, raw: raw.slice(0, 200) };
+}
+
+/* ================= 偷看一眼她的屏幕 =================
+   她自己开的（要先配好 iCloud 邮箱 + 一条快捷指令）。他醒着时调 peek_screen：
+   服务器给她的邮箱发一封暗号邮件 → 手机自动截屏传回 /api/screen → 眼睛把截图读成文字 →
+   他再醒一下，看着这段文字决定说什么。聊天里会留一张卡片「他看了一眼你的屏幕」，她随时能删。
+   网页看不到别的 App 的画面（iOS 定死的），所以只能走「邮件触发手机自己截屏」这条路。
+   data/peek.json = { day, n, pending: { at, win, reason } } */
+function peekConf() { const q = quietConf(); return { on: q.peekOn, max: q.peekMax, kw: q.peekKw }; }
+function peekReady() { const c = mailConf(); return peekConf().on && !!(c.user && c.pass) && visionReady(); }
+function peekState() { const p = readJson("peek", null) || {}; return p.day === localDayKey() ? p : { day: localDayKey(), n: 0, pending: null }; }
+async function requestPeek(ctx) {
+  const c = peekConf(), mc = mailConf(), now = Date.now();
+  if (!c.on) return "她还没开「让你看屏幕」这个，看不了。";
+  if (!visionReady()) return "你还没有眼睛（没配看图模型），拍回来也看不懂。";
+  if (!mc.user || !mc.pass) return "还没配邮箱，没法让她的手机拍。";
+  if (budgetState(now).over) return "这个月预算花到了，先别看了。";
+  const st = peekState();
+  if ((st.n || 0) >= c.max) return "今天看得够多了（一天最多 " + c.max + " 次），别老盯着她。";
+  if (st.pending && now - st.pending.at < 3 * 60000) return "刚让她的手机拍了，还没传回来，等一下。";
+  const dest = String(mc.to || mc.user).trim();
+  try {
+    await sendMail(dest, "[" + c.kw + "] wu peek", "（这是让手机自动截屏的暗号邮件，不用管它。）");
+  } catch (e) { return "没拍成：" + String(e.message || e).slice(0, 80); }
+  writeJson("peek", { ...st, n: (st.n || 0) + 1, pending: { at: now, win: (ctx && ctx.win) || boundWindow(), reason: (ctx && ctx.reason) || "" } });
+  return "已经让她的手机拍一张了。你看不到是立刻的 —— 传回来之后你会再醒一下，那会儿才看得见。";
+}
+/* 手机把截图传回来了 */
+async function receiveScreen(buf, mime) {
+  const st = peekState();
+  if (!st.pending || Date.now() - st.pending.at > 15 * 60000) return { ok: false, note: "没有待处理的偷看（或者等太久了）" };
+  const ext = mime && /png/.test(mime) ? ".png" : ".jpg";
+  const fname = "peek-" + Date.now().toString(36) + "-" + crypto.randomBytes(3).toString("hex") + ext;
+  fs.writeFileSync(path.join(UPLOAD_DIR, fname), buf);
+  try {
+    const olds = fs.readdirSync(UPLOAD_DIR).filter(f => f.startsWith("peek-")).sort();
+    while (olds.length > 6) { try { fs.unlinkSync(path.join(UPLOAD_DIR, olds.shift())); } catch {} }
+  } catch {}
+  const url = "/files/" + fname;
+  const desc = await describeImage(url, "她这会儿的手机屏幕") || "（没看清）";
+  const winId = st.pending.win;
+  writeJson("peek", { ...st, pending: null });
+  const chat = readJson("chat", null);
+  const win = chat && Array.isArray(chat.windows) && (chat.windows.find(w => w && w.id === winId) || pickWakeWindow(chat, winId));
+  const card = { k: "peek", url, desc, ts: Date.now(), wake: true };
+  if (win) {
+    win.msgs.push(card); writeJson("chat", chat);
+    if (win.id) unsent.push({ win: win.id, msg: card, at: Date.now() });
+  }
+  let said = null;
+  try { said = await runWake({ id: "peek" + Date.now().toString(36), why: "你想看看她在干嘛，她的手机刚拍了一张", win: winId, made: st.pending.at, peek: { desc } }); }
+  catch (e) { console.error("peek wake:", e.message); }
+  return { ok: true, desc, said: !!(said && said.said) };
 }
 
 /* ================= 她不回了，他追问一句 =================
@@ -2954,6 +3056,8 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
+  { type: "function", function: { name: "peek_screen", description: "她允许你看一眼她这会儿的手机屏幕。你只知道她开着哪个 App，看不到里面 —— 想真的看看她在看什么、忙什么，就用这个。她的手机会拍一张当前屏幕传回来，你下次醒来才看得到（不是立刻）。她能看到你看过一眼（聊天里会留一张卡片），所以别当查岗，是关心才看",
+    parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起。她亲口让你「过一会儿叫我」的时候也用这个，填上 asked: true",
     parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" }, asked: { type: "boolean", description: "是她亲口让你到点叫她的（「五分钟后喊我」「七点叫我起床」）就填 true —— 这种到点就叫，不管她刚说没说过话、是不是夜里" } }, required: ["at", "why"] } } },
   { type: "function", function: { name: "cancel_alarm", description: "把自己记下的某件事划掉（她已经说了，或者不必再问了）",
@@ -2970,6 +3074,15 @@ const TOOL_DEFS = [
    后面整条前缀的缓存就全作废了。所以只有这一个出口。
    没配搜索钥匙的时候把上网那两件撤下来：摆着他会白调一次，
    然后拿一句「还没配」去回她。 */
+/* 「醒来做了什么」给她看的那行小字：只报动作，不报内容（记了件什么事、看到了什么，都不在这儿说） */
+const TOOL_TRACE = {
+  check_phone: "看了眼你在忙什么", check_place: "看了眼你在哪", check_weather: "查了下天气",
+  check_now: "看了眼时间", web_search: "上网查了点东西", read_web: "读了个网页",
+  peek_screen: "看了一眼你的屏幕", set_alarm: "记了件事", cancel_alarm: "放下了件惦记的事",
+  recall: "想起了些旧事", read_diaries: "翻了翻日记", read_letters: "翻了翻信",
+  list_docs: "翻了翻旧事", read_doc: "翻了翻旧事", remember: "记住了点什么",
+  add_todo: "帮你记了件事", period_log: "记了一笔", send_mail: "给你写了封邮件",
+};
 function chatTools() {
   const vc = voiceConf(), vr = voiceReady();
   const off = new Set([
@@ -2977,6 +3090,7 @@ function chatTools() {
     ...(vr && vc.on ? [] : ["send_voice"]),
     ...(vr && vc.callOn ? [] : ["call_her"]),
     ...(memAuto() ? [] : ["remember"]),
+    ...(peekReady() ? [] : ["peek_screen"]),
   ]);
   return TOOL_DEFS.filter(t => !off.has(t.function.name)).concat(mcpToolDefs());
 }
@@ -3035,6 +3149,7 @@ async function execTool(name, args, ctx) {
       return statusBlock(now, driveSnapshot(dr, now), false).replace(/^【现状】/, "");
     }
     if (name === "check_phone") return phoneReport(args && args.hours);
+    if (name === "peek_screen") return requestPeek(ctx);
     if (name === "set_alarm") {
       const now = Date.now();
       const at = parseAlarmAt(args.at, now);
@@ -3207,6 +3322,12 @@ async function readBody(req, limit = 15 * 1024 * 1024) {
     parts.push(chunk);
   }
   return Buffer.concat(parts).toString("utf8");
+}
+async function readBodyBuf(req, limit = 15 * 1024 * 1024) {
+  const parts = [];
+  let size = 0;
+  for await (const chunk of req) { size += chunk.length; if (size > limit) throw new Error("too large"); parts.push(chunk); }
+  return Buffer.concat(parts);
 }
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -3440,8 +3561,9 @@ const server = http.createServer(async (req, res) => {
       const conf = apisConf();
       sendJson(res, 200, {
         list: conf.list.map(a => publicApi(a, conf)),
-        chat: conf.chat, worker: conf.worker,
-        env: { chat: publicApi(envApi("chat"), conf), worker: publicApi(envApi("worker"), conf) },
+        chat: conf.chat, worker: conf.worker, vision: conf.vision,
+        env: { chat: publicApi(envApi("chat"), conf), worker: publicApi(envApi("worker"), conf), vision: publicApi(envApi("vision"), conf) },
+        visionReady: visionReady(),
         using: { chat: activeApi("chat").name, worker: activeApi("worker").name },
       });
       return;
@@ -3459,7 +3581,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/apis/use" && req.method === "PUT") {
       const body = JSON.parse(await readBody(req, 4096));
       const conf = apisConf();
-      for (const role of ["chat", "worker"]) {
+      for (const role of ["chat", "worker", "vision"]) {
         if (!(role in body)) continue;
         const v = body[role];
         conf[role] = (v && conf.list.some(x => x.id === v)) ? v : null;   // null = 回落到环境变量
@@ -3750,6 +3872,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* 手机上的快捷指令往这里递东西。带那把单独的钥匙，不需要登录 */
+    /* 手机把偷看的截图传回来（快捷指令：截屏 → 获取 URL 内容 POST 到这儿，body 直接是图片；
+       钥匙放在网址的 ?token= 上，跟 /api/ping 同一把）。也认 JSON { image: base64 } */
+    if (p === "/api/screen" && req.method === "POST") {
+      const tok = String(url.searchParams.get("token") || req.headers["x-wu-token"] || "");
+      if (!tok || tok !== hookToken()) { sendJson(res, 401, { error: "钥匙不对" }); return; }
+      const ct = String(req.headers["content-type"] || "");
+      let buf = null, mime = ct;
+      if (/application\/json/.test(ct)) {
+        try { const b = JSON.parse((await readBodyBuf(req, 15 * 1024 * 1024)).toString("utf8") || "{}"); if (b.image) buf = Buffer.from(String(b.image), "base64"); } catch {}
+        mime = "image/jpeg";
+      } else {
+        buf = await readBodyBuf(req, 15 * 1024 * 1024);
+      }
+      if (!buf || buf.length < 100) { sendJson(res, 400, { error: "没收到图片" }); return; }
+      const r = await receiveScreen(buf, mime);
+      sendJson(res, r.ok ? 200 : 409, r);
+      return;
+    }
     if (p === "/api/ping" && req.method === "POST") {
       let body = {};
       try { body = JSON.parse(await readBody(req, 64 * 1024) || "{}"); } catch {}
@@ -4044,6 +4184,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         ...q, ...placeConf(), parsed: parseClasses(q.classes), today: wakeLog(),
         pending: listAlarms().filter(a => a.at > now).length,
+        peekReady: peekReady(), peekToday: (readJson("peek", null) || {}).day === localDayKey() ? (readJson("peek", null).n || 0) : 0,
       });
       return;
     }
@@ -4067,6 +4208,9 @@ const server = http.createServer(async (req, res) => {
         chaseOn: typeof body.chaseOn === "boolean" ? body.chaseOn : cur.chaseOn,
         chaseMin: num(body.chaseMin, cur.chaseMin, 3, 240),
         chaseMax: num(body.chaseMax, cur.chaseMax, 0, 20),
+        peekOn: typeof body.peekOn === "boolean" ? body.peekOn : cur.peekOn,
+        peekMax: num(body.peekMax, cur.peekMax, 1, 20),
+        peekKw: typeof body.peekKw === "string" && body.peekKw.trim() ? body.peekKw.trim().slice(0, 40) : cur.peekKw,
       };
       writeJson("quiet", next);
       sendJson(res, 200, { ok: true, ...next, parsed: parseClasses(next.classes) });
@@ -4147,7 +4291,10 @@ const server = http.createServer(async (req, res) => {
       const ext = (path.extname(body.name || "") || ".bin").toLowerCase().replace(/[^.\w]/g, "").slice(0, 8);
       const fname = Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex") + ext;
       fs.writeFileSync(path.join(UPLOAD_DIR, fname), buf);
-      sendJson(res, 200, { ok: true, url: "/files/" + fname, size: buf.length });
+      const fileUrl = "/files/" + fname;
+      sendJson(res, 200, { ok: true, url: fileUrl, size: buf.length });
+      /* 她发来的图片，让眼睛先看一眼写成文字，等下一轮聊天他就「看得见」了 */
+      if (IMG_MEDIA[ext]) describeImage(fileUrl, "她发来的照片").catch(() => {});
       return;
     }
     if (req.method === "GET" && p.startsWith("/files/")) {

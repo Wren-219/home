@@ -12,7 +12,11 @@ http.createServer((req, res) => {
 
     if (!body.stream) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ choices: [{ message: { content: step } }], usage: { prompt_tokens: 1200, completion_tokens: 30, prompt_cache_hit_tokens: 1000 } }));
+      const usage = { prompt_tokens: 1200, completion_tokens: 30, prompt_cache_hit_tokens: 1000 };
+      if (typeof step === 'object' && step.tool) {
+        return res.end(JSON.stringify({ choices: [{ message: { content: '', tool_calls: [{ id: 'call_1', type: 'function', function: { name: step.tool, arguments: JSON.stringify(step.args || {}) } }] }, finish_reason: 'tool_calls' }], usage }));
+      }
+      return res.end(JSON.stringify({ choices: [{ message: { content: String(step) } }], usage }));
     }
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     const w = o => res.write('data: ' + JSON.stringify(o) + '\n\n');

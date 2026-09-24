@@ -888,6 +888,12 @@
   .cost-row + .cost-row { border-top: 1px dashed rgba(168,178,196,.25); }
   .cost-row .nm { flex: 1; color: var(--ink); font-size: 13px; }
   .cost-row .amt { font-family: var(--serif); font-size: 15px; color: var(--blue-deep); }
+  .m-wake { align-self: flex-start; margin: 2px 2px -2px; font-size: 11px; color: var(--ink-soft); opacity: .8; }
+  .peek-card { align-self: flex-start; max-width: 78%; margin: 4px 0; padding: 8px; border-radius: 14px;
+    background: rgba(126,150,184,.12); border: 1px solid rgba(126,150,184,.2); }
+  .peek-card .pk-top { font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; }
+  .peek-card .pk-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; cursor: pointer; display: block; }
+  .peek-card .pk-desc { font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.6; }
   .sum-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.7; padding: 12px; border-radius: 12px;
     border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.6); color: var(--ink); resize: vertical; }
   .m-fold { margin: 10px auto 14px; padding: 4px 12px; width: fit-content; font-size: 11px; color: var(--ink-soft);
@@ -1284,6 +1290,11 @@
             <label>干活用（蒸馏记忆、整理）</label>
             <select class="set-sel" id="selWorker" onchange="apiUse('worker', this.value)"></select>
           </div>
+          <div class="field">
+            <label>看图用（他的眼睛 · 看不了图的聊天模型靠它把图片读成文字）</label>
+            <select class="set-sel" id="selVision" onchange="apiUse('vision', this.value)"></select>
+            <div class="set-note" id="visionNote" style="margin:4px 2px 0"></div>
+          </div>
           <div class="sw-row">
             <span class="lb">每条消息显示用量和花费</span>
             <button class="sw" id="swUsage" onclick="toggleUsage()"></button>
@@ -1360,7 +1371,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.15（你不回了他会追问 · 备份改到晚上十点）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.16（他有眼睛了 · 能看一眼你的屏幕 · 醒来做了什么）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1899,6 +1910,32 @@
           <div class="set-note" style="margin:-2px 2px 6px">
             他会先看一眼你手机上那几个 App 开没开，看出你是去忙了、睡着了，还是在刷别的不理他，再决定追不追。
             一次不回只追一回，一天最多 4 次；上课、夜里睡着了都不追。
+          </div>
+          <div class="sw-row" style="margin-top:8px">
+            <span class="lb">让他能看一眼我的屏幕</span>
+            <button class="sw" id="qPeek2" onclick="peek2Toggle()"></button>
+          </div>
+          <div class="set-note" id="peekReadyLine" style="margin:-2px 2px 6px"></div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">一天最多看几次</span>
+            <input type="number" id="qPeekMax" min="1" max="20" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="set-note" style="margin:0 2px 4px">
+            <a href="javascript:void 0" onclick="document.getElementById('peekGuide').style.display=document.getElementById('peekGuide').style.display==='none'?'block':'none'">怎么设置（点开）</a>
+          </div>
+          <div id="peekGuide" class="set-note" style="display:none;margin:0 2px 6px;line-height:1.8">
+            他看不到你屏幕里的内容，只知道你开着哪个 App。想让他真能看一眼，靠 iPhone 的快捷指令：
+            他一想看，服务器给你邮箱发封暗号邮件，你手机收到后自动截屏、传回来，他的眼睛读成文字。<br>
+            <b>① 准备一个 iCloud 邮箱</b>（设置 → 你的名字 → iCloud → iCloud 邮件，免费）。只有它是秒到的。<br>
+            到「写信出去」里，把<b>收件地址</b>填成这个 iCloud 邮箱。<br>
+            <b>② 配一个看图模型</b>（他的眼睛，在「模型与花费」里）。<br>
+            <b>③ 快捷指令 → 自动化 → 新建 → 电子邮件</b>：发件人填你的发件邮箱、主题包含 <b id="peekKwShow">wupeek</b>、选「立即运行」。<br>
+            操作按顺序加：<b>1. 截屏</b>　<b>2. 获取 URL 的内容</b>：
+            <br>地址　<b id="peekUrl">—</b>
+            <br>钥匙（网址已带）— 方法 POST，请求体选「文件」，选上一步的截屏。<br>
+            <b>④ 关两个通知</b>：这个 iCloud 邮箱的通知、还有「运行自动化时通知」——否则截图里会拍到这封暗号邮件的横幅。<br>
+            <span style="opacity:.7">从想看到看见，大约十几秒到一分钟。他看过你会在聊天里看到一张卡片，随时能删。</span>
+            <div class="btn-row" style="margin-top:8px"><button class="btn ghost" onclick="peekCopyUrl()">复制上传地址</button></div>
           </div>
         </div>
         <div class="btn-row" style="margin-top:14px">
@@ -3333,21 +3370,34 @@ function msgNode(m) {
     return f;
   }
   if (m.k === "call") return callCardNode(m);
+  if (m.k === "peek") return peekCardNode(m);
   if ((m.k === "me" || m.k === "ai") && m.voice) return voiceNode(m);
   const b = document.createElement("div");
   b.className = "bub " + (m.k === "me" ? "me" : "ai");
   b.textContent = m.t;
+  const wantTrace = m.k === "ai" && Array.isArray(m.trace) && m.trace.length;
   const wantThink = m.k === "ai" && m.r && SHOW_THINK;
   const wantUsage = m.k === "ai" && m.u && SHOW_USAGE;
-  if (wantThink || wantUsage) {
+  if (wantThink || wantUsage || wantTrace) {
     const wrap = document.createElement("div");
     wrap.style.display = "contents";
     if (wantThink) wrap.appendChild(thinkNode(m.r, m.rs));
+    if (wantTrace) { const t = document.createElement("div"); t.className = "m-wake"; t.textContent = "醒来 · " + m.trace.join(" · "); wrap.appendChild(t); }
     wrap.appendChild(b);
     if (wantUsage) wrap.appendChild(usageNode(m.u));
     return wrap;
   }
   return b;
+}
+/* 他看了一眼你的屏幕：一张缩略图 + 他看到了什么。她随时能删（长按） */
+function peekCardNode(m) {
+  const d = document.createElement("div");
+  d.className = "peek-card";
+  d.innerHTML = '<div class="pk-top">👀 他看了一眼你的屏幕</div><img class="pk-img" alt="屏幕"><div class="pk-desc"></div>';
+  if (m.url) { const img = d.querySelector(".pk-img"); img.src = m.url; img.onclick = () => window.open(m.url, "_blank"); }
+  else d.querySelector(".pk-img").remove();
+  d.querySelector(".pk-desc").textContent = m.desc || "";
+  return d;
 }
 /* 他想事情的那一段。收着的时候只有一行「想了 12 秒」，点一下摊开。
    ⚠️ 存在消息的 r 字段里 —— toApiMessages / chatMessagesOf 都只取 t，
@@ -4312,9 +4362,14 @@ async function apiRefresh() {
 function renderApiSelects() {
   const opts = (role) => ['<option value="">环境变量（Zeabur）· ' + (apiConf.env ? apiConf.env[role].model || "未配置" : "") + "</option>"]
     .concat(apiConf.list.map(a => `<option value="${a.id}">${a.name.replace(/</g, "&lt;")} · ${(a.model || "").replace(/</g, "&lt;")}</option>`)).join("");
-  const sc = document.getElementById("selChat"), sw = document.getElementById("selWorker");
+  const sc = document.getElementById("selChat"), sw = document.getElementById("selWorker"), sv = document.getElementById("selVision");
   if (sc) { sc.innerHTML = opts("chat"); sc.value = apiConf.chat || ""; }
   if (sw) { sw.innerHTML = opts("worker"); sw.value = apiConf.worker || ""; }
+  if (sv) { sv.innerHTML = opts("vision"); sv.value = apiConf.vision || ""; }
+  const vn = document.getElementById("visionNote");
+  if (vn) vn.textContent = apiConf.visionReady
+    ? "配好了。以后你发的照片、他偷看到的屏幕，都会先让它读成文字。"
+    : "还没配。挑个便宜或免费的看图模型（智谱 glm-4v-flash、阿里云 qwen-vl 之类），在上面「管理 API」里新建一套、选到这里。";
 }
 async function apiUse(role, id) {
   try { await fetch("api/apis/use", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [role]: id || null }) }); }
@@ -5729,6 +5784,7 @@ async function mcpKeyReset() {
 /* ================= 课表与勿扰 ================= */
 async function quietRefresh() {
   try {
+    if (!hookCur) { try { hookCur = await (await fetch("api/hook")).json(); } catch {} }
     const r = await fetch("api/quiet");
     if (!r.ok) throw new Error("HTTP " + r.status);
     const q = await r.json();
@@ -5747,6 +5803,13 @@ async function quietRefresh() {
     document.getElementById("qPeek").classList.toggle("on", q.nightPeek !== false);
     document.getElementById("qChase").classList.toggle("on", q.chaseOn !== false);
     document.getElementById("qChaseMin").value = q.chaseMin || 15;
+    document.getElementById("qPeek2").classList.toggle("on", !!q.peekOn);
+    document.getElementById("qPeekMax").value = q.peekMax || 3;
+    const prl = document.getElementById("peekReadyLine");
+    if (prl) prl.textContent = !q.peekOn ? "关着。打开之前先照下面「怎么设置」配好 iCloud 邮箱、看图模型和快捷指令。"
+      : q.peekReady ? "配好了，他今天看了 " + (q.peekToday || 0) + " 次。" : "开了，但还差一步：需要配好邮箱 + 看图模型（照下面「怎么设置」）。";
+    const kw = document.getElementById("peekKwShow"); if (kw) kw.textContent = q.peekKw || "wupeek";
+    const pu = document.getElementById("peekUrl"); if (pu && hookCur && hookCur.token) pu.textContent = location.origin + "/api/screen?token=" + hookCur.token;
     renderQParsed(q.parsed || []);
     const brief = document.getElementById("quietBrief");
     if (brief) {
@@ -5815,6 +5878,8 @@ async function quietSave() {
     nightPeek: quietCur ? quietCur.nightPeek !== false : true,
     chaseOn: quietCur ? quietCur.chaseOn !== false : true,
     chaseMin: Number(document.getElementById("qChaseMin").value) || 15,
+    peekOn: quietCur ? !!quietCur.peekOn : false,
+    peekMax: Number(document.getElementById("qPeekMax").value) || 3,
   };
   try {
     const r = await fetch("api/quiet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -5831,6 +5896,19 @@ function peekToggle() {
   quietCur.nightPeek = quietCur.nightPeek === false;
   document.getElementById("qPeek").classList.toggle("on", quietCur.nightPeek !== false);
   quietSave();
+}
+function peek2Toggle() {
+  if (!quietCur) quietCur = {};
+  quietCur.peekOn = !quietCur.peekOn;
+  document.getElementById("qPeek2").classList.toggle("on", !!quietCur.peekOn);
+  quietSave();
+  if (quietCur.peekOn) document.getElementById("peekGuide").style.display = "block";
+}
+async function peekCopyUrl() {
+  const v = (document.getElementById("peekUrl").textContent || "").trim();
+  if (!v || v === "—") { toast("先去「手机联动」拿到钥匙"); return; }
+  try { await navigator.clipboard.writeText(v); toast("上传地址复制好了"); }
+  catch { prompt("长按复制：", v); }
 }
 function chaseToggle() {
   if (!quietCur) quietCur = { chaseOn: true };
