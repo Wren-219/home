@@ -7,8 +7,10 @@
 
 ```bash
 cd tests
-npm install        # 第一次要装：eslint、playwright-core（只给体检用，不进部署）
-npm run check      # 全部跑一遍，三四分钟
+# 第一次要装（只给体检用）。故意不放 package.json：Zeabur 看到子目录里的
+# package.json 可能会当成要一起部署的东西，v3.7、v3.8 两次镜像拉取失败就是在加了它之后
+npm install --no-save --prefix . eslint@^9.39 globals@^17 playwright-core@1.63.0
+node run.js        # 全部跑一遍，三四分钟
 node run.js vision # 只跑一组，打印完整过程
 node run.js --list # 看有哪些组
 ```

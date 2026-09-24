@@ -28,15 +28,18 @@ const SUITE = [
   ['巡检', 'sweep-tools', '他手里每件工具 × 正常/空/乱参数', true, { apis: API_M1 }, OPENAI],
   ['巡检', 'sweep-ui', '每个页面、子页面打开，无害按钮都点', true, { apis: API_M1 }],
   ['界面', 'layout-keyboard', '底部空带、键盘顶导航栏、键盘开着点发送', true, {}],
+  ['界面', 'chat-open', '打开聊天停在最新一条；开着 app 也收得到他的话', true, { apis: API_M1 }, OPENAI],
   ['界面', 'thinking-ui', '思考过程的展开 / 收起', true, { apis: API_M1, plan: THINK }, ['mock-think.js']],
   ['界面', 'vision', '看图：小图、字节不变、开关、只留 12 张', true, { apis: NO_API }, ['mock-claude.js', 'mock-openai-log.js']],
   ['界面', 'period-ui', '「她的身体」页面', true, { period: P4 }],
   ['界面', 'calendar-period', '日历上标经期', true, { period: { ...P4, list: P4.list.slice(1) } }],
   ['界面', 'search-ui', '「上网」设置页', true, {}],
   ['模型', 'claude-dialect', 'Claude 格式：不发 temperature、思考开关', true, { apis: API_M1 }, ['mock-claude.js']],
+  ['模型', 'thinking-tools', '会思考的模型调工具：思考原样带回，闹钟设得上', true, { apis: API_M1 }, ['mock-claude.js', 'mock-think.js']],
   ['模型', 'wake-cache', '唤醒和聊天的缓存前缀逐字相同', true, { apis: API_M1 }, ['mock-openai-log.js']],
   ['模型', 'search-api', '上网：三家搜索、读网页、钥匙只进不出', true, {}],
   ['唤醒', 'alarm-hidden', '他偷偷设闹钟，她看不见', true, { apis: API_M1 }, OPENAI],
+  ['唤醒', 'alarm-asked', '她让他「五分钟后喊我」：认得写法、到点就叫、存一下冲不掉', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'wake-budget', '醒了不说话也算钱，一天有上限', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'night-peek', '夜里她还在玩手机，他可以冒出来', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'status-note', '【现状】纸条：隔久了给全、连着聊不说', true, { apis: API_M1 }, OPENAI],
@@ -62,7 +65,7 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
   try {
     /* 干净的假数据 */
     fs.rmSync(DAT, { recursive: true, force: true }); fs.mkdirSync(DAT + '/uploads', { recursive: true });
-    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'last.json', 'eleven.json', 'stt.txt']) fs.rmSync(path.join(WORK, f), { force: true });
+    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'treqs.json', 'last.json', 'eleven.json', 'stt.txt']) fs.rmSync(path.join(WORK, f), { force: true });
     fs.writeFileSync(DAT + '/chat.json', JSON.stringify(chat()));
     if (seed.apis) fs.writeFileSync(DAT + '/apis.json', JSON.stringify(seed.apis));
     if (seed.period) fs.writeFileSync(DAT + '/period.json', JSON.stringify(seed.period));
@@ -95,6 +98,11 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
 (async () => {
   const arg = process.argv[2];
   if (arg === '--list') { SUITE.forEach(s => console.log(`${s[0]}  ${s[1].padEnd(17)} ${s[2]}`)); return; }
+  for (const dep of ['eslint', 'globals', 'playwright-core']) {
+    try { require.resolve(dep, { paths: [__dirname] }); } catch {
+      console.log('还没装体检用的依赖。在 tests/ 里跑一次：\n  npm install --no-save --prefix . eslint@^9.39 globals@^17 playwright-core@1.63.0'); process.exit(1);
+    }
+  }
   const pick = arg ? SUITE.filter(s => s[1] === arg.replace(/\.js$/, '')) : SUITE;
   if (!pick.length) { console.log('没有叫「' + arg + '」的，用 --list 看清单'); process.exit(1); }
   for (const p of [8081, 8085, 8096, 8097, 8098, 8099]) if (!(await portFree(p))) {

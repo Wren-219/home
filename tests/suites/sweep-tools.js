@@ -9,8 +9,8 @@ const GOOD = {
   write_letter: { title: '给你', content: '晚安。' }, read_letters: { box: 'ai' }, read_diaries: { limit: 3 },
   list_docs: {}, read_doc: { name: '不存在的文件' }, web_search: { query: '今天天气' }, read_web: { url: 'http://localhost:8081/sw.js' },
   check_period: {}, period_log: { what: 'start' }, send_mail: { subject: '晤', body: '想你了' },
-  check_place: { hours: 6 }, check_weather: {}, check_phone: { hours: 3 },
-  set_alarm: { at: '+90', why: '她说回家再说' }, cancel_alarm: { why: '回家' },
+  check_place: { hours: 6 }, check_weather: {}, check_phone: { hours: 3 }, check_now: {},
+  set_alarm: { at: '+90', why: '她说回家再说', asked: true }, cancel_alarm: { why: '回家' },
   remember: { content: '她喜欢柠檬塔', type: '喜好', importance: 3, tags: ['甜点'] },
   send_voice: { text: '（小声）晚安' }, call_her: { why: '想听你声音' },
 };

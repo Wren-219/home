@@ -1,0 +1,8 @@
+# 部署只要这几个：server.js、index.html、admin.html、sw.js、图标、package.json
+tests/
+data/
+node_modules/
+.git/
+HANDOFF.md
+k*.png
+*.log

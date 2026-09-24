@@ -1275,7 +1275,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.8（底部那条带子 · 转文字能收起 · 声音更稳）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.9（叫他喊你他会真的喊 · 会看钟了 · 聊天打开就在最新一条）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2437,7 +2437,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   SUBS.forEach(s => closeSub(s, true));
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
-  if (tab.dataset.page === "chat") markChatSeen();
+  if (tab.dataset.page === "chat") { markChatSeen(); chatToBottom(); }
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
   if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); phoneRefresh(); pushRefresh(); }
 });
@@ -3345,6 +3345,17 @@ function appendMsg(m) {
   saveChat();
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
+/* 打开聊天页就停在最新那条。一开始渲染的时候聊天页是藏着的（高度是 0，滚不动），
+   所以切过来的时候得再滚一次；图片、语音条是后加载的，会把高度撑长，过一会儿再补一下 */
+function chatToBottom() {
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
+  setTimeout(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; }, 300);
+}
+/* 人在最底下的时候，后加载出来的图片不该把她往上顶 */
+let chatStick = true;
+chatMsgs.addEventListener("scroll", () => { chatStick = chatMsgs.scrollHeight - chatMsgs.scrollTop - chatMsgs.clientHeight < 80; }, { passive: true });
+chatMsgs.addEventListener("load", e => { if (chatStick && e.target.tagName === "IMG") chatMsgs.scrollTop = chatMsgs.scrollHeight; }, true);
 /* 距上一条超过 30 分钟就插一条时间；同一天只写时刻，跨天带日期 */
 const GAP_MS = 30 * 60 * 1000;
 function timeLabel(ts) {
@@ -3558,7 +3569,10 @@ function toApiMessages() {
   });
   return msgs;
 }
-async function aiReply() {
+/* 他正在回话的时候别动聊天记录（下面 pullFresh 要看这个） */
+let aiBusy = 0;
+async function aiReply() { aiBusy++; try { return await aiReplyRun(); } finally { aiBusy--; } }
+async function aiReplyRun() {
   const bub = document.createElement("div");
   bub.className = "bub ai";
   bub.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
@@ -4627,6 +4641,31 @@ function refreshChatDot() {
   const d = document.getElementById("chatDot");
   if (d) d.classList.toggle("on", newWakeCount() > 0);
 }
+/* 她开着 app 的时候，他醒来说的话（比如她让他「五分钟后喊我」）。
+   以前只有重新解锁、整份拉一次数据才看得到 —— 而且她这边一存，还会把那几条冲掉 */
+async function pullFresh() {
+  if (!SERVER || !chatReady || aiBusy || (callSt && !callSt.done) || document.visibilityState !== "visible" || !appUnlocked()) return;
+  let list;
+  try { const r = await fetch("api/chat/fresh"); if (!r.ok) return; list = (await r.json()).list; } catch { return; }
+  if (!Array.isArray(list) || !list.length || aiBusy) return;
+  const same = (a, b) => a && b && a.ts === b.ts && a.k === b.k && (a.t || "") === (b.t || "") && (a.id || "") === (b.id || "");
+  let hit = false, here = false;
+  for (const { win, msg } of list) {
+    const w = (chatData.windows || []).find(x => x.id === win);
+    if (!w || !msg || w.msgs.some(m => same(m, msg))) continue;
+    let at = w.msgs.length;
+    while (at > 0 && Number(w.msgs[at - 1].ts) > msg.ts) at--;
+    w.msgs.splice(at, 0, msg);
+    hit = true; if (w === curWin()) here = true;
+  }
+  if (!hit) return;
+  chatLog = curWin().msgs;
+  if (here) rerenderChat();   // 顺带看一眼：他是不是打电话过来了
+  saveChat();
+  if (here && document.getElementById("page-chat").classList.contains("active")) markChatSeen(); else refreshChatDot();
+}
+setInterval(pullFresh, 20000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") setTimeout(pullFresh, 1000); });
 function markChatSeen() {
   lastSeen = Date.now();
   save("wu.lastSeen", lastSeen);

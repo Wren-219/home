@@ -41,6 +41,16 @@ const chat = async (text, prevTs) => {
   ok(!/内在状态/.test(briefStatus), '心情那段也不重复');
   console.log(`      省了 ${fullStatus.length - briefStatus.length} 个字，每轮都省`);
 
+  console.log('\n[2b] 连着聊了一整夜 —— 上一张纸条是三小时前给的 → 再给一张');
+  /* 她那天从夜里聊到下午，每句都隔不到两小时，他就一直以为还是深夜，下午了还在说「早点睡」 */
+  fs.writeFileSync(D + 'note_at.json', String(Date.now() - 3 * 3600000));
+  plan(['嗯。']);
+  const again = await chat('还在吗', Date.now() - 5 * 60000);
+  ok(/现在是 \d{4}\./.test(again), '重新看了一眼钟：' + ((again.match(/现在是[^。]*/) || [''])[0]));
+  plan(['嗯。']);
+  const next = await chat('嗯嗯', Date.now() - 2 * 60000);
+  ok(!/现在是 \d{4}\./.test(next), '看过之后，接下来两小时又安静了');
+
   console.log('\n[3] 「在一起第几天」拿掉了');
   ok(!/在一起的第/.test(full) && !/在一起的第/.test(brief), '两档都不再念叨天数');
 

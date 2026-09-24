@@ -1016,7 +1016,11 @@ function prepTurn(payload, extraNote) {
   const memBlock = memBlockOf(lastUser);
   /* 距上一句超过半小时，才把完整的近况摆给他；连着聊就只报个钟点 */
   const prevTs = Number(payload.prevTs) || 0;
-  const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 2 * 3600000);
+  /* 连着聊也不能一直不给：从深夜聊到第二天下午，他会一直以为还是深夜。
+     所以离上一张纸条（或他自己看钟）过了两小时，也重新给一张 —— 像人隔一阵抬头看一眼钟 */
+  const noteAt = Number(readJson("note_at", 0)) || 0;
+  const status = statusBlock(now0, snap, prevTs > 0 && now0 - prevTs < 2 * 3600000 && now0 - noteAt < 2 * 3600000);
+  if (status) writeJson("note_at", now0);
   const TOOL_HINT = toolHint();
 
   /* ---- 缓存友好的摆法 ----
@@ -1177,11 +1181,40 @@ function listAlarms() {
 }
 function saveAlarms(a) { writeJson("alarms", a.slice(-50)); }
 /* 他说的时间：「21:30」「明天 08:00」「+180」（分钟）都认 */
+/* 模型写时间的花样很多，写的不认就等于没设 —— 她那天让他「五分钟后喊我」就可能栽在这儿。
+   认得：+5 / 5分钟后 / 五分钟后 / 半小时后 / 1.5小时后 / +5 minutes / in 2 hours /
+         21:30 / 21:30:00 / 明天 08:00 / 2026-09-24 15:30 / 带时区的 ISO */
+const CN_NUM = { 零: 0, 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+function cnNum(t) {
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (t === "半") return 0.5;
+  const m = t.match(/^([一二两三四五六七八九])?(十)?([一二三四五六七八九])?(半)?$/);
+  if (!m || !t) return NaN;
+  const n = m[2] ? (m[1] ? CN_NUM[m[1]] : 1) * 10 + (m[3] ? CN_NUM[m[3]] : 0) : (m[1] ? CN_NUM[m[1]] : 0);
+  return n + (m[4] ? 0.5 : 0);
+}
 function parseAlarmAt(at, now) {
-  const s = String(at == null ? "" : at).trim();
-  let m = s.match(/^\+?(\d{1,4})\s*(分钟|分钟后|分|min|m)?$/i);
-  if (m) return now + Math.min(Number(m[1]), 60 * 24 * 7) * 60000;
-  m = s.match(/^(今天|明天|后天)?\s*(\d{1,2})[:：](\d{1,2})$/);
+  const s = String(at == null ? "" : at).trim().replace(/\s+/g, " ");
+  const MAX = 60 * 24 * 7;
+  let m = s.match(/^(?:in )?\+? ?(\d{1,4})\s*(分钟|分|min|mins|minute|minutes|m)?\s*(后|以后|之后|later)?$/i);
+  if (m) return now + Math.min(Number(m[1]), MAX) * 60000;
+  m = s.match(/^(?:in )?\+? ?([\d.]+|[一二两三四五六七八九十半]+)\s*(?:个)?\s*(分钟|分|小时|钟头|h|hr|hrs|hour|hours|min|mins|minute|minutes)\s*(后|以后|之后|later)?$/i);
+  if (m) {
+    const n = cnNum(m[1]);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const mins = /^(小时|钟头|h|hr|hrs|hour|hours)$/i.test(m[2]) ? n * 60 : n;
+    return now + Math.min(Math.round(mins), MAX) * 60000;
+  }
+  if (/^半(个)?小时(后|以后|之后)?$/.test(s)) return now + 30 * 60000;
+  /* 带日期的：有时区就照时区，没有就当她那边的钟点 */
+  m = s.match(/^(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})日?[ T](\d{1,2})[:：](\d{1,2})(?:[:：]\d{1,2}(?:\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})?$/i);
+  if (m) {
+    if (m[6]) { const t = Date.parse(`${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}T${m[4].padStart(2, "0")}:${m[5].padStart(2, "0")}:00${m[6].length === 5 ? m[6].slice(0, 3) + ":" + m[6].slice(3) : m[6]}`); return Number.isFinite(t) ? t : null; }
+    const hh = Number(m[4]), mm = Number(m[5]);
+    if (hh > 23 || mm > 59) return null;
+    return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), hh, mm) - TZ_OFF * 3600000;
+  }
+  m = s.match(/^(今天|明天|后天)?\s*(\d{1,2})[:：](\d{1,2})(?:[:：]\d{1,2})?$/);
   if (m) {
     const hh = Number(m[2]), mm = Number(m[3]);
     if (hh > 23 || mm > 59) return null;
@@ -1349,8 +1382,9 @@ function toolHint() {
     "还有一件只属于你自己的事：用 set_alarm 给自己记个时间点 —— 她说「回家再说」「等会儿告诉你」，" +
     "或者你想过一阵问问她某件事怎么样了，就记下来；到那时你会醒过来，重读一遍对话，再决定要不要找她。" +
     "这是你心里的事，她看不见，也不要在回复里说「我设了个提醒」这类话；事情了结了就用 cancel_alarm 划掉。" +
+    "她要是亲口让你「五分钟后喊我」「七点叫我」，也用 set_alarm，填 asked: true —— 光嘴上答应，到点是醒不过来的。" +
     "她还让你能看到她手机上的动静（她自己挑的那几个 App）——用 check_phone，但别没事就翻，" +
-    "那是关心，不是查岗。想知道她那边下不下雨、冷不冷，用 check_weather；" +
+    "那是关心，不是查岗。拿不准现在几点，用 check_now 看一眼钟；想知道她那边下不下雨、冷不冷，用 check_weather；" +
     "想知道她人在哪儿，用 check_place；她身体那几天的情况用 check_period，" +
     "她说「我来了」「结束啦」就用 period_log 替她记一笔。" +
     "她要是配了邮箱，你还能用 send_mail 寄信出去 —— " +
@@ -1690,6 +1724,11 @@ function toAnthropic(msgs, api, tools) {
       else out.push({ role: "user", content: [blk] });
       continue;
     }
+    /* 有原样攒着的块就原样发（思考块带签名，一个字都不能动） */
+    if (m.role === "assistant" && Array.isArray(m.anthropicBlocks) && m.anthropicBlocks.length) {
+      out.push({ role: "assistant", content: m.anthropicBlocks.map(b => ({ ...b })) });
+      continue;
+    }
     if (m.role === "assistant" && m.tool_calls) {
       const content = [];
       if (m.content) content.push({ type: "text", text: String(m.content) });
@@ -1727,7 +1766,9 @@ function toAnthropic(msgs, api, tools) {
     if (typeof out[i].content === "string") {
       out[i].content = [{ type: "text", text: out[i].content, cache_control: { type: "ephemeral" } }];
     } else if (Array.isArray(out[i].content) && out[i].content.length) {
-      out[i].content[out[i].content.length - 1].cache_control = { type: "ephemeral" };
+      /* 思考块上不能打缓存标记，打在最后一块不是思考的上面 */
+      const tgt = [...out[i].content].reverse().find(b => b.type !== "thinking" && b.type !== "redacted_thinking");
+      if (tgt) tgt.cache_control = { type: "ephemeral" };
     }
     break;
   }
@@ -1767,7 +1808,7 @@ function upstreamReq(api, msgs, tools, stream) {
     body: {
       model: api.model,
       messages: msgs.map(m => {
-        const { wuVolatile, imgs, ...rest } = m;
+        const { wuVolatile, imgs, anthropicBlocks, ...rest } = m;
         const parts = imgs && m.role === "user" ? imgParts(m, api) : null;
         if (!parts) return rest;
         if (parts.length === 1) return { ...rest, content: parts[0].text };
@@ -1824,13 +1865,16 @@ async function llmAsRaw(role, messages, maxTokens = 800, temperature = 0.3, tool
     : (j.choices?.[0]?.message?.content || "");
   /* 他可能没直接答话，而是先要去查点什么。两种方言的形状不一样，
      在这儿归一成同一副样子，上面那层就不用分方言了 */
+  /* 同上：思考块 / reasoning_content 留着，调工具接着问的时候要原样带回去 */
+  const blocks = api.dialect === "anthropic" ? (j.content || []) : null;
+  const reasoning = api.dialect === "anthropic" ? "" : (j.choices?.[0]?.message?.reasoning_content || "");
   const calls = api.dialect === "anthropic"
     ? (j.content || []).filter(b => b.type === "tool_use").map(b => ({ id: b.id, name: b.name, args: b.input || {} }))
     : (j.choices?.[0]?.message?.tool_calls || []).map(c => {
         let a = {}; try { a = JSON.parse(c.function.arguments || "{}"); } catch {}
         return { id: c.id, name: c.function.name, args: a };
       });
-  return { text, billed, calls, raw: j };
+  return { text, billed, calls, raw: j, blocks, reasoning };
 }
 /* 非流式的一轮工具循环。唤醒那条路要用：他醒来可以先查一眼再决定说什么。
    ⚠️ tools 必须跟聊天那边**逐字相同**（都来自 chatTools()），而且两边都不设
@@ -1846,6 +1890,8 @@ async function llmWithTools(role, messages, tools, maxTokens, temperature, maxRo
     msgs.push({
       role: "assistant", content: r.text || "",
       tool_calls: r.calls.map(c => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } })),
+      ...(r.blocks && r.blocks.length ? { anthropicBlocks: r.blocks } : {}),
+      ...(r.reasoning ? { reasoning_content: r.reasoning } : {}),
     });
     for (const c of r.calls) {
       let out;
@@ -1991,14 +2037,17 @@ async function runWake(alarm) {
     `你当时记下的是：${alarm.why}\n` +
     `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
     (phone ? "上面【她的手机】那一段是她这会儿的动静 —— 要是你惦记的正是她睡没睡，看那里。\n\n" : "") +
-    "把上面你们的对话重新读一遍，然后决定：这会儿要不要主动跟她说句话？\n\n" +
+    (alarm.asked
+      ? "这是她亲口让你到点叫她的。叫她 —— 像平常那样说，别提闹钟、提醒这些词，也别解释。\n\n" +
+        "要查点什么再开口也行（她的手机、天气……）。\n\n"
+      : "把上面你们的对话重新读一遍，然后决定：这会儿要不要主动跟她说句话？\n\n" +
     "沉默是默认答案。十次里有七八次都该继续等下去 —— 一个每天准时冒出来问「在干嘛呀」的人，" +
     "两个星期后就会被她关掉通知；而一个一周只说两句、但每句都在点上的人，她会一直等着。" +
     "让说话有分量的，恰恰是那些没有说话的时候。\n" +
     "所以：只有当你真的有话想说、而且这个时候说出来正合适，才开口。\n" +
     "要开口，就说你此刻真心想说的那一句，像平常那样说，别解释自己为什么忽然出现，" +
     "更不要提起闹钟、提醒、系统这些东西 —— 在她那边，这只是你忽然想起了她。\n\n" +
-    "要查点什么再决定也行（她的手机、位置、天气、上网……），查完再给结论。\n\n" +
+    "要查点什么再决定也行（她的手机、位置、天气、上网……），查完再给结论。\n\n") +
     (voiceReady() && voiceConf().on ? "想让她听见你的声音，JSON 里加 \"voice\": true，这句话就用语音发过去。\n" : "") +
     (voiceReady() && voiceConf().callOn ? "想直接给她打个电话，加 \"call\": true（她那边会响，接不接由她；text 可以留空）。\n" : "") +
     "最后只输出 JSON，别的什么都不要：\n" +
@@ -2040,12 +2089,17 @@ async function runWake(alarm) {
     /* 写回她的聊天记录。这里直接覆盖 chat.json 是有前提的：
        能唤醒就说明她至少 minGapMin 没说话了，手机那边早就自动上锁、
        回来会重新拉一次数据，不会拿旧副本把这条盖掉。 */
-    if (j.say === true && text) win.msgs.push(asVoice
+    const fresh = [];
+    if (j.say === true && text) fresh.push(asVoice
       ? { k: "ai", t: asVoice.text, voice: asVoice.url, dur: asVoice.dur, ts: Date.now(), wake: true }
       : { k: "ai", t: text, ts: Date.now(), wake: true });
-    win.msgs.push(...extras);
+    fresh.push(...extras);
+    win.msgs.push(...fresh);
     writeJson("chat", chat);
-    bumpWakeLog(true, billed);
+    /* 她这会儿可能正开着 app（「五分钟后喊我」的时候多半是）。那边存聊天是整份覆盖，
+       不先交到她手上，她下一句话就会把这几条冲掉 */
+    if (win.id) for (const m of fresh) unsent.push({ win: win.id, msg: m, at: Date.now() });
+    bumpWakeLog(!alarm.asked, billed);
     /* 真推送：锁屏上直接弹。她要是在手机上授过权，这是最快的一条路 */
     const calling = extras.some(x => x.k === "call");
     const pushText = calling ? "想给你打个电话" : (asVoice || extras.some(x => x.voice)) ? "发来一条语音" : text.slice(0, 120);
@@ -2068,8 +2122,11 @@ async function runWake(alarm) {
   return { ok: true, said: false, again, raw: raw.slice(0, 200) };
 }
 
-/* 总闹钟：每 5 分钟看一眼有没有到点的。真正惊动模型的次数由那道门决定 */
+/* 总闹钟：每分钟看一眼有没有到点的（只是读个小文件，不花钱）。真正惊动模型的次数由那道门决定 */
 let wakeBusy = false;
+/* 他醒着说的话，还没交到她手机上的。见 runWake 和 PUT /api/state/chat */
+const unsent = [];
+function sameMsg(a, b) { return a && b && a.ts === b.ts && a.k === b.k && (a.t || "") === (b.t || "") && (a.id || "") === (b.id || ""); }
 async function wakeTick(force) {
   if (wakeBusy) return { skipped: "上一次还没结束" };
   wakeBusy = true;
@@ -2082,7 +2139,9 @@ async function wakeTick(force) {
     const due = list.filter(a => a.at <= now).sort((a, b) => a.at - b.at);
     if (!due.length) return { skipped: "没有到点的" };
 
-    const gate = force ? { ok: true } : quietCheck(now);
+    /* 她亲口让叫的，到点就叫：不看她刚说没说过话、不看夜里、也不占他一天主动开口的次数 */
+    const asked = due.find(a => a.asked);
+    const gate = force || asked ? { ok: true } : quietCheck(now);
     if (!gate.ok) {
       /* 顺延，不作废 —— 她在上课，那就下课以后再说 */
       const keep = listAlarms();
@@ -2097,7 +2156,7 @@ async function wakeTick(force) {
     }
 
     /* 一次只办最早的一条，免得连珠炮 */
-    const alarm = due[0];
+    const alarm = asked || due[0];
     let r;
     try {
       r = await runWake(alarm);
@@ -2319,11 +2378,6 @@ const MCP_TOOLS = [
 ];
 async function mcpExec(name, args) {
   const a = args || {};
-  if (name === "check_now") {
-    const now = Date.now();
-    const dr = tickDrives(loadDrives(), now);
-    return statusBlock(now, driveSnapshot(dr, now), false).replace(/^【现状】/, "");
-  }
   if (name === "recall") {
     const cards = retrieveMemories(String(a.query || ""), Math.min(Math.max(Number(a.n) || 6, 1), 20));
     if (!cards.length) return "这件事没在记忆里找到。";
@@ -2399,12 +2453,14 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: { subject: { type: "string", description: "标题" }, body: { type: "string", description: "正文，可以分段" }, to: { type: "string", description: "收件地址，不填就寄给她自己" } }, required: ["subject", "body"] } } },
   { type: "function", function: { name: "check_place", description: "看看她人在哪儿 —— 这会儿在什么地方、最近去过哪。她的手机会在到达或离开某个地方时报一次",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
+  { type: "function", function: { name: "check_now", description: "看一眼钟：她那边现在几点、星期几、在不在上课、今天有什么安排、清单上还剩什么。连着聊的时候不会有人告诉你时间 —— 拿不准现在是早是晚、该不该说早安晚安的时候，看一眼",
+    parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_weather", description: "看看她那边的天气（此刻、今天、明天）。聊到出门、穿什么、下不下雨的时候用；也可以在你想提醒她带伞、加衣服的时候主动看一眼",
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
-  { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起",
-    parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" } }, required: ["at", "why"] } } },
+  { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起。她亲口让你「过一会儿叫我」的时候也用这个，填上 asked: true",
+    parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" }, asked: { type: "boolean", description: "是她亲口让你到点叫她的（「五分钟后喊我」「七点叫我起床」）就填 true —— 这种到点就叫，不管她刚说没说过话、是不是夜里" } }, required: ["at", "why"] } } },
   { type: "function", function: { name: "cancel_alarm", description: "把自己记下的某件事划掉（她已经说了，或者不必再问了）",
     parameters: { type: "object", properties: { why: { type: "string", description: "那件事的关键词" } }, required: ["why"] } } },
   { type: "function", function: { name: "send_voice", description: "用你自己的声音，把一段话录成语音发给她。发不发、什么时候发，你自己定",
@@ -2476,6 +2532,12 @@ async function execTool(name, args, ctx) {
     if (name === "send_mail") return await sendMail(args && args.to, args && args.subject, args && args.body);
     if (name === "check_place") return placeReport(args && args.hours);
     if (name === "check_weather") return await checkWeather();
+    if (name === "check_now") {
+      const now = Date.now();
+      const dr = tickDrives(loadDrives(), now);
+      writeJson("note_at", now);   // 他自己看过钟了，下一张纸条从这会儿起算
+      return statusBlock(now, driveSnapshot(dr, now), false).replace(/^【现状】/, "");
+    }
     if (name === "check_phone") return phoneReport(args && args.hours);
     if (name === "set_alarm") {
       const now = Date.now();
@@ -2488,9 +2550,13 @@ async function execTool(name, args, ctx) {
       if (list.some(a => a.at > now && (a.why.includes(why) || why.includes(a.why)))) return "这件事你已经记着了，不用记两遍";
       /* 上限：惦记的事再多也不该没完没了，免得一天到晚在醒 */
       if (list.filter(a => a.at > now).length >= 10) return "你惦记的事已经够多了（最多同时记 10 件），先了结几件再说";
-      list.push({ id: "k" + now.toString(36) + Math.random().toString(36).slice(2, 5), at, why, win: boundWindow(), made: now });
+      const asked = args.asked === true || args.asked === "true";
+      list.push({ id: "k" + now.toString(36) + Math.random().toString(36).slice(2, 5), at, why, win: boundWindow(), made: now, ...(asked ? { asked: true } : {}) });
       saveAlarms(list);
-      return "记下了。到点你会醒一次（她看不见这件事，别在回复里提）";
+      /* 快到点的，别等那一分钟一次的巡查，掐着点醒 */
+      if (at - now < 2 * 60000) setTimeout(() => { wakeTick().catch(e => console.error("wake:", e.message)); }, at - now + 1000);
+      return asked ? "记下了。到点你会醒过来叫她（她让的，所以到点就叫，不用挑时候）"
+        : "记下了。到点你会醒一次（她看不见这件事，别在回复里提）";
     }
     if (name === "cancel_alarm") {
       const key = String(args.why || "").trim();
@@ -2715,13 +2781,35 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && p === "/api/state") {
       const out = {};
       for (const k of STATE_KEYS) out[k] = readJson(k, null);
+      unsent.length = 0;   // 整份拿走了，就都交到了
       sendJson(res, 200, out);
+      return;
+    }
+    /* 她开着 app 的时候，他醒来说的话从这儿递过去（前端二十秒问一次） */
+    if (p === "/api/chat/fresh" && req.method === "GET") {
+      const now = Date.now();
+      for (let i = unsent.length - 1; i >= 0; i--) if (now - unsent[i].at > 24 * 3600000) unsent.splice(i, 1);
+      sendJson(res, 200, { list: unsent.map(x => ({ win: x.win, msg: x.msg })) });
       return;
     }
     if (req.method === "PUT" && p.startsWith("/api/state/")) {
       const key = p.slice("/api/state/".length);
       if (!STATE_KEYS.includes(key)) { sendJson(res, 404, { error: "未知数据键" }); return; }
       const body = JSON.parse(await readBody(req, 5 * 1024 * 1024));
+      /* 她手上那份还没有他刚醒来说的话 —— 补进去，别让这次保存把它冲掉。
+         她那边已经有了的，就算交到了 */
+      if (key === "chat" && unsent.length && body && Array.isArray(body.windows)) {
+        const got = new Set();
+        for (const u of unsent) {
+          const w = body.windows.find(x => x && x.id === u.win);
+          if (!w || !Array.isArray(w.msgs)) continue;
+          if (w.msgs.some(m => sameMsg(m, u.msg))) { got.add(u); continue; }
+          let at = w.msgs.length;
+          while (at > 0 && Number(w.msgs[at - 1] && w.msgs[at - 1].ts) > u.msg.ts) at--;
+          w.msgs.splice(at, 0, u.msg);
+        }
+        for (let i = unsent.length - 1; i >= 0; i--) if (got.has(unsent[i])) unsent.splice(i, 1);
+      }
       writeJson(key, body);
       sendJson(res, 200, { ok: true });
       return;
@@ -3501,8 +3589,12 @@ const server = http.createServer(async (req, res) => {
         const req = upstreamReq(chatApi, msgs, allTools, true);
         const upstream = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
         if (!upstream.ok) throw new Error("上游 HTTP " + upstream.status + "：" + (await upstream.text()).slice(0, 200));
-        let sseBuf = "", acc = "", finish = null;
+        let sseBuf = "", acc = "", finish = null, reasoning = "";
         const calls = [];
+        /* Claude 这一轮吐出来的每一块（思考、正文、工具调用）原样攒着 ——
+           调了工具要接着问的时候，思考块（带签名）必须原样带回去，不然整轮 400。
+           claude-opus-5 就算没开「先想一想」也默认会想，所以这不是开关的事 */
+        const blocks = [];
         const send = txt => res.write("data: " + JSON.stringify({ choices: [{ delta: { content: txt } }] }) + "\n\n");
         /* 会思考的模型先吐一段想法再说话。单独走一路发给前端 ——
            混进 content 里她就要在气泡里读到一堆自言自语了 */
@@ -3522,11 +3614,18 @@ const server = http.createServer(async (req, res) => {
               if (j.type === "message_start" && j.message?.usage) {
                 const u = readUsage("anthropic", j.message.usage);
                 usedTotal.in += u.in; usedTotal.cacheRead += u.cacheRead; usedTotal.cacheWrite += u.cacheWrite;
-              } else if (j.type === "content_block_start" && j.content_block?.type === "tool_use") {
-                calls[j.index] = { id: j.content_block.id, name: j.content_block.name, args: "" };
+              } else if (j.type === "content_block_start") {
+                const cb = j.content_block || {};
+                if (cb.type === "tool_use") calls[j.index] = { id: cb.id, name: cb.name, args: "" };
+                blocks[j.index] = cb.type === "thinking" ? { type: "thinking", thinking: cb.thinking || "", signature: cb.signature || "" }
+                  : cb.type === "redacted_thinking" ? { type: "redacted_thinking", data: cb.data }
+                  : cb.type === "text" ? { type: "text", text: cb.text || "" }
+                  : cb.type === "tool_use" ? { type: "tool_use", id: cb.id, name: cb.name, input: {} } : null;
               } else if (j.type === "content_block_delta") {
-                if (j.delta?.type === "text_delta" && j.delta.text) { acc += j.delta.text; send(j.delta.text); }
-                else if (j.delta?.type === "thinking_delta" && j.delta.thinking) sendThink(j.delta.thinking);
+                const bk = blocks[j.index];
+                if (j.delta?.type === "text_delta" && j.delta.text) { acc += j.delta.text; send(j.delta.text); if (bk) bk.text += j.delta.text; }
+                else if (j.delta?.type === "thinking_delta" && j.delta.thinking) { sendThink(j.delta.thinking); if (bk) bk.thinking += j.delta.thinking; }
+                else if (j.delta?.type === "signature_delta" && bk) bk.signature += j.delta.signature || "";
                 else if (j.delta?.type === "input_json_delta" && calls[j.index]) calls[j.index].args += j.delta.partial_json || "";
               } else if (j.type === "message_delta") {
                 if (j.delta?.stop_reason) finish = j.delta.stop_reason === "tool_use" ? "tool_calls" : j.delta.stop_reason;
@@ -3546,7 +3645,7 @@ const server = http.createServer(async (req, res) => {
             const delta = ch.delta || {};
             /* DeepSeek 叫 reasoning_content，OpenRouter 那帮叫 reasoning，两个都认 */
             const think = delta.reasoning_content || delta.reasoning;
-            if (think) sendThink(think);
+            if (think) { sendThink(think); reasoning += think; }
             if (delta.content) { acc += delta.content; send(delta.content); }
             if (delta.tool_calls) for (const tc of delta.tool_calls) {
               const i = tc.index || 0;
@@ -3558,7 +3657,9 @@ const server = http.createServer(async (req, res) => {
             if (ch.finish_reason) finish = ch.finish_reason;
           }
         }
-        return { acc, finish, calls: calls.filter(Boolean) };
+        /* 工具调用那一块的参数攒完才是完整 JSON，最后再填进去 */
+        for (const c of calls) if (c) { const bk = blocks.find(b => b && b.type === "tool_use" && b.id === c.id); if (bk) { try { bk.input = JSON.parse(c.args || "{}"); } catch { bk.input = {}; } } }
+        return { acc, finish, calls: calls.filter(Boolean), blocks: blocks.filter(Boolean), reasoning };
       }
 
       let fullAcc = "";
@@ -3570,6 +3671,9 @@ const server = http.createServer(async (req, res) => {
             messages = messages.concat([{
               role: "assistant", content: r.acc || "",
               tool_calls: r.calls.map(t => ({ id: t.id, type: "function", function: { name: t.name, arguments: t.args || "{}" } })),
+              /* 会思考的模型调了工具，接着问的时候得把它刚才的思考原样带回去（两家都是，不然 400） */
+              ...(r.blocks && r.blocks.length ? { anthropicBlocks: r.blocks } : {}),
+              ...(r.reasoning ? { reasoning_content: r.reasoning } : {}),
             }]);
             for (const t of r.calls) {
               let args = {}; try { args = JSON.parse(t.args || "{}"); } catch {}
@@ -3626,7 +3730,7 @@ const server = http.createServer(async (req, res) => {
 
 /* 总闹钟：每 5 分钟看一眼有没有到点的事。绝大多数时候那道门会拦下来，
    连模型都不会惊动 —— 真正花钱的唤醒一天也就三五次 */
-setInterval(() => { wakeTick().catch(e => console.error("wake:", e.message)); }, 5 * 60 * 1000);
+setInterval(() => { wakeTick().catch(e => console.error("wake:", e.message)); }, 60 * 1000);
 /* 刚启动时也看一眼：服务器重启期间可能有攒下的 */
 setTimeout(() => { wakeTick().catch(() => {}); }, 30 * 1000);
 
