@@ -62,15 +62,15 @@ const say = async (t, imgs) => { const r = await fetch(B + '/api/chat', { method
   ok(toolOut && /还没开|看不了/.test(toolOut.content), '他想偷看，被挡下来（' + (toolOut ? toolOut.content.slice(0, 20) : '') + '）');
 
   console.log('\n[偷看：开好了，全流程]');
-  await j('/api/mail', 'PUT', { host: 'smtp.fake', port: 465, user: 'me@fake.com', pass: 'good-pass', to: 'her@icloud.com' });
-  await j('/api/quiet', 'PUT', { peekOn: true });
+  await j('/api/mail', 'PUT', { host: 'smtp.fake', port: 465, user: 'me@fake.com', pass: 'good-pass', to: 'her@qq.com' });
+  await j('/api/quiet', 'PUT', { peekOn: true, peekTo: 'her@icloud.com' });
   ok((await j('/api/quiet')).d.peekReady, '邮箱 + 眼睛 + 开关都齐了');
   const before = mails().length;
   plan([{ tool: 'peek_screen', args: {} }, '{"say":false}']);
   const w2 = (await j('/api/wake/test', 'POST', { why: '想看看她在干嘛' })).d;
   await sleep(300);
   const eml = mails().length > before ? mails().pop() : '';
-  ok(/Subject:.*wupeek/i.test(eml) && /To: <her@icloud\.com>/.test(eml), '给她的 iCloud 发了封带暗号的邮件');
+  ok(/Subject:.*wupeek/i.test(eml) && /To: <her@icloud\.com>/.test(eml), '暗号邮件寄到单独填的 iCloud 邮箱，不是平时收信的 her@qq.com');
   ok(peek().pending && peek().pending.win === 'w1', '记下了「等一张截图」');
   ok(/等.*醒一下|传回来/.test((last().messages.filter(x => x.role === 'tool').pop() || {}).content || ''), '告诉他：不是立刻，传回来再看');
 

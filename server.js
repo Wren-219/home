@@ -1704,6 +1704,9 @@ function quietConf() {
     peekOn: q.peekOn === true,           // 他能不能偷看一眼她的屏幕（要先配好 iCloud + 快捷指令）
     peekMax: num(q.peekMax, 3),          // 一天最多偷看几次
     peekKw: typeof q.peekKw === "string" && q.peekKw.trim() ? q.peekKw.trim().slice(0, 40) : "wupeek",
+    /* 暗号邮件单独寄到她的 iCloud 邮箱 —— 别跟他写的信、自动备份混在一个收件地址里
+       （这个邮箱的通知要关掉，不然截图里会拍到横幅；混在一起她就收不到他的信的提醒了） */
+    peekTo: typeof q.peekTo === "string" ? q.peekTo.trim().slice(0, 120) : "",
   };
 }
 const DOW_CN = { "日": 0, "天": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6 };
@@ -2623,8 +2626,9 @@ async function runWake(alarm) {
    他再醒一下，看着这段文字决定说什么。聊天里会留一张卡片「他看了一眼你的屏幕」，她随时能删。
    网页看不到别的 App 的画面（iOS 定死的），所以只能走「邮件触发手机自己截屏」这条路。
    data/peek.json = { day, n, pending: { at, win, reason } } */
-function peekConf() { const q = quietConf(); return { on: q.peekOn, max: q.peekMax, kw: q.peekKw }; }
-function peekReady() { const c = mailConf(); return peekConf().on && !!(c.user && c.pass) && visionReady(); }
+function peekConf() { const q = quietConf(); return { on: q.peekOn, max: q.peekMax, kw: q.peekKw, to: q.peekTo }; }
+function peekDest() { const c = peekConf(), m = mailConf(); return String(c.to || m.to || m.user || "").trim(); }
+function peekReady() { const c = mailConf(); return peekConf().on && !!(c.user && c.pass) && !!peekDest() && visionReady(); }
 function peekState() { const p = readJson("peek", null) || {}; return p.day === localDayKey() ? p : { day: localDayKey(), n: 0, pending: null }; }
 async function requestPeek(ctx) {
   const c = peekConf(), mc = mailConf(), now = Date.now();
@@ -2635,7 +2639,7 @@ async function requestPeek(ctx) {
   const st = peekState();
   if ((st.n || 0) >= c.max) return "今天看得够多了（一天最多 " + c.max + " 次），别老盯着她。";
   if (st.pending && now - st.pending.at < 3 * 60000) return "刚让她的手机拍了，还没传回来，等一下。";
-  const dest = String(mc.to || mc.user).trim();
+  const dest = peekDest();
   try {
     await sendMail(dest, "[" + c.kw + "] wu peek", "（这是让手机自动截屏的暗号邮件，不用管它。）");
   } catch (e) { return "没拍成：" + String(e.message || e).slice(0, 80); }
@@ -4211,6 +4215,7 @@ const server = http.createServer(async (req, res) => {
         peekOn: typeof body.peekOn === "boolean" ? body.peekOn : cur.peekOn,
         peekMax: num(body.peekMax, cur.peekMax, 1, 20),
         peekKw: typeof body.peekKw === "string" && body.peekKw.trim() ? body.peekKw.trim().slice(0, 40) : cur.peekKw,
+        peekTo: typeof body.peekTo === "string" ? body.peekTo.trim().slice(0, 120) : cur.peekTo,
       };
       writeJson("quiet", next);
       sendJson(res, 200, { ok: true, ...next, parsed: parseClasses(next.classes) });

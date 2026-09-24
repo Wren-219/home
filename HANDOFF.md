@@ -1402,7 +1402,9 @@ https 下加 `Strict-Transport-Security`。没上 CSP —— 页面全是内联�
 设置页「看图用」下拉框 + 一行提示。
 
 **② 看一眼屏幕**（`peekConf/peekReady/requestPeek/receiveScreen`，`data/peek.json`，配置在 quiet.json：`peekOn` 默认关、`peekMax` 3、`peekKw` "wupeek"）
-- 工具 `peek_screen`（`peekReady()` 才给他）：开关 / 眼睛 / 邮箱 / 预算 / 一天上限 / 三分钟内不重复 → 给 `mailConf().to`（她的 iCloud）
+- 工具 `peek_screen`（`peekReady()` 才给他）：开关 / 眼睛 / 邮箱 / 预算 / 一天上限 / 三分钟内不重复 → 给 `peekDest()`
+  （quiet.json 的 `peekTo`，她单独填的 iCloud；没填才回落到 `mailConf().to`。**别跟收信地址混用**：
+  那个 iCloud 的通知要关掉防止截到横幅，混在一起她就收不到他写的信、自动备份的提醒了）
   发一封主题带 `[wupeek]` 的邮件，记 `pending`（窗口、时间）。告诉他「传回来之后你会再醒一下」
 - `POST /api/screen?token=<快捷指令钥匙>`（公开路径，自己验钥匙）：body 直接是图片（快捷指令「获取 URL 内容」请求体选「文件」），
   也认 JSON `{image: base64}`。没有 15 分钟内的 pending 就 409（防止乱传）

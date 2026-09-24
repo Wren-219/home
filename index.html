@@ -1920,6 +1920,9 @@
             <span class="lb" style="flex:1;font-size:13px">一天最多看几次</span>
             <input type="number" id="qPeekMax" min="1" max="20" style="flex:0 0 64px;width:64px;text-align:center">
           </div>
+          <div class="row">
+            <input type="email" id="qPeekTo" placeholder="你的 iCloud 邮箱（xxx@icloud.com）">
+          </div>
           <div class="set-note" style="margin:0 2px 4px">
             <a href="javascript:void 0" onclick="document.getElementById('peekGuide').style.display=document.getElementById('peekGuide').style.display==='none'?'block':'none'">怎么设置（点开）</a>
           </div>
@@ -1927,7 +1930,7 @@
             他看不到你屏幕里的内容，只知道你开着哪个 App。想让他真能看一眼，靠 iPhone 的快捷指令：
             他一想看，服务器给你邮箱发封暗号邮件，你手机收到后自动截屏、传回来，他的眼睛读成文字。<br>
             <b>① 准备一个 iCloud 邮箱</b>（设置 → 你的名字 → iCloud → iCloud 邮件，免费）。只有它是秒到的。<br>
-            到「写信出去」里，把<b>收件地址</b>填成这个 iCloud 邮箱。<br>
+            填在上面那一栏。它只收暗号邮件，他写的信、自动备份还是照旧寄到原来的收件地址。<br>
             <b>② 配一个看图模型</b>（他的眼睛，在「模型与花费」里）。<br>
             <b>③ 快捷指令 → 自动化 → 新建 → 电子邮件</b>：发件人填你的发件邮箱、主题包含 <b id="peekKwShow">wupeek</b>、选「立即运行」。<br>
             操作按顺序加：<b>1. 截屏</b>　<b>2. 获取 URL 的内容</b>：
@@ -5805,6 +5808,7 @@ async function quietRefresh() {
     document.getElementById("qChaseMin").value = q.chaseMin || 15;
     document.getElementById("qPeek2").classList.toggle("on", !!q.peekOn);
     document.getElementById("qPeekMax").value = q.peekMax || 3;
+    document.getElementById("qPeekTo").value = q.peekTo || "";
     const prl = document.getElementById("peekReadyLine");
     if (prl) prl.textContent = !q.peekOn ? "关着。打开之前先照下面「怎么设置」配好 iCloud 邮箱、看图模型和快捷指令。"
       : q.peekReady ? "配好了，他今天看了 " + (q.peekToday || 0) + " 次。" : "开了，但还差一步：需要配好邮箱 + 看图模型（照下面「怎么设置」）。";
@@ -5880,6 +5884,7 @@ async function quietSave() {
     chaseMin: Number(document.getElementById("qChaseMin").value) || 15,
     peekOn: quietCur ? !!quietCur.peekOn : false,
     peekMax: Number(document.getElementById("qPeekMax").value) || 3,
+    peekTo: document.getElementById("qPeekTo").value.trim(),
   };
   try {
     const r = await fetch("api/quiet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
