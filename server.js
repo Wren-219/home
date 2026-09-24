@@ -188,6 +188,9 @@ function newApi(d, keep) {
     /* 只对 Claude 有意义：让他开口前先想一段。DeepSeek 那边会不会想
        是模型自己定的（deepseek-reasoner 会，deepseek-chat 不会），没得配 */
     think: d.think === true,
+    /* 看不看得懂图。没说就按格式猜：Claude 都看得懂，
+       OpenAI 格式那边五花八门（DeepSeek 看不了，GPT-4o / Qwen-VL 可以），默认关 */
+    vision: typeof d.vision === "boolean" ? d.vision : undefined,
     price,
     created: (keep && keep.created) || new Date().toISOString(),
   };
@@ -213,7 +216,7 @@ function activeApi(role) {
 function publicApi(a, conf) {
   return {
     id: a.id, name: a.name, base: a.base, model: a.model, dialect: a.dialect,
-    think: a.think === true,
+    think: a.think === true, vision: visionOn(a),
     keyMask: maskKey(a.key), hasKey: !!a.key, price: a.price,
     isChat: conf.chat === a.id, isWorker: conf.worker === a.id,
   };
@@ -262,12 +265,74 @@ function estTokens(s) {
   for (const ch of s) if (CJK.test(ch)) cjk++;
   return Math.ceil(cjk + (s.length - cjk) / 3.5);
 }
+/* ================= 她发来的照片 =================
+   存的是 /files/ 下的地址（前端另传一份长边 1568px 的小图专门给他看，原图进相册）。
+   发给模型之前才去磁盘读、转 base64。
+   ⚠️ 历史里的图每轮都按原样再发一遍，字节一个不变 —— 缓存才接得上。
+   但不能无限多：只留最近 LIVE_IMGS 张是真图，更早的只剩那句「发来了 N 张照片」。
+   这条线只在她发新照片时往后挪一次，缓存也就只在那时断一次。 */
+const LIVE_IMGS = 12;
+const IMG_TOKENS = 1800;   // 预算用的粗估：长边 1568 的一张图大约 1500–2400 token
+const IMG_MEDIA = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" };
+const imgCache = new Map();
+function visionOn(api) {
+  if (!api) return false;
+  return typeof api.vision === "boolean" ? api.vision : api.dialect === "anthropic";
+}
+/* 只认自己上传目录里的文件，别的地址一律不碰 */
+function cleanImgs(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter(u => typeof u === "string" && /^\/files\/[\w.-]+$/.test(u))
+    .slice(0, 9);
+}
+function imgOf(url) {
+  if (imgCache.has(url)) return imgCache.get(url);
+  let out = null;
+  try {
+    const name = path.basename(url);
+    const media = IMG_MEDIA[path.extname(name).toLowerCase()];
+    const fp = path.join(UPLOAD_DIR, name);
+    /* 5MB 是 API 的上限（按 base64 后算），原图太大就算了 */
+    if (media && fs.existsSync(fp) && fs.statSync(fp).size <= 3.7 * 1024 * 1024) {
+      out = { media, data: fs.readFileSync(fp).toString("base64") };
+    }
+  } catch {}
+  imgCache.set(url, out);
+  if (imgCache.size > 40) imgCache.delete(imgCache.keys().next().value);
+  return out;
+}
+/* 从最新往回数，只给最近 LIVE_IMGS 张留着真图 */
+function liveImages(msgs) {
+  let left = LIVE_IMGS;
+  const out = msgs.slice();
+  for (let i = out.length - 1; i >= 0; i--) {
+    const m = out[i];
+    if (!m.imgs) continue;
+    const imgs = cleanImgs(m.imgs);
+    const keep = imgs.slice(0, Math.max(0, left));
+    left -= keep.length;
+    const { imgs: _drop, ...rest } = m;
+    out[i] = keep.length ? { ...rest, imgs: keep } : rest;
+  }
+  return out;
+}
+/* 一条带图的消息，按这套模型的本事拆成 [{kind:"img", media, data}, {kind:"text", text}] */
+function imgParts(m, api) {
+  const text = String(m.content == null ? "" : m.content);
+  const imgs = (m.imgs || []).map(imgOf).filter(Boolean);
+  if (!m.imgs || !m.imgs.length) return null;
+  if (!visionOn(api) || !imgs.length) {
+    /* 不是嘱托，是事实 —— 免得他假装看见了，张口就夸 */
+    return [{ kind: "text", text: text + "（你这边看不到图片内容，只知道她发了）" }];
+  }
+  return [...imgs.map(x => ({ kind: "img", ...x })), { kind: "text", text }];
+}
 /* 从最新往回收，收到装不下为止；至少留住最后一条 */
 function budgetHistory(all, budget) {
   const out = [];
   let sum = 0;
   for (let i = all.length - 1; i >= 0; i--) {
-    const t = estTokens(all[i].content) + 4;
+    const t = estTokens(all[i].content) + 4 + (all[i].imgs ? all[i].imgs.length * IMG_TOKENS : 0);
     if (out.length && sum + t > budget) break;
     out.unshift(all[i]);
     sum += t;
@@ -1443,13 +1508,19 @@ function toAnthropic(msgs, api, tools) {
       out.push({ role: "assistant", content });
       continue;
     }
+    const parts = m.role === "user" ? imgParts(m, api) : null;
+    const blocks = parts ? parts.map(x => x.kind === "img"
+      ? { type: "image", source: { type: "base64", media_type: x.media, data: x.data } }
+      : { type: "text", text: x.text }) : null;
     if (m.role === "user" && volatileText) {
       /* 把每轮都变的那块并进她这条消息里：位置仍在历史之后，缓存前缀不受影响，
          而且这样在所有 Claude 模型上都合法 */
-      out.push({ role: "user", content: [{ type: "text", text: volatileText }, { type: "text", text: String(m.content) }] });
+      out.push({ role: "user", content: [{ type: "text", text: volatileText },
+        ...(blocks || [{ type: "text", text: String(m.content) }])] });
       volatileText = null;
       continue;
     }
+    if (blocks) { out.push({ role: "user", content: blocks }); continue; }
     out.push({ role: m.role, content: String(m.content) });
   }
   if (volatileText) out.push({ role: "user", content: [{ type: "text", text: volatileText }] });
@@ -1503,7 +1574,16 @@ function upstreamReq(api, msgs, tools, stream) {
     headers: { Authorization: "Bearer " + api.key, "Content-Type": "application/json" },
     body: {
       model: api.model,
-      messages: msgs.map(m => { const { wuVolatile, ...rest } = m; return rest; }),
+      messages: msgs.map(m => {
+        const { wuVolatile, imgs, ...rest } = m;
+        const parts = imgs && m.role === "user" ? imgParts(m, api) : null;
+        if (!parts) return rest;
+        if (parts.length === 1) return { ...rest, content: parts[0].text };
+        return { ...rest, content: [
+          { type: "text", text: parts[parts.length - 1].text },
+          ...parts.filter(x => x.kind === "img").map(x => ({ type: "image_url", image_url: { url: "data:" + x.media + ";base64," + x.data } })),
+        ] };
+      }),
       temperature: 0.8, max_tokens: 1024,
       ...(tools ? { tools } : {}),
       ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
@@ -1652,7 +1732,12 @@ function chatMessagesOf(win) {
   for (const m of (win.msgs || [])) {
     if (m.k === "me") out.push({ role: "user", content: String(m.t || "") });
     else if (m.k === "ai") out.push({ role: "assistant", content: String(m.t || "") });
-    else if (m.k === "stack") out.push({ role: "user", content: "（发来了几张照片）" });
+    else if (m.k === "stack") {
+      /* 这句必须跟前端 toApiMessages() 拼的一模一样，不然唤醒和聊天的前缀对不上 */
+      const n = Array.isArray(m.imgs) ? m.imgs.length : 0;
+      const imgs = cleanImgs(Array.isArray(m.see) && m.see.length ? m.see : m.imgs);
+      out.push({ role: "user", content: "（发来了" + n + "张照片）", ...(imgs.length ? { imgs } : {}) });
+    }
     else if (m.k === "file") out.push({ role: "user", content: "（发来了文件：" + (m.name || "") + "）" });
   }
   return out;
@@ -1670,7 +1755,7 @@ async function runWake(alarm) {
   const chat = readJson("chat", null);
   const win = pickWakeWindow(chat, alarm.win);
   if (!win) return { ok: false, note: "没有可用的聊天窗口" };
-  const history = budgetHistory(chatMessagesOf(win), HISTORY_BUDGET);
+  const history = budgetHistory(liveImages(chatMessagesOf(win)), HISTORY_BUDGET);
   if (!history.length) return { ok: false, note: "这个窗口还没说过话" };
 
   const dr = tickDrives(loadDrives(), now);
@@ -3021,10 +3106,12 @@ const server = http.createServer(async (req, res) => {
       const chatApi = activeApi("chat");
       if (!chatApi.key) { sendJson(res, 503, { error: "还没有配置聊天用的 API" }); return; }
       const payload = JSON.parse(await readBody(req, 4 * 1024 * 1024));
-      const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"));
+      const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"))
+        .map(m => ({ role: m.role, content: String(m.content == null ? "" : m.content),
+          ...(m.role === "user" && cleanImgs(m.imgs).length ? { imgs: cleanImgs(m.imgs) } : {}) }));
       if (!raw.length) { sendJson(res, 400, { error: "缺少消息" }); return; }
-      /* 按额度而不是条数截断：短消息能留几百条 */
-      const history = budgetHistory(raw, HISTORY_BUDGET);
+      /* 按额度而不是条数截断：短消息能留几百条。图先挑出最近那几张，再算额度 */
+      const history = budgetHistory(liveImages(raw), HISTORY_BUDGET);
       const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
 
       /* 驱动引擎：时间流逝对所有窗口都算，但只有绑定窗口里的话会推动他的心情 */
