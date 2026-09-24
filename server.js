@@ -210,9 +210,13 @@ function envApi(role) {
     price: { ...PRICE0 },
   };
 }
+/* Key 留空、地址跟环境变量那套一样 → 借用环境变量里那把。
+   她只是想换个模型名（比如 deepseek-chat → deepseek-v4-flash），不用再去翻出 Key 来 */
+function borrowsEnvKey(a) { return !!(a && !a.key && API_KEY && a.base === API_BASE); }
+function withKey(a) { return borrowsEnvKey(a) ? { ...a, key: API_KEY } : a; }
 function activeApi(role) {
   const conf = apisConf();
-  const hit = conf[role] && conf.list.find(x => x.id === conf[role]);
+  const hit = withKey(conf[role] && conf.list.find(x => x.id === conf[role]));
   if (hit && hit.key && hit.base && hit.model) return hit;
   return envApi(role);
 }
@@ -220,7 +224,7 @@ function publicApi(a, conf) {
   return {
     id: a.id, name: a.name, base: a.base, model: a.model, dialect: a.dialect,
     think: a.think === true, vision: visionOn(a),
-    keyMask: maskKey(a.key), hasKey: !!a.key, price: a.price,
+    keyMask: borrowsEnvKey(a) ? "用服务器上那把 Key" : maskKey(a.key), hasKey: !!withKey(a).key, price: a.price,
     isChat: conf.chat === a.id, isWorker: conf.worker === a.id,
   };
 }
@@ -2925,7 +2929,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith("/api/apis/") && p.endsWith("/test") && req.method === "POST") {
       const id = p.slice("/api/apis/".length, -"/test".length);
       const conf = apisConf();
-      const a = conf.list.find(x => x.id === id);
+      const a = withKey(conf.list.find(x => x.id === id));
       if (!a) { sendJson(res, 404, { error: "没有这套配置" }); return; }
       try {
         const req2 = upstreamReq(a, [{ role: "user", content: "请只回复两个字：正常" }], null, false);

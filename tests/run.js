@@ -36,6 +36,7 @@ const SUITE = [
   ['界面', 'search-ui', '「上网」设置页', true, {}],
   ['模型', 'claude-dialect', 'Claude 格式：不发 temperature、思考开关', true, { apis: API_M1 }, ['mock-claude.js']],
   ['模型', 'thinking-tools', '会思考的模型调工具：思考原样带回，闹钟设得上', true, { apis: API_M1 }, ['mock-claude.js', 'mock-think.js']],
+  ['模型', 'api-env-key', '界面上换模型：Key 留空就沿用服务器那把', true, { apis: NO_API, env: { DEEPSEEK_API_KEY: 'sk-env-secret', LLM_BASE_URL: 'http://localhost:8099' } }, ['mock-openai-log.js']],
   ['模型', 'cache-stable', '聊得很长以后缓存还接得上；记忆断开就一点不塞', true, { apis: API_M1, env: { WORKER_API_KEY: 'sk-test' } }, ['mock-openai-log.js']],
   ['模型', 'wake-cache', '唤醒和聊天的缓存前缀逐字相同', true, { apis: API_M1 }, ['mock-openai-log.js']],
   ['模型', 'search-api', '上网：三家搜索、读网页、钥匙只进不出', true, {}],
