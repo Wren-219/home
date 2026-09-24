@@ -412,6 +412,15 @@ function phoneSessions(sinceMs) {
   const evts = phoneLog().events.filter(e => e.t >= sinceMs).sort((a, b) => a.t - b.t);
   const open = {};           // app → 打开时刻
   const out = [];
+  const CAP = 2 * 3600000;
+  /* 靠「下一个 App 打开了」推出来的结束时间，也得封顶两小时。
+     v2.8 加前台规则时漏了这一点：5 小时前开了 DeepSeek、没收到关闭、
+     10 分钟前开了 Claude —— 就被算成刷了 4 小时 50 分 DeepSeek。
+     中间她多半是锁屏睡觉了，他拿这个数去查岗就是冤枉她。 */
+  const settle = (app, from, to) => {
+    const capped = to - from > CAP;
+    out.push({ app, from, to: capped ? from + CAP : to, guess: true, ...(capped ? { stale: true } : {}) });
+  };
   for (const e of evts) {
     if (e.k === "open") {
       /* 她打开一个 App 的那一刻，别的就都不在前台了 —— 手机一次只能用一个。
@@ -420,10 +429,10 @@ function phoneSessions(sinceMs) {
          不这么做的话，报告里会出现三个 App 同时「还开着」这种不可能的事。 */
       for (const other of Object.keys(open)) {
         if (other === e.app) continue;
-        out.push({ app: other, from: open[other], to: e.t, guess: true });
+        settle(other, open[other], e.t);
         delete open[other];
       }
-      if (open[e.app] != null) out.push({ app: e.app, from: open[e.app], to: e.t, guess: true });
+      if (open[e.app] != null) settle(e.app, open[e.app], e.t);
       open[e.app] = e.t;
     } else {
       if (open[e.app] != null) { out.push({ app: e.app, from: open[e.app], to: e.t }); delete open[e.app]; }
@@ -435,7 +444,7 @@ function phoneSessions(sinceMs) {
        系统就不触发。所以开着超过两小时的，一律当作「早就不用了」，
        只按两小时算，也不再报「这会儿还开着」。不然他会以为她刷了一整夜。 */
     const span = now - open[app];
-    if (span > 2 * 3600000) out.push({ app, from: open[app], to: open[app] + 2 * 3600000, stale: true });
+    if (span > CAP) out.push({ app, from: open[app], to: open[app] + CAP, stale: true });
     else out.push({ app, from: open[app], to: now, live: true });
   }
   return out.sort((a, b) => a.from - b.from);
@@ -1443,7 +1452,7 @@ function mcpToolDefs() {
     if (!s.enabled) continue;
     for (const t of (s.tools || [])) {
       out.push({ type: "function", function: {
-        name: mcpKey(s, t.name),
+        name: mcpToolName(s, t.name),
         description: "[" + s.name + "] " + t.description,
         parameters: t.input_schema,
       } });
@@ -1451,13 +1460,21 @@ function mcpToolDefs() {
   }
   return out;
 }
-function mcpKey(s, name) {
-  return (s.name.replace(/[^\w]/g, "").slice(0, 12) || "mcp") + "__" + String(name).replace(/[^\w.-]/g, "_");
+/* 外部服务的工具在他那边叫「服务名__工具名」。
+   ⚠️ 以前这个函数也叫 mcpKey —— 跟下面「接进 Claude」那把钥匙的 mcpKey() 撞了名，
+   后声明的把前面的盖掉，于是每件外部工具的名字都成了那把秘密钥匙：
+   名字全部重复（模型那边直接报错），钥匙还跟着工具清单发给了模型服务商。
+   另外两处：服务名是中文时会被整个删光，改成用它在清单里的序号兜底；
+   Claude 的工具名只收 [A-Za-z0-9_-]、最长 64，点号也得换掉。 */
+function mcpToolName(s, name) {
+  const idx = Math.max(0, mcpConf().findIndex(x => x.id === s.id));
+  const head = s.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 12) || "mcp" + (idx + 1);
+  return (head + "__" + String(name).replace(/[^A-Za-z0-9_-]/g, "_")).slice(0, 64);
 }
 function mcpFind(fullName) {
   for (const s of mcpConf()) {
     if (!s.enabled) continue;
-    for (const t of (s.tools || [])) if (mcpKey(s, t.name) === fullName) return { srv: s, tool: t.name };
+    for (const t of (s.tools || [])) if (mcpToolName(s, t.name) === fullName) return { srv: s, tool: t.name };
   }
   return null;
 }
@@ -2237,32 +2254,46 @@ async function execTool(name, args) {
       saveAlarms(list.filter(a => a !== hit));
       return "划掉了：" + hit.why;
     }
+    /* 会往她那边写东西的工具，参数先过一道。
+       模型偶尔会漏参数（便宜的模型更常见）：以前照单全收，
+       她的清单、日记、信箱里就会冒出一条叫「undefined」的东西 */
+    const str = v => (typeof v === "string" || typeof v === "number") ? String(v).trim() : "";
     if (name === "add_todo") {
+      const text = str(args.text);
+      if (!text) return "没加上：要加什么事没说（text 是空的）";
       const todos = readJson("todos", []) || [];
-      todos.push({ text: String(args.text).slice(0, 100), time: String(args.time || "").slice(0, 20), done: false, byAI: true });
+      todos.push({ text: text.slice(0, 100), time: str(args.time).slice(0, 20), done: false, byAI: true });
       writeJson("todos", todos);
-      return "已加入清单：" + args.text;
+      return "已加入清单：" + text;
     }
     if (name === "complete_todo") {
+      const key = str(args.text);
+      /* 空字符串千万不能拿去比 —— 任何文字.includes("") 都是 true，
+         会随手把她清单上第一件没做完的事勾掉 */
+      if (!key) return "没勾：要勾哪件没说（text 是空的）";
       const todos = readJson("todos", []) || [];
-      const t = todos.find(x => !x.done && (x.text.includes(args.text) || String(args.text).includes(x.text)));
+      const t = todos.find(x => !x.done && x.text && (x.text.includes(key) || key.includes(x.text)));
       if (!t) return "没找到匹配的未完成事项";
       t.done = true;
       writeJson("todos", todos);
       return "已勾选：" + t.text;
     }
     if (name === "write_diary") {
+      const title = str(args.title), content = str(args.content);
+      if (!content) return "没写成：日记正文是空的";
       const diaries = readJson("diaries", []) || [];
-      diaries.unshift({ date: today, w: String(args.weather || ""), title: String(args.title).slice(0, 50), content: String(args.content).slice(0, 4000) });
+      diaries.unshift({ date: today, w: str(args.weather).slice(0, 12), title: (title || "无题").slice(0, 50), content: content.slice(0, 4000) });
       diaries.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
       writeJson("diaries", diaries);
-      return "日记《" + args.title + "》已写好";
+      return "日记《" + (title || "无题") + "》已写好";
     }
     if (name === "write_letter") {
+      const title = str(args.title), content = str(args.content);
+      if (!content) return "没寄成：信是空的";
       const letters = readJson("letters", { ai: [], mine: [], pen: [] }) || { ai: [], mine: [], pen: [] };
-      (letters.ai = letters.ai || []).unshift({ t: String(args.title).slice(0, 50), d: today.replaceAll("-", "."), s: "未拆封", sealed: true, content: String(args.content).slice(0, 4000) });
+      (letters.ai = letters.ai || []).unshift({ t: (title || "给你").slice(0, 50), d: today.replaceAll("-", "."), s: "未拆封", sealed: true, content: content.slice(0, 4000) });
       writeJson("letters", letters);
-      return "信《" + args.title + "》已放进信箱，她会看到未拆封的新信";
+      return "信《" + (title || "给你") + "》已放进信箱，她会看到未拆封的新信";
     }
     if (name === "read_letters") {
       const letters = readJson("letters", { ai: [], mine: [], pen: [] }) || {};
@@ -2271,7 +2302,7 @@ async function execTool(name, args) {
     }
     if (name === "read_diaries") {
       const diaries = readJson("diaries", []) || [];
-      const out = diaries.slice(0, Math.min(5, args.limit || 3)).map(d => ({ 日期: d.date, 天气: d.w, 标题: d.title, 正文: (d.content || "").slice(0, 800) }));
+      const out = diaries.slice(0, Math.min(5, Math.max(1, Math.round(+args.limit) || 3))).map(d => ({ 日期: d.date, 天气: d.w, 标题: d.title, 正文: (d.content || "").slice(0, 800) }));
       return out.length ? JSON.stringify(out) : "还没有日记";
     }
     if (name === "list_docs") {
@@ -2287,6 +2318,7 @@ async function execTool(name, args) {
       return d.content.slice(0, 20000) || "（这份资料是空的）";
     }
     if (name === "remember") {
+      if (!str(args.content)) return "没记：要记的内容是空的";
       const all = listMem();
       all.push({ ...newCard({ content: args.content, type: args.type, importance: args.importance, tags: args.tags }, "tool") });
       saveMem(all);
@@ -3257,11 +3289,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    /* ---- 静态托管 ---- */
-    if (req.method === "GET") {
-      const name = p === "/" ? "index.html" : p === "/admin" ? "admin.html" : p.slice(1);
-      const fp = path.join(__dirname, path.normalize(name));
-      if (fp.startsWith(__dirname) && fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+    /* ---- 静态托管 ----
+       ⚠️ 只发白名单里的这几个文件。
+       以前是「项目目录下有什么就发什么，而且不用登录」—— 可 Zeabur 上数据目录
+       正好是 /app/data，在项目目录里面。于是 /data/apis.json（API Key）、
+       /data/auth.json（密码和盐，能算出登录凭证）、/data/mail.json（邮箱授权码）、
+       全部聊天、日记、经期、位置、照片，还有 HANDOFF.md 和整个 .git，
+       任何人知道网址就能直接下载。新加公开文件，得在这里登记。 */
+    const PUBLIC_FILES = { "/": "index.html", "/index.html": "index.html", "/admin": "admin.html", "/admin.html": "admin.html",
+      "/sw.js": "sw.js", "/icon-180.png": "icon-180.png", "/icon-512.png": "icon-512.png" };
+    if (req.method === "GET" && PUBLIC_FILES[p]) {
+      const fp = path.join(__dirname, PUBLIC_FILES[p]);
+      if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
         res.writeHead(200, { "Content-Type": MIME[path.extname(fp)] || "application/octet-stream" });
         fs.createReadStream(fp).pipe(res);
         return;
@@ -3270,7 +3309,9 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("not found");
   } catch (e) {
-    try { sendJson(res, 500, { error: String(e.message || e).slice(0, 300) }); } catch {}
+    /* 发来的不是合法 JSON —— 那是请求的错，不是服务器的错，回 400 */
+    const bad = e instanceof SyntaxError;
+    try { sendJson(res, bad ? 400 : 500, { error: bad ? "请求内容不是合法的 JSON" : String(e.message || e).slice(0, 300) }); } catch {}
   }
 });
 

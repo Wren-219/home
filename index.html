@@ -42,7 +42,9 @@
   /* 固定整个页面：防止 iOS Safari 整页橡皮筋滚动 / 键盘顶飞布局 */
   body {
     font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased;
-    position: fixed; inset: 0; width: 100%; overflow: hidden; overscroll-behavior: none;
+    position: fixed; top: 0; left: 0; right: 0; width: 100%; overflow: hidden; overscroll-behavior: none;
+    /* 高度不用 inset:0 —— 见 fitScreen()：iOS 主屏幕模式下那样会在底下空出一截 */
+    height: var(--appH, 100%);
   }
 
   #frame {
@@ -414,6 +416,13 @@
       radial-gradient(90% 45% at 30% 60%, rgba(255,255,255,.65) 0%, transparent 60%),
       radial-gradient(80% 40% at 85% 92%, rgba(196,211,229,.5) 0%, transparent 60%),
       linear-gradient(180deg, #EFF3F8 0%, #E7EDF4 100%);
+  }
+  /* 消息往上滚的时候，会从状态栏的时钟、电量底下透过去，字叠字很乱。
+     顶上垫一层渐隐：状态栏那段是实的，往下慢慢透明 */
+  #page-chat::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; z-index: 5; pointer-events: none;
+    height: calc(var(--sat) + 70px);
+    background: linear-gradient(180deg, #F1F4F9 0%, #F1F4F9 calc(var(--sat) + 4px), rgba(241,244,249,.85) calc(var(--sat) + 30px), rgba(241,244,249,0) 100%);
   }
   /* 顶部两块独立悬浮玻璃：窗口名胶囊 + 功能圆钮 */
   .chat-head {
@@ -1203,7 +1212,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.5（他看得见你发的照片了）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.6（全面体检 · 堵上了数据目录外泄）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -3481,6 +3490,16 @@ function sendMsg() {
   aiReply();
 }
 document.getElementById("sendBtn").addEventListener("click", sendMsg);
+/* 输入栏里的按钮（发送、＋）不许把焦点从输入框抢走。
+   不然一按下去输入框就失焦 → 120ms 后导航栏回来、输入栏整个往上一跳 →
+   手指还没抬起来，发送键已经不在手指底下了，这一下就点空了。
+   真人点一下按下到抬起正好一百来毫秒，所以会「时灵时不灵」。
+   不抢焦点还有个好处：发完键盘留着，能接着打，跟微信一样。 */
+for (const ev of ["pointerdown", "mousedown"]) {
+  document.getElementById("chatIn").addEventListener(ev, e => {
+    if (e.target.closest("button") && document.activeElement === chatInput) e.preventDefault();
+  });
+}
 chatInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
 });
@@ -3488,9 +3507,6 @@ chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
   chatInput.style.height = Math.min(chatInput.scrollHeight, 132) + "px";
 });
-/* 兜底：部分内置浏览器没有 visualViewport，用输入框聚焦状态收起导航栏 */
-chatInput.addEventListener("focus", () => document.body.classList.add("kb-open"));
-chatInput.addEventListener("blur", () => setTimeout(() => document.body.classList.remove("kb-open"), 120));
 
 /* + 功能菜单 */
 const plusBtn = document.getElementById("plusBtn");
@@ -4872,17 +4888,49 @@ async function quietTry() {
 }
 
 /* ================= iOS 键盘适配 =================
-   键盘弹出 → 隐藏底部导航（藏到键盘下面）、输入栏贴紧键盘 */
-if (window.visualViewport) {
-  const vv = window.visualViewport;
-  const onVV = () => {
-    const kbOpen = (window.innerHeight - vv.height) > 120;
-    document.body.classList.toggle("kb-open", kbOpen);
-    if (kbOpen) chatMsgs.scrollTop = chatMsgs.scrollHeight;
-  };
-  vv.addEventListener("resize", onVV);
-  vv.addEventListener("scroll", onVV);
+   键盘弹出 → 隐藏底部导航、输入栏贴紧键盘。
+
+   ⚠️ 以前靠「窗口高度 − 可视高度 > 120」判断键盘开没开，这是错的：
+   viewport 里写了 interactive-widget=resizes-content，键盘一弹，
+   两个高度会一起缩，差值永远是 0。于是聚焦时刚加上的 kb-open，
+   下一次 resize 就被这里撤掉 —— 导航栏就这么被顶在了键盘上面。
+   改成：有文字输入框在聚焦，就当键盘开着（iPhone 上聚焦必弹键盘）。 */
+function isTyping() {
+  const a = document.activeElement;
+  if (!a) return false;
+  if (a.tagName === "TEXTAREA" || a.isContentEditable) return true;
+  return a.tagName === "INPUT" && !/^(checkbox|radio|button|submit|reset|range|color|file|image)$/i.test(a.type || "");
 }
+/* iOS 主屏幕模式 + 状态栏透明（black-translucent）的老毛病：页面从屏幕最顶上画起，
+   高度却按「屏幕减状态栏」算，底下就空出一截、露出 html 的底色 ——
+   就是页面最下面那条颜色断开的带子。
+   主屏幕模式、竖屏、键盘没开的时候，直接按整块屏幕的高度铺满。
+   没这个毛病的设备上 innerHeight 本来就等于屏幕高，这里什么都不会改。 */
+function fitScreen() {
+  const standalone = navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+  const portrait = window.innerHeight > window.innerWidth;
+  const gap = screen.height - window.innerHeight;
+  const on = standalone && portrait && !document.body.classList.contains("kb-open")
+    && gap > 0 && gap < 160 && Math.abs(screen.width - window.innerWidth) < 2;
+  document.documentElement.style.setProperty("--appH", on ? screen.height + "px" : "100%");
+}
+function kbSync() {
+  const kb = isTyping();
+  const was = document.body.classList.contains("kb-open");
+  document.body.classList.toggle("kb-open", kb);
+  fitScreen();
+  if (kb && !was && document.activeElement === chatInput) chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+document.addEventListener("focusin", kbSync);
+/* 焦点离开时稍等一下：点发送键那一瞬间焦点可能在路上，别让导航栏闪一下 */
+document.addEventListener("focusout", () => setTimeout(kbSync, 120));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", kbSync);
+  window.visualViewport.addEventListener("scroll", kbSync);
+}
+window.addEventListener("resize", kbSync);
+window.addEventListener("orientationchange", () => setTimeout(kbSync, 300));
+fitScreen();
 
 /* ================= toast ================= */
 let toastTimer;

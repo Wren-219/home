@@ -94,6 +94,9 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
   配好邮箱和授权码，晤就能用 `send_mail` 往外寄信。
   可以打开「他主动找我时顺手寄一封」—— 手机的邮件提醒就是现成的推送，
   省掉整套 Service Worker。授权码只进不出，界面上永远只显示「已存」
+- **静态文件只发白名单**：`/`、`/admin`、`/sw.js`、两张图标，别的一律 404。
+  数据目录在 Zeabur 上是 `/app/data`，就在项目目录里 —— 以前的「有什么发什么」
+  会让 `/data/*.json` 不用登录就能下载。新加公开文件要在 `PUBLIC_FILES` 里登记
 - **看图**：聊天里发的照片，前端另传一份长边 1568px 的 JPEG 专门给他看（原图照样进相册）。
   服务端发给模型前才从 `/files/` 读出来转 base64：Claude 走 `image` 块，OpenAI 格式走
   `image_url` + data URL。每套 API 有「看得懂图片」开关 —— Claude 默认开，OpenAI 格式默认关
