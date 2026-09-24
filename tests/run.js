@@ -47,6 +47,7 @@ const SUITE = [
   ['唤醒', 'alarm-asked', '她让他「五分钟后喊我」：认得写法、到点就叫、存一下冲不掉', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'budget', '这个月花了多少：记账时算好不再变、高峰另算、预算花到了他先不主动醒', true, { apis: API_M1, env: { DEEPSEEK_API_KEY: 'sk-env', LLM_BASE_URL: 'http://localhost:8099' } }, OPENAI],
   ['唤醒', 'wake-budget', '醒了不说话也算钱，一天有上限', true, { apis: API_M1 }, OPENAI],
+  ['唤醒', 'chase', '她聊着聊着不回了：他看一眼手机、自己决定追不追', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'night-peek', '夜里她还在玩手机，他可以冒出来', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'status-note', '【现状】纸条：隔久了给全、连着聊不说', true, { apis: API_M1 }, OPENAI],
   ['声音', 'voice', '他发语音、她按住说话、省钱闸', true, { apis: API_M1 }, OPENAI],

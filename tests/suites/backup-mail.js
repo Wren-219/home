@@ -71,7 +71,7 @@ const attachment = eml => {
   a = (await j('/api/backup/auto')).d;
   ok(!a.ok && a.last === lastOk && a.err, '记下没寄成，上次成功的时间不变');
 
-  console.log('\n[什么时候寄：每 15 天、只在夜里三四点、失败了隔天夜里再试]');
+  console.log('\n[什么时候寄：每 15 天、晚上十点、失败了第二天晚上再试]');
   const src = fs.readFileSync(require('../lib/env').ROOT + '/server.js', 'utf8');
   const code = src.slice(src.indexOf('let backupBusy = false;'), src.indexOf('/* ================= 她的身体'));
   const H = 3600000, D = 24 * H;
@@ -83,12 +83,13 @@ const attachment = eml => {
     return f().then(() => sent);
   };
   const okSt = { on: true, every: 15, last: 100 * D - 15 * D, ok: true };
-  ok(await when(3, okSt) === 1, '到了 15 天、夜里 3 点 → 寄');
-  ok(await when(14, okSt) === 0, '到了 15 天、但下午两点 → 不寄，等夜里');
-  ok(await when(3, { ...okSt, last: 100 * D - 10 * D }) === 0, '才过了 10 天 → 不寄');
-  ok(await when(3, { ...okSt, on: false }) === 0, '关着 → 不寄');
-  ok(await when(3, { ...okSt, ok: false }, 100 * D - 2 * H) === 0, '刚失败过（两小时前）→ 这一小时别再寄');
-  ok(await when(3, { ...okSt, ok: false }, 100 * D - D) === 1, '昨天夜里失败的 → 今天夜里再试');
+  ok(await when(22, okSt) === 1, '到了 15 天、晚上 10 点 → 寄');
+  ok(await when(14, okSt) === 0, '到了 15 天、但下午两点 → 不寄，等晚上十点');
+  ok(await when(3, okSt) === 0, '夜里三点也不寄了（她说不用那么晚）');
+  ok(await when(22, { ...okSt, last: 100 * D - 10 * D }) === 0, '才过了 10 天 → 不寄');
+  ok(await when(22, { ...okSt, on: false }) === 0, '关着 → 不寄');
+  ok(await when(22, { ...okSt, ok: false }, 100 * D - 2 * H) === 0, '刚失败过（两小时前）→ 这一小时别再寄');
+  ok(await when(22, { ...okSt, ok: false }, 100 * D - D) === 1, '昨天晚上失败的 → 今天晚上再试');
 
   console.log('\n[设置页]');
   const { chromium } = require('playwright-core');

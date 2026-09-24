@@ -1205,7 +1205,8 @@
           </div>
           <div class="set-note" id="bkAutoLine" style="margin:-2px 2px 6px"></div>
           <div class="set-note" style="margin:0 2px 6px">
-            服务器自己在夜里三四点寄，用你在「写信出去」里填的邮箱，不花钱。
+            服务器自己在晚上十点寄，用你在「写信出去」里填的邮箱，不花钱。附件是一个 .json 文件，
+            存到手机「文件」里，要用的时候点上面的「恢复」选它。
             寄的这份不带照片（太大，邮件装不下），也不带密码和 Key（放邮件里不安全）；
             拿它恢复不会清掉现有的 Key。照片隔一阵用上面的「下载全部」存一份。
           </div>
@@ -1359,7 +1360,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.14（每 15 天自动备份到邮箱 · 钱记账时就算好 · 高峰另算）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.15（你不回了他会追问 · 备份改到晚上十点）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1886,6 +1887,18 @@
           <div class="sw-row">
             <span class="lb">夜里我还在玩手机的话，允许他冒出来</span>
             <button class="sw" id="qPeek" onclick="peekToggle()"></button>
+          </div>
+          <div class="sw-row">
+            <span class="lb">聊着聊着我不回了，他可以追问一句</span>
+            <button class="sw" id="qChase" onclick="chaseToggle()"></button>
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">隔几分钟不回算「不理他了」</span>
+            <input type="number" id="qChaseMin" min="3" max="240" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="set-note" style="margin:-2px 2px 6px">
+            他会先看一眼你手机上那几个 App 开没开，看出你是去忙了、睡着了，还是在刷别的不理他，再决定追不追。
+            一次不回只追一回，一天最多 4 次；上课、夜里睡着了都不追。
           </div>
         </div>
         <div class="btn-row" style="margin-top:14px">
@@ -4534,7 +4547,7 @@ async function bkAutoLoad() {
   el.textContent = !a.mailReady ? "还没配邮箱 —— 先去「写信出去」填上发件邮箱和授权码"
     : !a.on ? "关着。打开以后寄到 " + a.dest
     : (!a.ok && a.err ? "上次没寄成：" + a.err + "。" : "") +
-      "寄到 " + a.dest + (a.last ? " · 上次 " + md(a.last) + (a.size ? "（" + (a.size >= 1048576 ? (a.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.size / 1024)) + " KB") + "）" : "") + " · 下次大约 " + md(a.next) : " · 今晚三四点寄第一份");
+      "寄到 " + a.dest + (a.last ? " · 上次 " + md(a.last) + (a.size ? "（" + (a.size >= 1048576 ? (a.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.size / 1024)) + " KB") + "）" : "") + " · 下次大约 " + md(a.next) : " · 今晚十点寄第一份");
 }
 async function bkAutoToggle() {
   const on = !document.getElementById("swBkAuto").classList.contains("on");
@@ -5732,6 +5745,8 @@ async function quietRefresh() {
     renderQStat(q);
     document.getElementById("qOn").classList.toggle("on", q.on !== false);
     document.getElementById("qPeek").classList.toggle("on", q.nightPeek !== false);
+    document.getElementById("qChase").classList.toggle("on", q.chaseOn !== false);
+    document.getElementById("qChaseMin").value = q.chaseMin || 15;
     renderQParsed(q.parsed || []);
     const brief = document.getElementById("quietBrief");
     if (brief) {
@@ -5798,6 +5813,8 @@ async function quietSave() {
     city: document.getElementById("qCity").value,
     on: quietCur ? quietCur.on !== false : true,
     nightPeek: quietCur ? quietCur.nightPeek !== false : true,
+    chaseOn: quietCur ? quietCur.chaseOn !== false : true,
+    chaseMin: Number(document.getElementById("qChaseMin").value) || 15,
   };
   try {
     const r = await fetch("api/quiet", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -5813,6 +5830,12 @@ function peekToggle() {
   if (!quietCur) quietCur = { nightPeek: true };
   quietCur.nightPeek = quietCur.nightPeek === false;
   document.getElementById("qPeek").classList.toggle("on", quietCur.nightPeek !== false);
+  quietSave();
+}
+function chaseToggle() {
+  if (!quietCur) quietCur = { chaseOn: true };
+  quietCur.chaseOn = quietCur.chaseOn === false;
+  document.getElementById("qChase").classList.toggle("on", quietCur.chaseOn !== false);
   quietSave();
 }
 function quietToggle() {

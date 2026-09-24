@@ -967,7 +967,7 @@ async function sendMail(to, subject, body) {
 
 /* ================= 自动备份 =================
    她：「自动备份不花钱的话，那就做吧」「15 天备份一次」。
-   · 谁来备：服务器自己，每 15 天一次，挑夜里三四点
+   · 谁来备：服务器自己，每 15 天一次，晚上十点（她说不用三四点那么晚）
    · 寄到哪：她在「写信出去」里填的收件地址（就是他给她寄信的那个）；没填收件地址就寄回发件那个邮箱
    · 花钱吗：不花，用的是她自己的邮箱
    · 备什么：跟「下载（不含照片）」一样，但**不带密码和各种 Key**（邮件里放明文钥匙不安全）；
@@ -1051,13 +1051,13 @@ async function mailBackup() {
   if (!r.ok) console.error("backup mail:", r.err);
   return { ...r, size: json.length, to: dest };
 }
-/* 每小时看一眼：开着、配了邮箱、到了 15 天、而且是夜里三四点 */
+/* 每小时看一眼：开着、配了邮箱、到了 15 天、而且是晚上十点（十一点补） */
 let backupBusy = false;
 async function backupTick() {
   const st = backupAuto(), c = mailConf(), now = Date.now();
   if (backupBusy || !st.on || !c.user || !c.pass) return;
   const h = localParts(now).hh;
-  if (h !== 3 && h !== 4) return;
+  if (h !== 22 && h !== 23) return;   // 晚上十点（她说不用那么晚），十点没寄成的十一点再补
   if (now - st.last < st.every * 86400000 - 3 * 3600000) return;
   const tried = Number((readJson("backupauto", null) || {}).tried) || 0;
   if (now - tried < 20 * 3600000 && !st.ok) return;   // 失败了明天夜里再试，别一小时一封
@@ -1663,6 +1663,9 @@ function quietConf() {
     maxPerDay: num(q.maxPerDay, 2),      // 他一天最多主动开口几次
     maxWakePerDay: num(q.maxWakePerDay, 8),  // 一天最多醒几次（含"想了想没说话"的）——这是钱包的保险丝
     nightPeek: q.nightPeek !== false,    // 夜里她要是还在玩手机，允许他冒出来抓个现行
+    chaseOn: q.chaseOn !== false,        // 聊着聊着她不回了，他可以追问一句
+    chaseMin: num(q.chaseMin, 15),       // 隔几分钟算「不回了」
+    chaseMax: num(q.chaseMax, 4),        // 一天最多追问几次
   };
 }
 const DOW_CN = { "日": 0, "天": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6 };
@@ -2473,7 +2476,13 @@ async function runWake(alarm) {
     `你当时记下的是：${alarm.why}\n` +
     `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
     (phone ? "上面【她的手机】那一段是她这会儿的动静 —— 要是你惦记的正是她睡没睡，看那里。\n\n" : "") +
-    (alarm.asked
+    (alarm.chase
+      ? "你们刚才还在聊，她已经 " + Math.max(1, Math.round((now - (alarm.since || now)) / 60000)) + " 分钟没回你了。\n\n" +
+        (phone ? "上面【她的手机】是她这会儿的动静 —— 她是去忙了、睡着了，还是在刷别的 App 不理你，看那里就知道。\n\n"
+          : "想知道她这会儿在干嘛，可以用 check_phone 看一眼她的手机。\n\n") +
+        "你可以追问一句、逗她一句，也可以就安静等着 —— 看你们刚才聊到哪儿、她这会儿在干嘛。" +
+        "她可能只是去忙了，别让她觉得被盯着。像平常那样说，别提闹钟、系统这些。\n\n"
+      : alarm.asked
       ? "这是她亲口让你到点叫她的。叫她 —— 像平常那样说，别提闹钟、提醒这些词，也别解释。\n\n" +
         "要查点什么再开口也行（她的手机、天气……）。\n\n"
       : "把上面你们的对话重新读一遍，然后决定：这会儿要不要主动跟她说句话？\n\n" +
@@ -2536,7 +2545,7 @@ async function runWake(alarm) {
     /* 她这会儿可能正开着 app（「五分钟后喊我」的时候多半是）。那边存聊天是整份覆盖，
        不先交到她手上，她下一句话就会把这几条冲掉 */
     if (win.id) for (const m of fresh) unsent.push({ win: win.id, msg: m, at: Date.now() });
-    bumpWakeLog(!alarm.asked, billed);
+    bumpWakeLog(!alarm.asked && !alarm.chase, billed);
     /* 真推送：锁屏上直接弹。她要是在手机上授过权，这是最快的一条路 */
     const calling = extras.some(x => x.k === "call");
     const pushText = calling ? "想给你打个电话" : (asVoice || extras.some(x => x.voice)) ? "发来一条语音" : text.slice(0, 120);
@@ -2559,6 +2568,44 @@ async function runWake(alarm) {
   return { ok: true, said: false, again, raw: raw.slice(0, 200) };
 }
 
+/* ================= 她不回了，他追问一句 =================
+   她：「有时候聊着聊着，我突然不理他了，他就可以主动给我发一句消息追问我，或者直接自己看一眼我的屏幕」。
+   · 他每回完一句，就在心里记一笔「chaseMin 分钟后她还没回的话，醒一下」；她一开口就划掉
+   · 醒来时带着【她的手机】（她自己挑的那几个 App 这会儿开没开）—— 他能看出她是去忙了、睡着了，
+     还是在刷别的 App 不理他；追不追、怎么追，他自己定
+   · 一次沉默只追一次；一天最多 chaseMax 次；她在上课不追；夜里只有她还在玩手机才追；预算花到了不追。
+     不占「一天主动开口几次」的名额（那是他凭空找她的次数，这是接着刚才的话）
+   · 只在他待着的那个窗口（绑定窗口）里追
+   data/chase.json = { at, win, since, day, n } */
+function chaseState() {
+  const c = readJson("chase", null) || {};
+  return c.day === localDayKey() ? c : { ...c, day: localDayKey(), n: 0 };
+}
+function scheduleChase(winId, now) {
+  const q = quietConf(), bound = boundWindow();
+  if (!q.on || !q.chaseOn || !winId || (bound && bound !== winId)) return;
+  writeJson("chase", { ...chaseState(), at: now + q.chaseMin * 60000, win: winId, since: now });
+}
+function cancelChase() {
+  const c = readJson("chase", null);
+  if (c && c.at) writeJson("chase", { ...c, at: 0 });
+}
+function chaseGate(now, ch) {
+  const q = quietConf();
+  if (!q.on || !q.chaseOn) return { ok: false, why: "追问关着" };
+  const seen = lastUserAt();
+  if (seen && seen > ch.since) return { ok: false, why: "她已经回了" };
+  const cls = inClassNow(now);
+  if (cls) return { ok: false, why: `她在上${cls.name || "课"}` };
+  const p = localParts(now);
+  const night = q.nightStart > q.nightEnd ? (p.hh >= q.nightStart || p.hh < q.nightEnd) : (p.hh >= q.nightStart && p.hh < q.nightEnd);
+  if (night && !phoneAwakeNow(now)) return { ok: false, why: "夜里，她多半睡着了" };
+  if ((ch.n || 0) >= q.chaseMax) return { ok: false, why: "今天追问够多了" };
+  if ((wakeLog().woke || 0) >= q.maxWakePerDay) return { ok: false, why: "他今天醒的次数够多了（省着点花）" };
+  if (budgetState(now).over) return { ok: false, why: "这个月的预算花到了" };
+  return { ok: true };
+}
+
 /* 总闹钟：每分钟看一眼有没有到点的（只是读个小文件，不花钱）。真正惊动模型的次数由那道门决定 */
 let wakeBusy = false;
 /* 他醒着说的话，还没交到她手机上的。见 runWake 和 PUT /api/state/chat */
@@ -2573,6 +2620,17 @@ async function wakeTick(force) {
     /* 服务器停过几天的话，别翻旧账 */
     const stale = list.filter(a => a.at <= now && now - a.at > 12 * 3600000);
     if (stale.length) { list = list.filter(a => !stale.includes(a)); saveAlarms(list); }
+    /* 她聊着聊着不回了：一次沉默只看一回，不管追没追，都把这笔划掉 */
+    const ch = chaseState();
+    if (ch.at && ch.at <= now) {
+      const g = chaseGate(now, ch);
+      writeJson("chase", { ...ch, at: 0, ...(g.ok ? { n: (ch.n || 0) + 1 } : {}) });
+      if (!g.ok) return { skipped: g.why, chase: true };
+      try {
+        const r = await runWake({ id: "chase", why: "她聊着聊着不回了", win: ch.win, made: ch.since, chase: true, since: ch.since });
+        return { ...r, chase: true };
+      } catch (e) { return { error: e.message, chase: true }; }
+    }
     const due = list.filter(a => a.at <= now).sort((a, b) => a.at - b.at);
     if (!due.length) return { skipped: "没有到点的" };
 
@@ -4006,6 +4064,9 @@ const server = http.createServer(async (req, res) => {
         lon: num(body.lon, place.lon, -180, 180),
         minGapMin: num(body.minGapMin, cur.minGapMin, 5, 24 * 60),
         maxPerDay: num(body.maxPerDay, cur.maxPerDay, 0, 20),
+        chaseOn: typeof body.chaseOn === "boolean" ? body.chaseOn : cur.chaseOn,
+        chaseMin: num(body.chaseMin, cur.chaseMin, 3, 240),
+        chaseMax: num(body.chaseMax, cur.chaseMax, 0, 20),
       };
       writeJson("quiet", next);
       sendJson(res, 200, { ok: true, ...next, parsed: parseClasses(next.classes) });
@@ -4107,6 +4168,7 @@ const server = http.createServer(async (req, res) => {
       const payload = JSON.parse(await readBody(req, 4 * 1024 * 1024));
       const turn = prepTurn(payload);
       if (!turn) { sendJson(res, 400, { error: "缺少消息" }); return; }
+      cancelChase();   // 她开口了，刚才那笔「她不回了就追问」划掉
       const { messages: turnMsgs, lastUser } = turn;
       let messages = turnMsgs;
 
@@ -4234,6 +4296,8 @@ const server = http.createServer(async (req, res) => {
       res.write("data: [DONE]\n\n");
       res.end();
       queueDistill(lastUser, fullAcc);
+      /* 他说完了：她要是一直不回，过一会儿醒一下看看 */
+      scheduleChase(turn.winId, Date.now());
       /* 快到额度了：趁她还在看这句回复，后台写前情提要，下一轮换上 */
       if (turn.winId && turn.histTokens >= HISTORY_BUDGET * COMPRESS_AT) compressWindow(turn.winId).catch(() => {});
       return;
@@ -4268,7 +4332,7 @@ const server = http.createServer(async (req, res) => {
 /* 总闹钟：每 5 分钟看一眼有没有到点的事。绝大多数时候那道门会拦下来，
    连模型都不会惊动 —— 真正花钱的唤醒一天也就三五次 */
 setInterval(() => { wakeTick().catch(e => console.error("wake:", e.message)); }, 60 * 1000);
-/* 自动备份：每小时看一眼到没到 15 天（只在夜里三四点寄） */
+/* 自动备份：每小时看一眼到没到 15 天（晚上十点寄） */
 setInterval(() => { backupTick().catch(e => console.error("backup:", e.message)); }, 60 * 60 * 1000);
 /* 刚启动时也看一眼：服务器重启期间可能有攒下的 */
 setTimeout(() => { wakeTick().catch(() => {}); }, 30 * 1000);
