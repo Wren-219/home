@@ -149,6 +149,33 @@ function setAuthCookie(req, res) {
   res.setHeader("Set-Cookie",
     "wu=" + tokenOf() + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax" + (secure ? "; Secure" : ""));
 }
+/* ---- 猜密码的限速 ----
+   四位密码只有一万种。不限速的话，知道网址的人写个脚本几分钟就试出来了。
+   · 同一个地方连错 5 次，锁 5 分钟（她说 15 分钟太久）；锁过还接着错，锁的时间翻倍，最长一天
+   · 地址可以伪造，所以再加一道总闸：一小时里全部加起来错满 30 次，谁都先等半小时
+   · 输对一次就清零。只在内存里，重启清零 */
+const loginFails = new Map();   // 地方 → { n, locks, until }
+let loginFailLog = [];          // 最近一小时每次输错的时间（总闸用）
+let loginGlobalUntil = 0;
+function clientKey(req) {
+  const fwd = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return fwd || req.socket.remoteAddress || "?";
+}
+function loginLocked(req, now) {
+  if (now < loginGlobalUntil) return loginGlobalUntil - now;
+  const f = loginFails.get(clientKey(req));
+  return f && now < f.until ? f.until - now : 0;
+}
+function loginFailed(req, now) {
+  const k = clientKey(req);
+  const f = loginFails.get(k) || { n: 0, locks: 0, until: 0 };
+  f.n++;
+  if (f.n >= 5) { f.until = now + Math.min(5 * 60000 * 2 ** f.locks, 24 * 3600000); f.locks++; f.n = 0; }
+  loginFails.set(k, f);
+  if (loginFails.size > 5000) loginFails.delete(loginFails.keys().next().value);
+  loginFailLog = loginFailLog.filter(t => now - t < 3600000); loginFailLog.push(now);
+  if (loginFailLog.length >= 30) { loginGlobalUntil = now + 30 * 60000; loginFailLog = []; }
+}
 /* 公开：健康检查（不带细节）与登录本身；页面文件本身不含数据，也放行 */
 /* /api/ping 也放行 —— 手机上的快捷指令带不了登录 cookie，它自己验一把单独的钥匙 */
 const PUBLIC_PATHS = new Set(["/api/health", "/api/login", "/api/ping"]);
@@ -207,7 +234,8 @@ function envApi(role) {
     key: isW ? WORKER_KEY : API_KEY,
     model: isW ? WORKER_MODEL : MODEL,
     dialect: guessDialect(isW ? WORKER_BASE : API_BASE),
-    price: { ...PRICE0 },
+    /* 环境变量那套没地方填价格，以前一直是 0 —— 花费永远显示 0 元。现在在「这个月」那张卡上能填 */
+    price: { ...PRICE0, ...((readJson("envprice", null) || {}).price || {}) },
   };
 }
 /* Key 留空、地址跟环境变量那套一样 → 借用环境变量里那把。
@@ -246,6 +274,8 @@ function priceOf(api, u) {
 }
 function recordUsage(api, role, u) {
   if (!u || (!u.in && !u.out)) return null;
+  /* 先记进按天的账本 —— 第一次开账会把用量记录搬过来，这一笔要是先进了用量记录就算两遍了 */
+  ledgerAdd(api, u, Date.now());
   const cost = priceOf(api, u);
   const st = usageStore();
   const key = api.id;
@@ -259,6 +289,89 @@ function recordUsage(api, role, u) {
   if (st.recent.length > 300) st.recent = st.recent.slice(0, 300);
   writeJson("usage", st);
   return { ...u, cost, unit: t.unit, estimated: !!u.estimated };
+}
+
+/* ================= 这个月花了多少 =================
+   她：「总共花了多少钱，我心里也有个底」。用量记录（usage.recent）只留最近 300 条，不够算一个月，
+   所以另记一本按天的账：data/ledger.json = { days: { "2026-09-24": { <apiId>: {in,out,cacheRead,cacheWrite,calls,price} } } }。
+   账上只记 token，钱是看账的时候按「现在的价格」算的 —— 她后来补填了价格，这个月前几天的也跟着算对 */
+function ledger() { const l = readJson("ledger", null); return (l && l.days) ? l : null; }
+function ledgerAdd(api, u, now) {
+  const l = ledger() || ledgerSeed();
+  const day = localDayKey(now), id = api.id || "?";
+  const d = l.days[day] = l.days[day] || {};
+  const e = d[id] = d[id] || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+  e.in += u.in || 0; e.out += u.out || 0; e.cacheRead += u.cacheRead || 0; e.cacheWrite += u.cacheWrite || 0; e.calls++;
+  e.price = api.price || PRICE0; e.name = api.name;
+  /* 只留一年 */
+  const keys = Object.keys(l.days).sort();
+  while (keys.length > 400) delete l.days[keys.shift()];
+  writeJson("ledger", l);
+}
+/* 第一次开账：把用量记录里还留着的那些搬过来，这个月前几天不至于是空的 */
+function ledgerSeed() {
+  const l = { days: {} };
+  const conf = apisConf();
+  const byName = n => conf.list.find(a => a.name === n) || (n === envApi("chat").name ? envApi("chat") : null);
+  for (const e of usageStore().recent.slice().reverse()) {
+    const a = byName(e.api), t = Date.parse(e.t);
+    if (!a || !Number.isFinite(t)) continue;
+    const day = localDayKey(t), d = l.days[day] = l.days[day] || {};
+    const x = d[a.id] = d[a.id] || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
+    x.in += e.in || 0; x.out += e.out || 0; x.cacheRead += e.cacheRead || 0; x.cacheWrite += e.cacheWrite || 0; x.calls++;
+    x.price = a.price; x.name = a.name;
+  }
+  return l;
+}
+function apiById(id) {
+  if (id === "env-chat") return envApi("chat");
+  if (id === "env-worker") return envApi("worker");
+  return apisConf().list.find(a => a.id === id) || null;
+}
+function budgetConf() { const b = readJson("budget", null) || {}; return { amount: Number.isFinite(b.amount) && b.amount > 0 ? b.amount : null }; }
+function budgetState(now) {
+  const l = ledger() || ledgerSeed();
+  const unit = (activeApi("chat").price || PRICE0).unit || "元";
+  const p = localParts(now);
+  const month = `${p.y}-${String(p.mo).padStart(2, "0")}`;
+  const dim = new Date(Date.UTC(p.y, p.mo, 0)).getUTCDate();
+  const costOf = day => {
+    let c = 0, other = 0;
+    for (const [id, e] of Object.entries(l.days[day] || {})) {
+      const a = apiById(id);
+      const price = a && a.price && (a.price.in || a.price.out) ? a.price : (e.price || PRICE0);
+      const v = priceOf({ price }, e);
+      if ((price.unit || "元") === unit) c += v; else other += v;
+    }
+    return { c, other };
+  };
+  const days = [];
+  let spent = 0, other = 0;
+  for (let d = 1; d <= p.d; d++) {
+    const key = `${month}-${String(d).padStart(2, "0")}`;
+    const x = costOf(key);
+    spent += x.c; other += x.other;
+    days.push({ day: key, cost: +x.c.toFixed(4) });
+  }
+  /* 预测：这个月过了三天以上就按这个月的速度；不然看最近七天 */
+  let perDay = p.d >= 3 ? spent / p.d : 0;
+  if (p.d < 3) {
+    let s7 = 0;
+    for (let k = 1; k <= 7; k++) s7 += costOf(localDayKey(now - k * 86400000)).c;
+    perDay = Math.max(s7 / 7, spent / p.d);
+  }
+  const forecast = perDay * dim;
+  const conf = budgetConf();
+  const chat = activeApi("chat");
+  return {
+    month, unit, spent: +spent.toFixed(4), other: +other.toFixed(4), days, dim, today: p.d,
+    forecast: +forecast.toFixed(2), amount: conf.amount, auto: conf.amount == null,
+    budget: conf.amount != null ? conf.amount : Math.ceil(forecast * 1.2 * 10) / 10,
+    over: conf.amount != null && spent >= conf.amount,
+    warn: conf.amount != null && spent >= conf.amount * 0.8,
+    api: { name: chat.name, fromEnv: !!chat.fromEnv, price: chat.price || PRICE0 },
+    noPrice: !((chat.price || {}).in || (chat.price || {}).out),
+  };
 }
 
 /* ================= 缓存体检 =================
@@ -276,7 +389,8 @@ function prefixBreak(winKey, messages, tools) {
   const cur = {
     tools: sigOf(tools || []),
     sys: lead < 0 ? stable.length : lead,
-    msgs: stable.map(m => ({ all: sigOf([m.role, m.content, m.imgs || null]), text: sigOf([m.role, m.content]) })),
+    msgs: stable.map(m => ({ all: sigOf([m.role, m.content, m.imgs || null]), text: sigOf([m.role, m.content]),
+      sum: m.role === "system" && String(m.content).startsWith(SUMMARY_HEAD) })),
   };
   const prev = lastSig.get(winKey);
   lastSig.set(winKey, cur);
@@ -285,6 +399,7 @@ function prefixBreak(winKey, messages, tools) {
   let i = 0;
   while (i < prev.msgs.length && i < cur.msgs.length && prev.msgs[i].all === cur.msgs[i].all) i++;
   if (i >= prev.msgs.length) return null;   // 上一轮的原样都在，接得上
+  if (prev.msgs[i].sum || (cur.msgs[i] && cur.msgs[i].sum)) return "前情提要更新了（压缩了一次，或者她改过）";
   if (i < prev.sys) return i === 0 ? "人设改了" : "工具说明或常驻资料变了";
   if (cur.msgs[i] && prev.msgs[i].text === cur.msgs[i].text) return "图片攒够了，换掉了一批旧图";
   if (i === prev.sys) return "聊天记录开头挪了（到额度，砍了一截）";
@@ -404,6 +519,75 @@ function budgetHistory(all, budget) {
   while (out.length > 1 && out[0].role === "assistant") out.shift();  // 别以晤的话开头
   return out;
 }
+function historyTokens(all) { return all.reduce((n, m) => n + estTokens(m.content) + 4 + (m.imgs ? m.imgs.length * IMG_TOKENS : 0), 0); }
+
+/* ================= 前情提要（压缩） =================
+   她的想法：「压缩不像直接删掉对话，是把它缩写 —— 对他来说不是丢掉了，而是稍微模糊了一点」。
+   · 没压缩过的那段聊天快到额度（九成）时，把老的八成交给他自己（聊天那个模型）写成一段前情提要，
+     留最近两成原话。之后他看到的是：提要 + 那两成 + 新聊的，再到九成又压一次
+   · 用他自己的口吻 —— 她说干活模型的思路跟他不一样，总结的重点也可能错
+   · 滚动着写：旧提要 + 新压下来的那段 → 一段新提要，越早的越概括，有长度上限
+   · 提要排在稳定前缀里（人设、工具说明、常驻资料之后，聊天记录之前），只在压缩那一下变，平时一个字不动
+   · 聊完那一轮之后在后台写，不让她等；醒来找她、打电话看到的是同一份
+   · 她能看、能改（聊天页右上角窗口菜单 →「前情提要」），也能删掉这版让他重写
+   data/summaries.json = { <窗口id>: { text, upto(压到哪条消息的时间), at, n(压过几次), edited } } */
+const COMPRESS_AT = 0.9, COMPRESS_KEEP = 0.2, SUMMARY_MAX = 3000;
+const SUMMARY_HEAD = "【前情提要 · 这是你自己之前写下的，记的是更早的聊天；那些原话已经不在眼前了】\n";
+function summaryOf(winId) { const s = winId && (readJson("summaries", null) || {})[winId]; return s && s.text ? s : null; }
+function withSummary(winId, msgs) {
+  const sm = summaryOf(winId);
+  const kept = sm && sm.upto ? msgs.filter(m => !(Number(m.ts) && Number(m.ts) <= sm.upto)) : msgs;
+  return { msgs: kept.map(({ ts, ...m }) => m), summary: sm ? { role: "system", content: SUMMARY_HEAD + sm.text } : null };
+}
+const compressing = new Set();
+async function compressWindow(winId, force) {
+  if (!winId || compressing.has(winId)) return null;
+  compressing.add(winId);
+  try {
+    const chat = readJson("chat", null);
+    const win = chat && Array.isArray(chat.windows) && chat.windows.find(w => w && w.id === winId);
+    if (!win) return null;
+    const all = readJson("summaries", null) || {};
+    const old = all[winId] && all[winId].text ? all[winId] : null;
+    const lines = chatMessagesOf(win, true).filter(m => !(old && old.upto && Number(m.ts) && Number(m.ts) <= old.upto));
+    const cost = lines.map(m => estTokens(m.content) + 4);
+    const total = cost.reduce((a, b) => a + b, 0);
+    if (!force && total < HISTORY_BUDGET * COMPRESS_AT) return null;
+    /* 从最新往回留两成原话；切口别落在一通电话的中间（那几行时间一样） */
+    let keep = 0, cut = lines.length;
+    while (cut > 0 && keep < HISTORY_BUDGET * COMPRESS_KEEP) keep += cost[--cut];
+    while (cut > 0 && cut < lines.length && lines[cut].ts === lines[cut - 1].ts) cut--;
+    const part = lines.slice(0, cut).filter(m => Number(m.ts));
+    if (part.length < 4) return null;
+    const upto = Number(part[part.length - 1].ts);
+    let lastDay = "";
+    const tx = part.map(m => {
+      const day = localDayKey(m.ts);
+      const head = day !== lastDay ? "\n— " + Number(day.slice(5, 7)) + "月" + Number(day.slice(8)) + "日 —\n" : "";
+      lastDay = day;
+      return head + (m.role === "assistant" ? "我：" : "她：") + m.content;
+    }).join("\n");
+    const ask =
+      "【这不是她发来的消息。她看不见这一段。】\n" +
+      "下面是你和她更早的一段聊天" + (old ? "，还有你之前写下的前情提要" : "") + "。这些原话马上要从你眼前移走了，" +
+      "只留最近的一小段。用你自己的口吻（「我」是你，「她」是她），给以后的自己写一段前情提要。\n\n" +
+      "要记下的：发生过的事、她的状态和心情、我们说好的事、还没聊完的话头、对我们重要的细节（名字、时间、她提过的人和地方）。\n" +
+      "越早的事写得越概括，最近的写得细一点。" + (old ? "旧提要里的事要并进来，别丢，也别原样照抄。" : "") + "\n" +
+      "没发生过的不要编；拿不准的宁可不写。不要写成一句一句的流水账，也不要列标题。\n" +
+      "不超过 1500 字。只输出这段提要本身，前后什么都不要加。\n\n" +
+      (old ? "【我之前写的前情提要】\n" + old.text + "\n\n" : "") +
+      "【这段聊天】" + tx;
+    let text = await llmAs("chat", [{ role: "system", content: persona() }, { role: "user", content: ask }], 2500, 0.5);
+    text = String(text || "").replace(/^\s*【前情提要[^】]*】\s*/, "").trim().slice(0, SUMMARY_MAX);
+    if (text.length < 20) return null;
+    all[winId] = { text, upto, at: Date.now(), n: (old ? old.n || 1 : 0) + 1, edited: false };
+    writeJson("summaries", all);
+    console.log("[compress]", winId, "压到", new Date(upto).toISOString(), "提要", text.length, "字");
+    return all[winId];
+  } catch (e) { console.error("compress:", e.message); return null; }
+  finally { compressing.delete(winId); }
+}
+
 /* 原始消息从第几条开始送：超过 600 条时一次往后挪 200 条，不是每来一条挪一条。
    ⚠️ 前端 toApiMessages() 用的是同一条规则，两边不一样唤醒和聊天的前缀就对不上 */
 function histFrom(len) { return len <= 600 ? 0 : Math.floor((len - 400) / 200) * 200; }
@@ -1062,18 +1246,24 @@ async function readWeb(url) {
    前缀逐字相同，缓存才接得上。extraNote 是这一轮额外要让他知道的事
    （比如「你们在打电话」），跟记忆和现状一起放在历史后面，不动前缀。 */
 function prepTurn(payload, extraNote) {
-  const raw = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"))
+  const winId = payload.windowId ? String(payload.windowId) : null;
+  const raw0 = (payload.messages || []).filter(m => m && (m.role === "user" || m.role === "assistant"))
     .map(m => ({ role: m.role, content: String(m.content == null ? "" : m.content),
-      ...(m.role === "user" && cleanImgs(m.imgs).length ? { imgs: cleanImgs(m.imgs) } : {}) }));
-  if (!raw.length) return null;
+      ...(m.role === "user" && cleanImgs(m.imgs).length ? { imgs: cleanImgs(m.imgs) } : {}),
+      ...(Number(m.ts) ? { ts: Number(m.ts) } : {}) }));
+  if (!raw0.length) return null;
+  /* 压缩过的那段原话不再送，换成他自己写的前情提要 */
+  const ws = withSummary(winId, raw0);
+  const raw = ws.msgs.length ? ws.msgs : raw0.slice(-1).map(({ ts, ...m }) => m);
   /* 按额度而不是条数截断：短消息能留几百条。图先挑出最近那几张，再算额度 */
-  const history = budgetHistory(liveImages(raw), HISTORY_BUDGET);
+  const live = liveImages(raw);
+  const histTokens = historyTokens(live);
+  const history = budgetHistory(live, HISTORY_BUDGET);
   const lastUser = [...history].reverse().find(m => m.role === "user")?.content || "";
 
   /* 驱动引擎：时间流逝对所有窗口都算，但只有绑定窗口里的话会推动他的心情 */
   const now0 = Date.now();
   const bound = boundWindow();
-  const winId = payload.windowId ? String(payload.windowId) : null;
   const isBound = !bound || !winId || bound === winId;   // 没设过绑定就一律算数
   const dr = tickDrives(loadDrives(), now0);
   if (isBound) driveEvent(dr, lastUser, now0);
@@ -1101,6 +1291,7 @@ function prepTurn(payload, extraNote) {
     { role: "system", content: persona() },
     { role: "system", content: TOOL_HINT },
     ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
+    ...(ws.summary ? [ws.summary] : []),
     ...history,
   ];
   if (volatileBlock) {
@@ -1108,7 +1299,7 @@ function prepTurn(payload, extraNote) {
     for (let i = messages.length - 1; i >= 0; i--) if (messages[i].role === "user") { at = i; break; }
     messages.splice(at, 0, { role: "system", content: volatileBlock, wuVolatile: true });
   }
-  return { messages, lastUser };
+  return { messages, lastUser, histTokens, winId };
 }
 
 /* ================= 他的声音（ElevenLabs） =================
@@ -1401,6 +1592,10 @@ function quietCheck(now) {
   if ((w.said || 0) >= q.maxPerDay) return { ok: false, why: "他今天已经主动开过口了", retryAt: tomorrow };
   /* 钱包的闸：醒了但没说话也算数，否则他可以整天醒着读上下文而她毫不知情 */
   if ((w.woke || 0) >= q.maxWakePerDay) return { ok: false, why: "他今天醒的次数够多了（省着点花）", retryAt: tomorrow };
+  /* 她定了这个月的预算、而且花到了：他先不主动醒了（聊天照常，她让他叫的闹钟也照常） */
+  if (budgetState(now).over) {
+    return { ok: false, why: "这个月的预算花到了", retryAt: Date.UTC(p.y, p.mo, 1, q.nightEnd, 0) - TZ_OFF * 3600000 };
+  }
   return { ok: true };
 }
 
@@ -1880,7 +2075,7 @@ function upstreamReq(api, msgs, tools, stream) {
     body: {
       model: api.model,
       messages: msgs.map(m => {
-        const { wuVolatile, imgs, anthropicBlocks, ...rest } = m;
+        const { wuVolatile, imgs, anthropicBlocks, ts, ...rest } = m;
         const parts = imgs && m.role === "user" ? imgParts(m, api) : null;
         if (!parts) return rest;
         if (parts.length === 1) return { ...rest, content: parts[0].text };
@@ -2056,10 +2251,11 @@ function callLines(m) {
     ...(m.state === "active" ? [] : [{ role: "user", content: "（通话结束，" + callDur(m.dur) + "）" }]),
   ];
 }
-function chatMessagesOf(win) {
+function chatMessagesOf(win, everything) {
   const out = [];
   const all = win.msgs || [];
-  for (const m of all.slice(histFrom(all.length))) {
+  for (const m of all.slice(everything ? 0 : histFrom(all.length))) {
+    const n0 = out.length;
     /* 语音消息前面加「（语音）」—— 他知道那句是用声音说的 / 听到的 */
     if (m.k === "me") out.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
     else if (m.k === "ai") out.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
@@ -2071,6 +2267,8 @@ function chatMessagesOf(win) {
       out.push({ role: "user", content: "（发来了" + n + "张照片）", ...(imgs.length ? { imgs } : {}) });
     }
     else if (m.k === "file") out.push({ role: "user", content: "（发来了文件：" + (m.name || "") + "）" });
+    /* 带上时间：压缩到哪儿，是按时间划的线（前端 toApiMessages 也带） */
+    if (Number(m.ts)) for (let k = n0; k < out.length; k++) out[k].ts = Number(m.ts);
   }
   return out;
 }
@@ -2087,7 +2285,8 @@ async function runWake(alarm) {
   const chat = readJson("chat", null);
   const win = pickWakeWindow(chat, alarm.win);
   if (!win) return { ok: false, note: "没有可用的聊天窗口" };
-  const history = budgetHistory(liveImages(chatMessagesOf(win)), HISTORY_BUDGET);
+  const ws = withSummary(win.id, chatMessagesOf(win));
+  const history = budgetHistory(liveImages(ws.msgs), HISTORY_BUDGET);
   if (!history.length) return { ok: false, note: "这个窗口还没说过话" };
 
   const dr = tickDrives(loadDrives(), now);
@@ -2130,6 +2329,7 @@ async function runWake(alarm) {
     { role: "system", content: persona() },
     { role: "system", content: toolHint() },
     ...(alwaysBlock ? [{ role: "system", content: alwaysBlock }] : []),
+    ...(ws.summary ? [ws.summary] : []),
     ...history,
     ...(volatileBlock ? [{ role: "system", content: volatileBlock, wuVolatile: true }] : []),
     { role: "user", content: wakePrompt },
@@ -2799,14 +2999,34 @@ const MIME = {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const p = url.pathname;
+  /* 几个不花力气的安全头：
+     不许别的网站把这个家套进框里（防点击劫持）、浏览器别乱猜文件类型、
+     跳到别的网站时不带上这里的地址、以后一律走 https */
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (String(req.headers["x-forwarded-proto"] || "").includes("https")) res.setHeader("Strict-Transport-Security", "max-age=15552000");
   try {
     /* ---- 门卫：数据接口与上传的文件都要先登录 ---- */
     if (guarded(p) && !authed(req)) { sendJson(res, 401, { error: "请先输入密码" }); return; }
 
     /* ---- 登录：四位密码换一个长期 cookie ---- */
     if (p === "/api/login" && req.method === "POST") {
+      const now = Date.now();
+      /* 她自己的手机本来就带着登录过的 cookie（离开 5 分钟自动上锁后再解锁，走的也是这儿）。
+         这种不受限速管 —— 不然别人故意拉一次总闸，她就半小时进不了自己的家。
+         没有这张 cookie 的，才是在猜 */
+      const trusted = authed(req);
+      const wait = trusted ? 0 : loginLocked(req, now);
+      if (wait) { sendJson(res, 429, { error: "试错太多次了", wait: Math.ceil(wait / 1000) }); return; }
       const body = JSON.parse(await readBody(req, 4096));
-      if (String(body.pin || "") !== currentPin()) { sendJson(res, 403, { error: "密码不对" }); return; }
+      if (String(body.pin || "") !== currentPin()) {
+        if (!trusted) loginFailed(req, now);
+        const w2 = trusted ? 0 : loginLocked(req, now);
+        sendJson(res, w2 ? 429 : 403, w2 ? { error: "试错太多次了", wait: Math.ceil(w2 / 1000) } : { error: "密码不对" });
+        return;
+      }
+      loginFails.delete(clientKey(req));
       setAuthCookie(req, res);
       sendJson(res, 200, { ok: true });
       return;
@@ -2897,6 +3117,55 @@ const server = http.createServer(async (req, res) => {
 
     /* ---- 记忆 API ---- */
     if (p === "/api/cachestats" && req.method === "GET") { sendJson(res, 200, cacheStats()); return; }
+    if (p === "/api/summary" && req.method === "GET") {
+      const sm = summaryOf(String(url.searchParams.get("win") || ""));
+      sendJson(res, 200, sm ? { text: sm.text, upto: sm.upto, at: sm.at, n: sm.n || 1, edited: !!sm.edited } : {});
+      return;
+    }
+    /* 她改提要：只改字，压到哪儿不变 */
+    if (p === "/api/summary" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 64 * 1024) || "{}");
+      const win = String(body.win || ""), all = readJson("summaries", null) || {};
+      if (!all[win]) { sendJson(res, 404, { error: "这个窗口还没有前情提要" }); return; }
+      const text = String(body.text || "").trim().slice(0, SUMMARY_MAX);
+      if (!text) { sendJson(res, 400, { error: "提要不能是空的（不想要这版，用「删掉这版」）" }); return; }
+      all[win] = { ...all[win], text, edited: true };
+      writeJson("summaries", all);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    /* 删掉这版：原话先放回来（超额度的部分照旧按额度截）；还是太长的话，下一句聊完会重新写一版 */
+    if (p === "/api/summary" && req.method === "DELETE") {
+      const win = String(url.searchParams.get("win") || ""), all = readJson("summaries", null) || {};
+      delete all[win];
+      writeJson("summaries", all);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    if (p === "/api/budget" && req.method === "GET") { sendJson(res, 200, budgetState(Date.now())); return; }
+    if (p === "/api/budget" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 1024) || "{}");
+      const n = Number(body.amount);
+      writeJson("budget", { amount: body.amount == null || body.amount === "" || !(n > 0) ? null : Math.round(n * 100) / 100 });
+      sendJson(res, 200, budgetState(Date.now()));
+      return;
+    }
+    /* 给「现在聊天用的那套」填价格（每百万 token）。环境变量那套存在 data/envprice.json */
+    if (p === "/api/budget/price" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 2048) || "{}");
+      const price = { ...PRICE0 };
+      for (const k of ["in", "out", "cacheRead", "cacheWrite"]) price[k] = Math.max(0, +body[k] || 0);
+      price.unit = String(body.unit || "元").slice(0, 4);
+      const chat = activeApi("chat");
+      if (chat.fromEnv) writeJson("envprice", { price });
+      else {
+        const conf = apisConf();
+        const a = conf.list.find(x => x.id === chat.id);
+        if (a) { a.price = price; saveApis(conf); }
+      }
+      sendJson(res, 200, budgetState(Date.now()));
+      return;
+    }
     if (p === "/api/memconf" && req.method === "GET") { sendJson(res, 200, { auto: memAuto() }); return; }
     if (p === "/api/memconf" && req.method === "PUT") {
       const body = JSON.parse(await readBody(req, 1024) || "{}");
@@ -3790,6 +4059,8 @@ const server = http.createServer(async (req, res) => {
       res.write("data: [DONE]\n\n");
       res.end();
       queueDistill(lastUser, fullAcc);
+      /* 快到额度了：趁她还在看这句回复，后台写前情提要，下一轮换上 */
+      if (turn.winId && turn.histTokens >= HISTORY_BUDGET * COMPRESS_AT) compressWindow(turn.winId).catch(() => {});
       return;
     }
 

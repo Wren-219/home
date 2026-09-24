@@ -888,6 +888,23 @@
   .cost-row + .cost-row { border-top: 1px dashed rgba(168,178,196,.25); }
   .cost-row .nm { flex: 1; color: var(--ink); font-size: 13px; }
   .cost-row .amt { font-family: var(--serif); font-size: 15px; color: var(--blue-deep); }
+  .sum-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.7; padding: 12px; border-radius: 12px;
+    border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.6); color: var(--ink); resize: vertical; }
+  .m-fold { margin: 10px auto 14px; padding: 4px 12px; width: fit-content; font-size: 11px; color: var(--ink-soft);
+    border-radius: 10px; background: rgba(168,178,196,.14); cursor: pointer; }
+  .bud-top { display: flex; align-items: baseline; gap: 8px; margin: 2px 2px 8px; }
+  .bud-spent { font-family: var(--serif); font-size: 28px; color: var(--blue-deep); }
+  .bud-of { font-size: 12px; color: var(--ink-soft); }
+  .bud-bar { height: 6px; border-radius: 3px; background: rgba(168,178,196,.22); overflow: hidden; }
+  .bud-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--blue-deep); transition: width .4s; }
+  #budgetCard.warn .bud-bar i { background: #D9A25F; }
+  #budgetCard.over .bud-bar i { background: #C0605A; }
+  #budgetCard.over .bud-spent { color: #C0605A; }
+  .bud-days { display: flex; align-items: flex-end; gap: 3px; height: 46px; margin: 12px 2px 4px; }
+  .bud-days span { flex: 1; min-width: 3px; border-radius: 2px 2px 0 0; background: rgba(126,150,184,.45); }
+  .bud-days span.today { background: var(--blue-deep); }
+  .bud-set { display: flex; gap: 8px; margin-top: 10px; }
+  .bud-set input { flex: 1; min-width: 0; }
   .cache-box { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(168,178,196,.10); font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
   .cache-box .big { font-family: var(--serif); font-size: 17px; color: var(--blue-deep); }
   .cache-box.alarm { background: rgba(214,120,110,.12); }
@@ -1200,6 +1217,35 @@
             晤的人设也在那里，可以自己改。大段内容建议在电脑上用 /admin 粘贴。
           </div>
         </div>
+        <div class="set-card" id="budgetCard">
+          <div class="set-card-title">这个月<span class="en">THIS MONTH</span></div>
+          <div class="bud-top"><span class="bud-spent" id="budSpent">—</span><span class="bud-of" id="budOf"></span></div>
+          <div class="bud-bar"><i id="budBar"></i></div>
+          <div class="set-note" id="budNote" style="margin:6px 2px 0"></div>
+          <div class="bud-days" id="budDays"></div>
+          <div class="cd-form" id="budPriceForm" style="display:none">
+            <div class="set-note" id="budPriceNote" style="margin:0 0 6px"></div>
+            <div class="row">
+              <input type="number" step="any" min="0" id="bpIn" placeholder="输入（没命中缓存）">
+              <input type="number" step="any" min="0" id="bpOut" placeholder="输出">
+            </div>
+            <div class="row">
+              <input type="number" step="any" min="0" id="bpCR" placeholder="输入（命中缓存）">
+              <input type="text" id="bpUnit" placeholder="单位：元 / $" maxlength="4">
+            </div>
+            <div class="ops"><button class="btn ghost" onclick="budPriceToggle(false)">取消</button><button class="btn" onclick="budPriceSave()">保存价格</button></div>
+          </div>
+          <div class="row bud-set">
+            <input type="number" step="any" min="0" id="budAmount" placeholder="这个月的预算">
+            <button class="btn ghost" onclick="budSave(true)">不设</button>
+            <button class="btn" onclick="budSave(false)">定下来</button>
+          </div>
+          <div class="set-note" style="margin:6px 2px 0">
+            每月 1 号重新算。定了预算、花到了，他就先不主动找你（聊天照常，你让他叫你的闹钟也照常）。
+            只算聊天模型的钱；ElevenLabs 的声音、Tavily 的搜索在它们自己那边另算。
+            <a href="javascript:void 0" onclick="budPriceToggle(true)">改价格</a>
+          </div>
+        </div>
         <div class="set-card">
           <div class="set-card-title">模型与花费<span class="en">MODEL &amp; COST</span></div>
           <div class="field">
@@ -1286,7 +1332,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.12（设置页能看缓存接上了没有）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.13（前情提要 · 这个月花了多少 · 猜密码限速）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1408,6 +1454,26 @@
     </section>
 
     <!-- ===== 子页：API 管理 ===== -->
+    <section class="subpage" id="page-summary">
+      <div class="sp-head">
+        <button class="sp-back" onclick="closeSub('summary')">‹ 返回</button>
+        <div class="sp-title">前情提要</div>
+        <button class="sp-act" onclick="sumSave()">保存</button>
+      </div>
+      <div class="sp-scroll">
+        <div class="set-note" style="margin:2px 2px 12px">
+          这个窗口聊得太长的时候，他会把早先的那一大段自己写成一段前情提要，只留最近的原话。
+          之后他看到的是：这段提要 + 最近的原话。<br>
+          是他用自己的口吻写的，写错了、漏了，直接在这儿改。聊天记录你这边一条都不会少。
+        </div>
+        <div class="set-note" id="sumMeta" style="margin:0 2px 8px"></div>
+        <textarea id="sumText" class="sum-text" rows="16" placeholder="这个窗口还没有压缩过。"></textarea>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn ghost" onclick="sumUndo()">删掉这版，让他重新写</button>
+        </div>
+      </div>
+    </section>
+
     <section class="subpage" id="page-voice">
       <div class="sp-head">
         <button class="sp-back" onclick="closeSub('voice')">‹ 返回</button>
@@ -2262,6 +2328,7 @@ function safe(name, fn) { try { return fn(); } catch (e) { noteError(name, e); }
    但前面的渲染函数会用到它们。let 在声明之前碰不得（TDZ），一碰就抛错，
    整段脚本从那里断掉 —— 后面所有东西都不初始化，界面看起来像"卡住"或"连不上"。
    一律用 var 提到最前面声明，各段里只负责赋值。新加全局状态请也放这儿。 */
+var SUMMARY = {};                                       /* 当前窗口的前情提要压到哪儿了（见「前情提要」） */
 var chatReady = false;                                   /* 聊天窗口数据就绪没 */
 var SHOW_USAGE = false;                                  /* 每条消息显示用量 */
 var SHOW_THINK = true;                                   /* 他想事情的那一段要不要显示 */
@@ -2386,12 +2453,14 @@ async function checkPin() {
   const hint = document.getElementById("lockHint");
   hint.textContent = "";
   let ok = null;                        /* true=服务器认了 false=不认 null=连不上 */
+  let wait = 0;                         /* 试错太多次，被锁住的秒数 */
   try {
     const r = await fetch("api/login", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin: pinBuf }),
     });
     ok = r.ok;
+    if (r.status === 429) { try { wait = (await r.json()).wait || 60; } catch { wait = 60; } }
   } catch { ok = null; }
   if (ok === true) {
     PIN = pinBuf;                       /* 服务器说对，本机也记下来 */
@@ -2400,7 +2469,9 @@ async function checkPin() {
   }
   if (ok === null && pinBuf === PIN) { pinBusy = false; unlockApp(); return; }
   pinDots.classList.add("shake", "error");
-  hint.textContent = (ok === false && pinBuf === PIN)
+  hint.textContent = wait
+    ? "试错太多次了，" + (wait >= 120 ? Math.ceil(wait / 60) + " 分钟" : wait + " 秒") + "后再试"
+    : (ok === false && pinBuf === PIN)
     ? "服务器还不认这个密码，先用 0527 进去，再到设置里改一次"
     : "密码不对哦，再试一次";
   setTimeout(() => { pinDots.classList.remove("shake", "error"); pinBuf = ""; renderPin(); pinBusy = false; }, 450);
@@ -2441,7 +2512,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ================= 导航 & 子页 ================= */
-const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period", "search", "voice"];
+const SUBS = ["status", "countdown", "calendar", "diary", "diaryDetail", "photos", "letters", "apis", "windows", "mcp", "quiet", "phone", "connect", "mail", "period", "search", "voice", "summary"];
 document.getElementById("tabbar").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
   if (!tab) return;
@@ -3392,6 +3463,15 @@ function rerenderChat() {
     const node = msgNode(m);
     bindLongPress(node, i);
     chatMsgs.appendChild(node);
+    /* 压进前情提要的那一段到这儿为止 */
+    const nx = chatLog[i + 1];
+    if (SUMMARY.upto && m.ts && m.ts <= SUMMARY.upto && !(nx && nx.ts && nx.ts <= SUMMARY.upto)) {
+      const f = document.createElement("div");
+      f.className = "m-fold";
+      f.textContent = "📜 上面这些，他记在前情提要里了";
+      f.onclick = sumOpen;
+      chatMsgs.appendChild(f);
+    }
   });
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
   requestAnimationFrame(() => { chatMsgs.scrollTop = chatMsgs.scrollHeight; });
@@ -3569,6 +3649,7 @@ function toApiMessages() {
      ⚠️ 跟 server.js 的 histFrom() 是同一条规则 */
   const from = chatLog.length <= 600 ? 0 : Math.floor((chatLog.length - 400) / 200) * 200;
   chatLog.slice(from).forEach(m => {
+    const n0 = msgs.length;
     if (m.k === "me") msgs.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
     else if (m.k === "ai") msgs.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
     else if (m.k === "call") msgs.push(...callLines(m));
@@ -3580,6 +3661,8 @@ function toApiMessages() {
       msgs.push({ role: "user", content: "（发来了" + n + "张照片）", ...(imgs.length ? { imgs } : {}) });
     }
     else if (m.k === "file") msgs.push({ role: "user", content: "（发来了文件：" + m.name + "）" });
+    /* 带上时间：服务器按它认出哪些已经压进前情提要了（不会发给模型） */
+    if (m.ts) for (let k = n0; k < msgs.length; k++) msgs[k].ts = m.ts;
   });
   return msgs;
 }
@@ -3733,6 +3816,8 @@ async function aiReplyRun() {
       }
     }
     fetchDrives();      /* 聊完刷新晤的内在状态 */
+    /* 快到额度的话，他正在后台写前情提要，过一会儿看看写好没有 */
+    setTimeout(sumMetaLoad, 15000); setTimeout(sumMetaLoad, 60000);
     refreshShared();    /* 晤可能用工具改了清单/日记/信箱，同步回家里 */
     renderCost();
   } catch (e) {
@@ -3897,6 +3982,7 @@ function renderWinMenu() {
     </div>`;
   winMenu.innerHTML = live.map(row).join("")
     + (arch.length ? arch.map(row).join("") : "")
+    + (SUMMARY.upto ? '<div class="win-item new" data-act="summary">📜 前情提要</div>' : "")
     + '<div class="win-item new" data-act="manage">⚙ 管理窗口</div>';
   const list = live.concat(arch);
   winMenu.querySelectorAll(".win-item .nm").forEach((n, i) => { if (list[i]) n.textContent = list[i].name + (list[i].archived ? " · 已封存" : ""); });
@@ -3922,7 +4008,9 @@ function switchWin(id) {
   chatData.active = id;
   chatLog = w.msgs;
   saveChat();
+  SUMMARY = {};
   rerenderChat(); renderWinMenu(); renderCtxUsage();
+  sumMetaLoad();
 }
 function winNew() {
   const w = newWin("新窗口 " + (chatData.windows.length + 1), []);
@@ -4003,6 +4091,7 @@ winMenu.addEventListener("click", e => {
   winMenu.classList.remove("open");
   if (item.dataset.act === "new") { winNew(); return; }
   if (item.dataset.act === "manage") { openSub("windows"); return; }
+  if (item.dataset.act === "summary") { sumOpen(); return; }
   if (item.dataset.w) switchWin(item.dataset.w);
 });
 safe("窗口菜单", renderWinMenu);
@@ -4291,9 +4380,60 @@ function fmtCost(c, unit) {
   if (c == null) return "";
   return (c < 0.01 ? c.toFixed(4) : c.toFixed(2)) + " " + (unit || "元");
 }
+/* 这个月花了多少、预算、按现在的速度月底大约多少 */
+let budCache = null;
+const money = (v, unit) => (unit === "$" ? "$" : "￥") + (v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(2) : v.toFixed(3));
+async function renderBudget() {
+  if (!SERVER) return;
+  let b;
+  try { b = await (await fetch("api/budget")).json(); } catch { return; }
+  budCache = b;
+  const card = document.getElementById("budgetCard");
+  card.classList.toggle("over", b.over); card.classList.toggle("warn", !b.over && b.warn);
+  document.getElementById("budSpent").textContent = money(b.spent, b.unit);
+  document.getElementById("budOf").textContent = b.auto
+    ? "还没定预算" : "/ 预算 " + money(b.amount, b.unit) + (b.over ? " · 花到了" : " · 还剩 " + money(Math.max(0, b.amount - b.spent), b.unit));
+  document.getElementById("budBar").style.width = Math.min(100, b.auto ? (b.forecast ? b.spent / b.forecast * 100 : 0) : b.spent / b.amount * 100) + "%";
+  document.getElementById("budNote").textContent = b.noPrice
+    ? "现在聊天用的「" + b.api.name + "」还没填价格，钱算不出来 —— 点下面「改价格」填一下"
+    : (b.forecast ? "按现在的速度，这个月大约 " + money(b.forecast, b.unit) : "这个月还没怎么花") +
+      (b.over ? "。他这个月先不主动找你了" : "") + (b.other ? "（另有别的币种 " + b.other.toFixed(2) + "）" : "");
+  const max = Math.max(...b.days.map(d => d.cost), 0.0001);
+  document.getElementById("budDays").innerHTML = b.days.map((d, i) =>
+    `<span class="${i === b.days.length - 1 ? "today" : ""}" style="height:${Math.max(2, d.cost / max * 100)}%" title="${d.day.slice(5)} ${money(d.cost, b.unit)}"></span>`).join("");
+  const amt = document.getElementById("budAmount");
+  amt.placeholder = b.forecast ? "预算（按预测大约 " + money(b.budget, b.unit).replace(/[￥$]/, "") + "）" : "这个月的预算";
+  if (document.activeElement !== amt) amt.value = b.auto ? "" : b.amount;
+  if (b.noPrice) budPriceToggle(true);
+}
+async function budSave(clear) {
+  const amt = document.getElementById("budAmount");
+  let v = clear ? null : Number(amt.value);
+  if (!clear && !(v > 0)) v = budCache && budCache.budget > 0 ? budCache.budget : null;   // 空着点「定下来」= 按预测定
+  try { await fetch("api/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: v }) }); } catch {}
+  amt.blur(); renderBudget();
+}
+function budPriceToggle(on) {
+  const f = document.getElementById("budPriceForm");
+  f.style.display = on ? "" : "none";
+  if (!on || !budCache) return;
+  const pr = budCache.api.price || {};
+  document.getElementById("budPriceNote").textContent = "「" + budCache.api.name + "」每一百万 token 多少钱 —— 去模型官网的价格页抄（DeepSeek 在 platform.deepseek.com）";
+  document.getElementById("bpIn").value = pr.in || ""; document.getElementById("bpOut").value = pr.out || "";
+  document.getElementById("bpCR").value = pr.cacheRead || ""; document.getElementById("bpUnit").value = pr.unit || "元";
+}
+async function budPriceSave() {
+  const v = id => document.getElementById(id).value;
+  try {
+    await fetch("api/budget/price", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ in: v("bpIn"), out: v("bpOut"), cacheRead: v("bpCR"), unit: v("bpUnit") || "元" }) });
+  } catch { toast("没连上服务器"); return; }
+  budPriceToggle(false); renderBudget();
+}
 async function renderCost() {
   if (!SERVER) return;
   renderCacheStats();
+  renderBudget();
   let u;
   try { u = await (await fetch("api/usage")).json(); } catch { return; }
   const rows = Object.values(u.total || {});
@@ -4674,6 +4814,7 @@ async function pullState() {
     renderPhotosPage(); renderHomeStack(); renderWinMenu();
     refreshChatDot();
     fetchDrives();
+    sumMetaLoad();
   } catch (e) {
     SERVER = false;
     console.warn("拉数据失败：", e && e.message);
@@ -4696,6 +4837,42 @@ function refreshChatDot() {
   const d = document.getElementById("chatDot");
   if (d) d.classList.toggle("on", newWakeCount() > 0);
 }
+/* ================= 前情提要 =================
+   当前窗口的那段提要压到哪儿了（只拿时间和次数，正文进页面再拉）。SUMMARY 声明在最上面 */
+async function sumMetaLoad() {
+  if (!SERVER || !chatReady) return;
+  let j = {};
+  try { j = await (await fetch("api/summary?win=" + encodeURIComponent(chatData.active))).json(); } catch { return; }
+  const changed = (j.upto || 0) !== (SUMMARY.upto || 0) || (j.n || 0) !== (SUMMARY.n || 0);
+  SUMMARY = j || {};
+  if (changed) { rerenderChat(); renderWinMenu(); }
+}
+async function sumOpen() {
+  openSub("summary");
+  let j = {};
+  try { j = await (await fetch("api/summary?win=" + encodeURIComponent(chatData.active))).json(); } catch {}
+  const t = document.getElementById("sumText");
+  t.value = j.text || "";
+  const d = j.upto ? new Date(j.upto) : null;
+  document.getElementById("sumMeta").textContent = j.text
+    ? "「" + curWin().name + "」压缩过 " + (j.n || 1) + " 次，记到 " + (d.getMonth() + 1) + " 月 " + d.getDate() + " 日 " + pad(d.getHours()) + ":" + pad(d.getMinutes()) +
+      "。最近一次写于 " + timeLabel(j.at) + (j.edited ? "，你改过" : "") + "。"
+    : "";
+}
+async function sumSave() {
+  const text = document.getElementById("sumText").value.trim();
+  if (!text) { toast("不想要这版的话，点下面的「删掉这版」"); return; }
+  const r = await fetch("api/summary", { method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ win: chatData.active, text }) }).catch(() => null);
+  if (!r || !r.ok) { toast("没存上"); return; }
+  toast("改好了，他下一句就按这个来"); closeSub("summary");
+}
+async function sumUndo() {
+  if (!confirm("删掉以后，原话先放回他眼前；聊天还是太长的话，下一句聊完他会重新写一版。要删掉吗？")) return;
+  await fetch("api/summary?win=" + encodeURIComponent(chatData.active), { method: "DELETE" }).catch(() => {});
+  closeSub("summary"); SUMMARY = {}; rerenderChat(); renderWinMenu();
+}
+
 /* 她开着 app 的时候，他醒来说的话（比如她让他「五分钟后喊我」）。
    以前只有重新解锁、整份拉一次数据才看得到 —— 而且她这边一存，还会把那几条冲掉 */
 async function pullFresh() {
