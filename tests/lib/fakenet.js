@@ -68,3 +68,11 @@ global.fetch = async (url, opt) => {
     return R({ detail: 'not found' }, 404);
   };
 }
+
+/* 邮件：连 smtp.fake 的一律转到本机 8094 那个假邮件服务器（lib/fake-smtp.js），明文就行 */
+const tls = require('tls'), net = require('net');
+const realTls = tls.connect;
+tls.connect = function (opts, cb) {
+  if (opts && opts.host === 'smtp.fake') return net.connect(8094, '127.0.0.1', cb);
+  return realTls.apply(this, arguments);
+};

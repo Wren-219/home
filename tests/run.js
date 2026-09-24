@@ -3,7 +3,7 @@
      node run.js vision       只跑一组，并打印完整输出（名字见下面清单，不用带 .js）
      node run.js --list       列出所有组
    每组开跑前清空假数据、单独起一套服务器和它要的假模型，跑完全部关掉。
-   用到的端口：8081 服务器，8085 泄露检查，8096 假推送，8097 加密检查，8098 假 Claude，8099 假模型 */
+   用到的端口：8081 服务器，8085 泄露检查，8094 假邮件，8096 假推送，8097 加密检查，8098 假 Claude，8099 假模型 */
 const { spawn } = require('child_process');
 const fs = require('fs'), path = require('path'), net = require('net');
 const { ROOT, WORK, DAT } = require('./lib/env');
@@ -45,12 +45,13 @@ const SUITE = [
   ['模型', 'search-api', '上网：三家搜索、读网页、钥匙只进不出', true, {}],
   ['唤醒', 'alarm-hidden', '他偷偷设闹钟，她看不见', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'alarm-asked', '她让他「五分钟后喊我」：认得写法、到点就叫、存一下冲不掉', true, { apis: API_M1 }, OPENAI],
-  ['唤醒', 'budget', '这个月花了多少：按天记账、补填价格重算、预算花到了他先不主动醒', true, { apis: API_M1 }, OPENAI],
+  ['唤醒', 'budget', '这个月花了多少：记账时算好不再变、高峰另算、预算花到了他先不主动醒', true, { apis: API_M1, env: { DEEPSEEK_API_KEY: 'sk-env', LLM_BASE_URL: 'http://localhost:8099' } }, OPENAI],
   ['唤醒', 'wake-budget', '醒了不说话也算钱，一天有上限', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'night-peek', '夜里她还在玩手机，他可以冒出来', true, { apis: API_M1 }, OPENAI],
   ['唤醒', 'status-note', '【现状】纸条：隔久了给全、连着聊不说', true, { apis: API_M1 }, OPENAI],
   ['声音', 'voice', '他发语音、她按住说话、省钱闸', true, { apis: API_M1 }, OPENAI],
   ['声音', 'call', '语音通话：打、接、挂、打断、未接、醒着打过来', true, { apis: API_M1 }, OPENAI],
+  ['联动', 'backup-mail', '自动备份：寄到收件邮箱、不带钥匙、拿它恢复不清掉现有钥匙', true, { apis: API_M1 }, ['fake-smtp.js']],
   ['联动', 'push', '推送：订阅、失败处理、sw.js 弹通知', true, { apis: API_M1 }, ['fake-push.js', 'mock-think.js']],
   ['联动', 'phone-hook', '快捷指令钥匙、App 打开关闭配对', true, { apis: API_M1 }, OPENAI],
   ['联动', 'phone-close-only', '只配了「关闭」的情况', true, { apis: API_M1 }, OPENAI],
@@ -71,7 +72,7 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
   try {
     /* 干净的假数据 */
     fs.rmSync(DAT, { recursive: true, force: true }); fs.mkdirSync(DAT + '/uploads', { recursive: true });
-    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'treqs.json', 'last.json', 'eleven.json', 'stt.txt']) fs.rmSync(path.join(WORK, f), { force: true });
+    for (const f of ['plan.json', 'reqs.json', 'areqs.json', 'treqs.json', 'last.json', 'eleven.json', 'stt.txt', 'smtp']) fs.rmSync(path.join(WORK, f), { force: true, recursive: true });
     fs.writeFileSync(DAT + '/chat.json', JSON.stringify(chat()));
     if (seed.apis) fs.writeFileSync(DAT + '/apis.json', JSON.stringify(seed.apis));
     if (seed.period) fs.writeFileSync(DAT + '/period.json', JSON.stringify(seed.period));
@@ -111,7 +112,7 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
   }
   const pick = arg ? SUITE.filter(s => s[1] === arg.replace(/\.js$/, '')) : SUITE;
   if (!pick.length) { console.log('没有叫「' + arg + '」的，用 --list 看清单'); process.exit(1); }
-  for (const p of [8081, 8085, 8096, 8097, 8098, 8099]) if (!(await portFree(p))) {
+  for (const p of [8081, 8085, 8094, 8096, 8097, 8098, 8099]) if (!(await portFree(p))) {
     console.log(`端口 ${p} 被占着 —— 先把占着它的进程停掉（可能是上次没跑完的测试）`); process.exit(1);
   }
   const lines = []; let fail = 0, total = 0;

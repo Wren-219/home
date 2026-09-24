@@ -36,18 +36,37 @@ const say = async t => (await fetch(B + '/api/chat', { method: 'POST', headers: 
   ok(b.days.length === b.today && b.days[b.days.length - 1].cost > 0, '按天列着，今天那根有数');
   ok(b.forecast > 0, '按现在的速度，这个月大约 ￥' + b.forecast);
 
-  console.log('\n[补填价格，这个月的账跟着重算]');
+  console.log('\n[改价格：已经算好的不变，以后的按新价格]');
+  const before = b.spent;
   b = (await j('/api/budget/price', 'PUT', { in: 2, out: 4, cacheRead: 0.2, unit: '￥' })).d;
-  ok(near(b.spent, (0.15 + 0.00126) * 2), '价格翻倍，这个月已花也翻倍：￥' + b.spent);
-  const apis = (await j('/api/apis')).d;
-  ok(apis.list.find(x => x.id === 'm1').price.in === 2, '价格存在了现在聊天用的那套上');
+  ok(near(b.spent, before), '价格翻倍了，这个月已经算好的还是 ￥' + b.spent + '（她说之前的不要变）');
+  plan(['嗯。']); await say('再说一句');
+  b = (await j('/api/budget')).d;
+  ok(near(b.spent, before + 0.00252), '新聊的这句按新价格算：+￥0.00252');
+  ok((await j('/api/apis')).d.list.find(x => x.id === 'm1').price.in === 2, '价格存在了现在聊天用的那套上');
 
-  console.log('\n[环境变量那套也能填价格]');
+  console.log('\n[还没填价格的那套：先攒着，第一次填价格时补算一次]');
   await j('/api/apis/use', 'PUT', { chat: null });
+  plan(['嗯。']); await say('用环境变量那套说一句');
   b = (await j('/api/budget')).d;
   ok(b.api.fromEnv && b.noPrice, '换回环境变量那套：提示「还没填价格」');
-  b = (await j('/api/budget/price', 'PUT', { in: 1, out: 2, cacheRead: 0.02, unit: '元' })).d;
-  ok(!b.noPrice && b.api.price.in === 1, '填上了（存在 envprice.json）');
+  const s0 = b.spent;
+  b = (await j('/api/budget/price', 'PUT', { in: 1, out: 2, cacheRead: 0.02, unit: '￥' })).d;
+  ok(b.settled === 1 && near(b.spent, s0 + 0.00126), '填上了，刚才那句按这个价格补算：+￥0.00126');
+  const s1 = b.spent;
+  b = (await j('/api/budget/price', 'PUT', { in: 5, out: 5, cacheRead: 0.5, unit: '￥' })).d;
+  ok(b.settled === 0 && near(b.spent, s1), '补算过的就定下来了，再改价格也不动');
+
+  console.log('\n[高峰时段贵一倍]');
+  b = (await j('/api/budget/price', 'PUT', { in: 1, out: 2, cacheRead: 0.02, unit: '￥', peak: { on: true, times: '00:00-23:59', weekdays: false, x: 2 } })).d;
+  const s2 = b.spent;
+  plan(['嗯。']); await say('高峰时段说一句');
+  b = (await j('/api/budget')).d;
+  ok(near(b.spent, s2 + 0.00252) && near(b.peak, 0.00252), '这句按两倍算（+￥0.00252），另记在「其中高峰」里');
+  await j('/api/budget/price', 'PUT', { in: 1, out: 2, cacheRead: 0.02, unit: '￥', peak: { on: true, times: '03:00-03:01', weekdays: false, x: 2 } });
+  const s3 = (await j('/api/budget')).d.spent;
+  plan(['嗯。']); await say('不在高峰说一句');
+  ok(near((await j('/api/budget')).d.spent, s3 + 0.00126), '不在高峰时段就按平时价');
   await j('/api/apis/use', 'PUT', { chat: 'm1' });
 
   console.log('\n[定预算，花到了 → 他先不主动醒]');

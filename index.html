@@ -1199,6 +1199,17 @@
             <button class="btn ghost" onclick="doBackup(false)">下载（不含照片）</button>
             <button class="btn" onclick="doBackup(true)">下载全部</button>
           </div>
+          <div class="sw-row" style="margin-top:14px">
+            <span class="lb">每 15 天自动寄一份到邮箱</span>
+            <button class="sw" id="swBkAuto" onclick="bkAutoToggle()"></button>
+          </div>
+          <div class="set-note" id="bkAutoLine" style="margin:-2px 2px 6px"></div>
+          <div class="set-note" style="margin:0 2px 6px">
+            服务器自己在夜里三四点寄，用你在「写信出去」里填的邮箱，不花钱。
+            寄的这份不带照片（太大，邮件装不下），也不带密码和 Key（放邮件里不安全）；
+            拿它恢复不会清掉现有的 Key。照片隔一阵用上面的「下载全部」存一份。
+          </div>
+          <div class="btn-row"><button class="btn ghost" id="bkMailBtn" onclick="bkMailNow()">现在寄一份试试</button></div>
         </div>
         <div class="set-card">
           <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
@@ -1232,6 +1243,22 @@
             <div class="row">
               <input type="number" step="any" min="0" id="bpCR" placeholder="输入（命中缓存）">
               <input type="text" id="bpUnit" placeholder="单位：元 / $" maxlength="4">
+            </div>
+            <div class="sw-row">
+              <span class="lb">高峰时段另算（贵几倍）</span>
+              <button class="sw" id="bpPeakOn" onclick="this.classList.toggle('on')"></button>
+            </div>
+            <div class="row">
+              <input type="text" id="bpPeakTimes" placeholder="高峰时段（北京时间），如 09:00-12:00,14:00-18:00">
+              <input type="number" step="any" min="1" id="bpPeakX" placeholder="贵几倍" style="max-width:80px">
+            </div>
+            <div class="sw-row">
+              <span class="lb">周末不算高峰</span>
+              <button class="sw on" id="bpPeakWd" onclick="this.classList.toggle('on')"></button>
+            </div>
+            <div class="set-note" style="margin:0 0 6px">
+              时段先按网上查到的 DeepSeek 高峰填好了（北京时间工作日 9–12 点、14–18 点，贵一倍），照官网价格页核对一下再打开。<br>
+              改价格只影响以后：已经算好的钱不会变。填价格之前攒下的用量，会按你第一次填的价格补算一次。
             </div>
             <div class="ops"><button class="btn ghost" onclick="budPriceToggle(false)">取消</button><button class="btn" onclick="budPriceSave()">保存价格</button></div>
           </div>
@@ -1332,7 +1359,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.13（前情提要 · 这个月花了多少 · 猜密码限速）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.14（每 15 天自动备份到邮箱 · 钱记账时就算好 · 高峰另算）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2521,7 +2548,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "chat") { markChatSeen(); chatToBottom(); }
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); quietRefresh(); phoneRefresh(); pushRefresh(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); bkAutoLoad(); quietRefresh(); phoneRefresh(); pushRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -4397,7 +4424,9 @@ async function renderBudget() {
   document.getElementById("budNote").textContent = b.noPrice
     ? "现在聊天用的「" + b.api.name + "」还没填价格，钱算不出来 —— 点下面「改价格」填一下"
     : (b.forecast ? "按现在的速度，这个月大约 " + money(b.forecast, b.unit) : "这个月还没怎么花") +
-      (b.over ? "。他这个月先不主动找你了" : "") + (b.other ? "（另有别的币种 " + b.other.toFixed(2) + "）" : "");
+      (b.peak ? "；其中高峰时段 " + money(b.peak, b.unit) : "") +
+      (b.over ? "。他这个月先不主动找你了" : "") + (b.other ? "（另有别的币种 " + b.other.toFixed(2) + "）" : "") +
+      (b.pending ? "。另有 " + b.pending.toLocaleString() + " token 是在别的没填价格的配置上用的，没算进去" : "");
   const max = Math.max(...b.days.map(d => d.cost), 0.0001);
   document.getElementById("budDays").innerHTML = b.days.map((d, i) =>
     `<span class="${i === b.days.length - 1 ? "today" : ""}" style="height:${Math.max(2, d.cost / max * 100)}%" title="${d.day.slice(5)} ${money(d.cost, b.unit)}"></span>`).join("");
@@ -4421,12 +4450,19 @@ function budPriceToggle(on) {
   document.getElementById("budPriceNote").textContent = "「" + budCache.api.name + "」每一百万 token 多少钱 —— 去模型官网的价格页抄（DeepSeek 在 platform.deepseek.com）";
   document.getElementById("bpIn").value = pr.in || ""; document.getElementById("bpOut").value = pr.out || "";
   document.getElementById("bpCR").value = pr.cacheRead || ""; document.getElementById("bpUnit").value = pr.unit || "元";
+  const pk = pr.peak || {};
+  document.getElementById("bpPeakOn").classList.toggle("on", !!pk.on);
+  document.getElementById("bpPeakTimes").value = pk.times || "09:00-12:00,14:00-18:00";
+  document.getElementById("bpPeakX").value = pk.x || 2;
+  document.getElementById("bpPeakWd").classList.toggle("on", pk.weekdays !== false);
 }
 async function budPriceSave() {
   const v = id => document.getElementById(id).value;
   try {
     await fetch("api/budget/price", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ in: v("bpIn"), out: v("bpOut"), cacheRead: v("bpCR"), unit: v("bpUnit") || "元" }) });
+      body: JSON.stringify({ in: v("bpIn"), out: v("bpOut"), cacheRead: v("bpCR"), unit: v("bpUnit") || "元",
+        peak: { on: document.getElementById("bpPeakOn").classList.contains("on"), times: v("bpPeakTimes"),
+          x: v("bpPeakX"), weekdays: document.getElementById("bpPeakWd").classList.contains("on") } }) });
   } catch { toast("没连上服务器"); return; }
   budPriceToggle(false); renderBudget();
 }
@@ -4486,6 +4522,34 @@ async function usageClear() {
 }
 
 /* ================= 备份与搬家 ================= */
+/* 自动备份（每 15 天寄到邮箱） */
+async function bkAutoLoad() {
+  if (!SERVER) return;
+  let a;
+  try { a = await (await fetch("api/backup/auto")).json(); } catch { return; }
+  document.getElementById("swBkAuto").classList.toggle("on", a.on);
+  const md = t => { const d = new Date(t); return (d.getMonth() + 1) + " 月 " + d.getDate() + " 日"; };
+  const el = document.getElementById("bkAutoLine");
+  el.style.color = !a.ok && a.err ? "var(--coral)" : "";
+  el.textContent = !a.mailReady ? "还没配邮箱 —— 先去「写信出去」填上发件邮箱和授权码"
+    : !a.on ? "关着。打开以后寄到 " + a.dest
+    : (!a.ok && a.err ? "上次没寄成：" + a.err + "。" : "") +
+      "寄到 " + a.dest + (a.last ? " · 上次 " + md(a.last) + (a.size ? "（" + (a.size >= 1048576 ? (a.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(a.size / 1024)) + " KB") + "）" : "") + " · 下次大约 " + md(a.next) : " · 今晚三四点寄第一份");
+}
+async function bkAutoToggle() {
+  const on = !document.getElementById("swBkAuto").classList.contains("on");
+  try { await fetch("api/backup/auto", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }) }); } catch {}
+  bkAutoLoad();
+}
+async function bkMailNow() {
+  const b = document.getElementById("bkMailBtn");
+  b.disabled = true; b.textContent = "寄着呢…";
+  let r = {};
+  try { r = await (await fetch("api/backup/mail", { method: "POST" })).json(); } catch { r = { err: "没连上服务器" }; }
+  b.disabled = false; b.textContent = "现在寄一份试试";
+  toast(r.ok ? "寄出去了，去 " + r.to + " 收一下" : "没寄成：" + (r.err || "不知道为什么"));
+  bkAutoLoad();
+}
 function humanBytes(n) {
   if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
   if (n > 1024) return Math.round(n / 1024) + " KB";
@@ -4526,7 +4590,7 @@ document.getElementById("bkPick").addEventListener("change", async e => {
     const r = await fetch("api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: text });
     const j = await r.json();
     if (!r.ok || j.error) { toast(j.error || "恢复失败"); return; }
-    toast("恢复了 " + j.keys + " 项" + (j.files ? " + " + j.files + " 张照片" : "") + "，要重新输密码…");
+    toast("恢复了 " + j.keys + " 项" + (j.files ? " + " + j.files + " 张照片" : "") + (/不带密码/.test(j.note || "") ? "，原来的 Key 都还在" : "，要重新输密码…"));
     setTimeout(() => location.reload(), 2200);
   } catch { toast("这个文件读不了"); }
 });

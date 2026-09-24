@@ -1338,3 +1338,32 @@ Claude 那边的 recall / remember 都不受影响。
 https 下加 `Strict-Transport-Security`。没上 CSP —— 页面全是内联脚本，硬上会整页坏掉。
 
 新组 `login-limit`（14）、`budget`（20）、`compress`（28）。体检：40 组 547 条全过。
+
+### 45. ✅ v3.14：每 15 天自动备份到邮箱 · 钱在记账那一刻就算好 · 高峰另算
+
+**① 自动备份**（她：「不花钱的话就做吧」「15 天一次」）
+- `mailBackup()`：`buildBackup({ secrets: false })` 当附件（`smtpSend` 加了 multipart 附件），
+  从她的发件邮箱寄到收件地址（`mailConf().to`，没填就寄回发件那个）。超过 20MB 不寄、报错
+- **不带钥匙**：整份不带 `auth`（密码）、`hook`（快捷指令 + Claude 那边的钥匙）、`push`（VAPID 私钥）；
+  其余文件里名叫 key / pass / token / secret… 的字段清空（`scrubSecrets`）。备份上标 `noSecrets: true`
+- **拿这份恢复不清掉现有钥匙**：`POST /api/backup` 见到 `noSecrets` 就 `keepSecrets(备份, 现有)` ——
+  空着的钥匙用现有的补（数组按 id 对齐）。也不用重新输密码（auth 没动）
+- 时间：`backupTick()` 每小时看一眼，开着 + 配了邮箱 + 离上次成功 ≥ 15 天（差 3 小时以内也算）+ 夜里 3–4 点才寄；
+  失败了 20 小时内不再试（别一小时一封），第二天夜里再来。`data/backupauto.json`
+- 界面：备份卡片下面开关、寄到哪、上次 / 下次、失败原因（邮箱那边的原话）、「现在寄一份试试」
+- 测试用的假邮件服务器 `tests/lib/fake-smtp.js`（端口 8094），`fakenet.js` 把连 `smtp.fake` 的 tls 转过去
+
+**② 钱在记账那一刻就算好**（她：「改了模型或 API 后按新的算，之前算好的不要变」—— 推翻了 v3.13 的「看账时按现在的价格重算」）
+- `ledgerAdd` 当场 `priceOf` × 高峰倍数，存进 `cost`（高峰那部分另记 `peakCost`）；看账只是加起来
+- 那一刻没价格的 token 攒进 `pend`；她给这套填价格时 `settlePending` 按那个价格补算一次，删掉 `pend`，之后再改价格不动
+- v3.13 记下的旧账（没有 `cost` 字段）在 `ledger()` 读的时候迁移：有价格的当场算、没价格的挪进 `pend`
+- 开账搬 `usage.recent` 时：当时记过钱的照旧，没记的看这套现在有没有价格，有就算、没有就攒
+- 币种：元 / ￥ / ¥ / RMB / CNY 都当人民币，$ / USD / 美元都当美元（`normUnit`）—— 测出来的：
+  没填价格时默认写「元」，假模型写「￥」，被当成两种钱分开算了
+
+**③ 高峰时段**：`price.peak = { on, times: "09:00-12:00,14:00-18:00", weekdays, x }`，`isPeak(price, now)` 按她那边的钟点。
+表单里默认填了网上查到的 DeepSeek 高峰（北京时间工作日 9–12、14–18 点，×2）但**开关默认关**，让她照官网核对后再开。
+（DeepSeek 文档这边打不开，是从第三方价格汇总页看的，不一定准。）
+
+新组 `backup-mail`（28）；`budget` 改成断言「改价格不动已算好的」「补算一次就定下来」「高峰 ×2、另记」（24）。
+体检：41 组 579 条全过。

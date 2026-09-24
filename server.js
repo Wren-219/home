@@ -292,21 +292,78 @@ function recordUsage(api, role, u) {
 }
 
 /* ================= 这个月花了多少 =================
-   她：「总共花了多少钱，我心里也有个底」。用量记录（usage.recent）只留最近 300 条，不够算一个月，
-   所以另记一本按天的账：data/ledger.json = { days: { "2026-09-24": { <apiId>: {in,out,cacheRead,cacheWrite,calls,price} } } }。
-   账上只记 token，钱是看账的时候按「现在的价格」算的 —— 她后来补填了价格，这个月前几天的也跟着算对 */
-function ledger() { const l = readJson("ledger", null); return (l && l.days) ? l : null; }
+   她：「总共花了多少钱，我心里也有个底」。钱全是代码算的（token 数 × 价格），不经过 AI，也不花钱。
+   用量记录（usage.recent）只留最近 300 条，不够算一个月，所以另记一本按天的账：
+   data/ledger.json = { days: { "2026-09-24": { <apiId>: {in,out,cacheRead,cacheWrite,calls, cost, peakCost, unit, pend} } } }
+   · **钱在记账那一刻就算好存下**（cost）：她说「改了模型或 API 后按新的算，之前算好的不要变」
+   · 那一刻要是在高峰时段（价格里配了 peak），按倍数算，另记 peakCost 给她看
+   · 那一刻还没填价格（全是 0）的，token 先攒在 pend 里；她第一次填价格时按那个价格补算一次，
+     补完就定下来（settlePending），之后再改价格也不动它 */
+function ledger() {
+  const l = readJson("ledger", null);
+  if (!l || !l.days) return null;
+  /* v3.13 记的账还没有 cost：有价格的当场算好，没价格的挪进 pend */
+  for (const d of Object.values(l.days)) for (const e of Object.values(d)) {
+    if (e.cost !== undefined) continue;
+    const pr = e.price || PRICE0;
+    if (pr.in || pr.out) { e.cost = priceOf({ price: pr }, e); e.unit = pr.unit || "元"; }
+    else { e.cost = 0; e.pend = { in: e.in || 0, out: e.out || 0, cacheRead: e.cacheRead || 0, cacheWrite: e.cacheWrite || 0 }; }
+  }
+  return l;
+}
+/* 高峰时段：price.peak = { on, times: "09:00-12:00,14:00-18:00"（她那边的钟点）, weekdays: 只算周一到周五, x: 倍数 } */
+function isPeak(price, now) {
+  const pk = price && price.peak;
+  if (!pk || !pk.on) return false;
+  const p = localParts(now);
+  if (pk.weekdays !== false && (p.dow === 0 || p.dow === 6)) return false;
+  return String(pk.times || "").split(/[,，;；\s]+/).some(r => {
+    const m = r.match(/^(\d{1,2})[:：](\d{2})-(\d{1,2})[:：](\d{2})$/);
+    if (!m) return false;
+    const a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4];
+    return a <= b ? p.minOfDay >= a && p.minOfDay < b : p.minOfDay >= a || p.minOfDay < b;
+  });
+}
+/* 元、￥、¥、RMB、CNY 都是人民币；$、USD、美元都是美元 —— 写法不一样也别当成两种钱 */
+function normUnit(u) {
+  const t = String(u || "元").trim();
+  if (/^(元|￥|¥|rmb|cny|人民币)$/i.test(t)) return "元";
+  if (/^(\$|usd|us\$|美元|刀)$/i.test(t)) return "$";
+  return t;
+}
+function hasPrice(price) { return !!(price && (price.in || price.out)); }
+function addTokens(t, u) { for (const k of ["in", "out", "cacheRead", "cacheWrite"]) t[k] = (t[k] || 0) + (u[k] || 0); return t; }
 function ledgerAdd(api, u, now) {
   const l = ledger() || ledgerSeed();
   const day = localDayKey(now), id = api.id || "?";
   const d = l.days[day] = l.days[day] || {};
-  const e = d[id] = d[id] || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
-  e.in += u.in || 0; e.out += u.out || 0; e.cacheRead += u.cacheRead || 0; e.cacheWrite += u.cacheWrite || 0; e.calls++;
-  e.price = api.price || PRICE0; e.name = api.name;
+  const e = d[id] = d[id] || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, calls: 0, cost: 0, peakCost: 0 };
+  addTokens(e, u); e.calls++; e.name = api.name;
+  const price = api.price || PRICE0;
+  if (hasPrice(price)) {
+    const peak = isPeak(price, now);
+    const c = priceOf({ price }, u) * (peak ? (Number(price.peak.x) || 2) : 1);
+    e.cost = (e.cost || 0) + c; e.unit = price.unit || "元";
+    if (peak) e.peakCost = (e.peakCost || 0) + c;
+  } else e.pend = addTokens(e.pend || {}, u);
   /* 只留一年 */
   const keys = Object.keys(l.days).sort();
   while (keys.length > 400) delete l.days[keys.shift()];
   writeJson("ledger", l);
+}
+/* 她给某一套填了价格：之前没价格时攒下的 token，按这个价格补算一次，补完定下来 */
+function settlePending(apiId, price) {
+  const l = ledger();
+  if (!l || !hasPrice(price)) return 0;
+  let n = 0;
+  for (const d of Object.values(l.days)) {
+    const e = d[apiId];
+    if (!e || !e.pend) continue;
+    e.cost = (e.cost || 0) + priceOf({ price }, e.pend); e.unit = price.unit || "元";
+    delete e.pend; n++;
+  }
+  if (n) writeJson("ledger", l);
+  return n;
 }
 /* 第一次开账：把用量记录里还留着的那些搬过来，这个月前几天不至于是空的 */
 function ledgerSeed() {
@@ -317,40 +374,37 @@ function ledgerSeed() {
     const a = byName(e.api), t = Date.parse(e.t);
     if (!a || !Number.isFinite(t)) continue;
     const day = localDayKey(t), d = l.days[day] = l.days[day] || {};
-    const x = d[a.id] = d[a.id] || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, calls: 0 };
-    x.in += e.in || 0; x.out += e.out || 0; x.cacheRead += e.cacheRead || 0; x.cacheWrite += e.cacheWrite || 0; x.calls++;
-    x.price = a.price; x.name = a.name;
+    const x = d[a.id] = d[a.id] || { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, calls: 0, cost: 0, peakCost: 0 };
+    addTokens(x, e); x.calls++; x.name = a.name;
+    /* 当时记下过钱的照当时的；没记下的，这套现在有价格就按现在的算好，还没价格就先攒着 */
+    if (e.cost > 0) { x.cost += e.cost; x.unit = e.unit || "元"; }
+    else if (hasPrice(a.price)) { x.cost += priceOf(a, e); x.unit = a.price.unit || "元"; }
+    else x.pend = addTokens(x.pend || {}, e);
   }
   return l;
-}
-function apiById(id) {
-  if (id === "env-chat") return envApi("chat");
-  if (id === "env-worker") return envApi("worker");
-  return apisConf().list.find(a => a.id === id) || null;
 }
 function budgetConf() { const b = readJson("budget", null) || {}; return { amount: Number.isFinite(b.amount) && b.amount > 0 ? b.amount : null }; }
 function budgetState(now) {
   const l = ledger() || ledgerSeed();
-  const unit = (activeApi("chat").price || PRICE0).unit || "元";
+  const unit = normUnit((activeApi("chat").price || PRICE0).unit);
   const p = localParts(now);
   const month = `${p.y}-${String(p.mo).padStart(2, "0")}`;
   const dim = new Date(Date.UTC(p.y, p.mo, 0)).getUTCDate();
+  /* 每天的钱都是记账时就算好的，这里只是加起来 */
   const costOf = day => {
-    let c = 0, other = 0;
-    for (const [id, e] of Object.entries(l.days[day] || {})) {
-      const a = apiById(id);
-      const price = a && a.price && (a.price.in || a.price.out) ? a.price : (e.price || PRICE0);
-      const v = priceOf({ price }, e);
-      if ((price.unit || "元") === unit) c += v; else other += v;
+    let c = 0, other = 0, peak = 0, pend = 0;
+    for (const e of Object.values(l.days[day] || {})) {
+      if (normUnit(e.unit || unit) === unit) { c += e.cost || 0; peak += e.peakCost || 0; } else other += e.cost || 0;
+      if (e.pend) pend += (e.pend.in || 0) + (e.pend.out || 0);
     }
-    return { c, other };
+    return { c, other, peak, pend };
   };
   const days = [];
-  let spent = 0, other = 0;
+  let spent = 0, other = 0, peakSpent = 0, pending = 0;
   for (let d = 1; d <= p.d; d++) {
     const key = `${month}-${String(d).padStart(2, "0")}`;
     const x = costOf(key);
-    spent += x.c; other += x.other;
+    spent += x.c; other += x.other; peakSpent += x.peak; pending += x.pend;
     days.push({ day: key, cost: +x.c.toFixed(4) });
   }
   /* 预测：这个月过了三天以上就按这个月的速度；不然看最近七天 */
@@ -364,7 +418,7 @@ function budgetState(now) {
   const conf = budgetConf();
   const chat = activeApi("chat");
   return {
-    month, unit, spent: +spent.toFixed(4), other: +other.toFixed(4), days, dim, today: p.d,
+    month, unit, spent: +spent.toFixed(4), other: +other.toFixed(4), peak: +peakSpent.toFixed(4), pending, days, dim, today: p.d,
     forecast: +forecast.toFixed(2), amount: conf.amount, auto: conf.amount == null,
     budget: conf.amount != null ? conf.amount : Math.ceil(forecast * 1.2 * 10) / 10,
     over: conf.amount != null && spent >= conf.amount,
@@ -816,7 +870,7 @@ function mailDate(ms) {
 }
 /* 一次 SMTP 对话。按顺序发命令、等回码，哪一步不对就中断 */
 /* connectFn 只是为了能测 —— 跑起来的时候永远是上面那个 tls.connect */
-function smtpSend(conf, to, subject, body, connectFn) {
+function smtpSend(conf, to, subject, body, connectFn, attachments) {
   return new Promise((resolve, reject) => {
     const lines = [];
     let sock = null, done = false;
@@ -826,19 +880,29 @@ function smtpSend(conf, to, subject, body, connectFn) {
       try { if (sock) sock.destroy(); } catch {}
       err ? reject(err) : resolve(ok);
     };
-    const timer = setTimeout(() => finish(new Error("SMTP 超时（20 秒没说完）")), 20000);
-    const mailBody = Buffer.from(String(body || ""), "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
-    const msg = [
+    const timer = setTimeout(() => finish(new Error("SMTP 超时（" + (attachments ? 120 : 20) + " 秒没说完）")), attachments ? 120000 : 20000);
+    const b64 = buf => Buffer.from(buf).toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const mailBody = b64(Buffer.from(String(body || ""), "utf8"));
+    const head = [
       `From: ${mimeWord(conf.name)} <${conf.from}>`,
       `To: <${to}>`,
       `Subject: ${mimeWord(subject)}`,
       `Date: ${mailDate(Date.now())}`,
       `Message-ID: <${crypto.randomBytes(12).toString("hex")}@${(conf.from.split("@")[1] || "wu.local")}>`,
       "MIME-Version: 1.0",
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: base64",
-      "", mailBody,
-    ].join("\r\n");
+    ];
+    /* 带附件（自动备份用）就拼成 multipart/mixed：正文一块，每个附件一块 */
+    const att = Array.isArray(attachments) ? attachments.filter(a => a && a.name && a.content) : [];
+    const bd = "wu-" + crypto.randomBytes(8).toString("hex");
+    const msg = (att.length ? [
+      ...head, `Content-Type: multipart/mixed; boundary="${bd}"`, "",
+      "--" + bd, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", mailBody,
+      ...att.flatMap(a => ["--" + bd,
+        `Content-Type: ${a.type || "application/octet-stream"}; name="${mimeWord(a.name)}"`,
+        `Content-Disposition: attachment; filename="${mimeWord(a.name)}"`,
+        "Content-Transfer-Encoding: base64", "", b64(a.content)]),
+      "--" + bd + "--",
+    ] : [...head, "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", mailBody]).join("\r\n");
     /* 正文里单独一行的点会被当成结束符，按规矩前面再加一个点 */
     const safeMsg = msg.replace(/\r\n\./g, "\r\n..");
     const steps = [
@@ -899,6 +963,106 @@ async function sendMail(to, subject, body) {
   } catch (e) {
     return "没寄成：" + String((e && e.message) || e).slice(0, 200);
   }
+}
+
+/* ================= 自动备份 =================
+   她：「自动备份不花钱的话，那就做吧」「15 天备份一次」。
+   · 谁来备：服务器自己，每 15 天一次，挑夜里三四点
+   · 寄到哪：她在「写信出去」里填的收件地址（就是他给她寄信的那个）；没填收件地址就寄回发件那个邮箱
+   · 花钱吗：不花，用的是她自己的邮箱
+   · 备什么：跟「下载（不含照片）」一样，但**不带密码和各种 Key**（邮件里放明文钥匙不安全）；
+     照片太大、邮件附件装不下，隔一阵手动「下载全部」
+   · 拿这份恢复时，它空着的那些钥匙保留服务器上现有的，不会被清掉
+   data/backupauto.json = { on, every(天), last, ok, err, size, to } */
+const SECRET_FILES = new Set(["auth", "hook", "push"]);   // 密码、快捷指令和 Claude 的钥匙、推送的私钥
+const SECRET_FIELD = /^(key|pass|password|token|secret|apikey|api_key|authorization|privatekey|private)$/i;
+function scrubSecrets(v) {
+  if (Array.isArray(v)) return v.map(scrubSecrets);
+  if (!v || typeof v !== "object") return v;
+  const o = {};
+  for (const [k, x] of Object.entries(v)) o[k] = SECRET_FIELD.test(k) && typeof x === "string" ? "" : scrubSecrets(x);
+  return o;
+}
+function buildBackup({ files = false, secrets = true } = {}) {
+  const out = { app: "wu-with-you", version: 2, at: new Date().toISOString(), ...(secrets ? {} : { noSecrets: true }), data: {}, files: {} };
+  for (const f of fs.readdirSync(DATA_DIR)) {
+    if (!f.endsWith(".json")) continue;
+    const k = f.replace(/\.json$/, "");
+    if (!secrets && SECRET_FILES.has(k)) continue;
+    try { const v = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf8")); out.data[k] = secrets ? v : scrubSecrets(v); } catch {}
+  }
+  if (files && fs.existsSync(UPLOAD_DIR)) {
+    for (const f of fs.readdirSync(UPLOAD_DIR)) {
+      try {
+        const fp = path.join(UPLOAD_DIR, f);
+        if (fs.statSync(fp).size > 8 * 1024 * 1024) continue;   // 单个超 8MB 的跳过
+        out.files[f] = fs.readFileSync(fp).toString("base64");
+      } catch {}
+    }
+  }
+  return out;
+}
+/* 拿不带钥匙的备份恢复：备份里空着的钥匙，用服务器上现有的补上 */
+function keepSecrets(bak, cur) {
+  if (Array.isArray(bak)) {
+    return bak.map((x, i) => {
+      const twin = Array.isArray(cur) ? (x && x.id != null ? cur.find(c => c && c.id === x.id) : cur[i]) : undefined;
+      return keepSecrets(x, twin);
+    });
+  }
+  if (!bak || typeof bak !== "object") return bak;
+  const o = {};
+  for (const [k, x] of Object.entries(bak)) {
+    const c = cur && typeof cur === "object" ? cur[k] : undefined;
+    o[k] = SECRET_FIELD.test(k) && x === "" && typeof c === "string" && c ? c : keepSecrets(x, c);
+  }
+  return o;
+}
+function backupAuto() {
+  const b = readJson("backupauto", null) || {};
+  return { on: b.on !== false, every: Number(b.every) > 0 ? Number(b.every) : 15, last: Number(b.last) || 0,
+    ok: b.ok !== false, err: String(b.err || ""), size: Number(b.size) || 0, to: String(b.to || "") };
+}
+function backupDest() { const c = mailConf(); return String(c.to || c.user || "").trim(); }
+async function mailBackup() {
+  const c = mailConf(), st = backupAuto(), now = Date.now();
+  if (!c.user || !c.pass) return { ok: false, err: "还没配邮箱（设置 → 写信出去）" };
+  const dest = backupDest();
+  const bak = buildBackup({ files: false, secrets: false });
+  const json = Buffer.from(JSON.stringify(bak), "utf8");
+  const day = localDayKey(now);
+  const mb = (json.length / 1048576).toFixed(1);
+  let r;
+  if (json.length > 20 * 1048576) r = { ok: false, err: "备份有 " + mb + " MB，邮件附件装不下了 —— 先手动下载一份" };
+  else {
+    try {
+      await smtpSend(c, dest, "晤 · 自动备份 " + day,
+        "这是「晤 · With You」每 " + st.every + " 天一次的自动备份（" + mb + " MB）。\n\n" +
+        "里面有：聊天记录、日记、信、记忆、长期资料、人设、经期、各种设置。\n" +
+        "没有：照片（太大，隔一阵在设置里手动「下载全部」），以及密码和各种 Key（放在邮件里不安全）。\n\n" +
+        "要用的时候：设置 → 备份与搬家 → 恢复 → 选这个附件。\n" +
+        "拿它恢复不会清掉服务器上现有的 Key；搬到新地方的话，Key 要重新填一次。",
+        undefined, [{ name: "wu-backup-" + day + ".json", content: json, type: "application/json" }]);
+      r = { ok: true };
+    } catch (e) { r = { ok: false, err: String((e && e.message) || e).slice(0, 200) }; }
+  }
+  writeJson("backupauto", { ...readJson("backupauto", null), on: st.on, every: st.every,
+    last: r.ok ? now : st.last, ok: r.ok, err: r.ok ? "" : r.err, size: json.length, to: dest, tried: now });
+  if (!r.ok) console.error("backup mail:", r.err);
+  return { ...r, size: json.length, to: dest };
+}
+/* 每小时看一眼：开着、配了邮箱、到了 15 天、而且是夜里三四点 */
+let backupBusy = false;
+async function backupTick() {
+  const st = backupAuto(), c = mailConf(), now = Date.now();
+  if (backupBusy || !st.on || !c.user || !c.pass) return;
+  const h = localParts(now).hh;
+  if (h !== 3 && h !== 4) return;
+  if (now - st.last < st.every * 86400000 - 3 * 3600000) return;
+  const tried = Number((readJson("backupauto", null) || {}).tried) || 0;
+  if (now - tried < 20 * 3600000 && !st.ok) return;   // 失败了明天夜里再试，别一小时一封
+  backupBusy = true;
+  try { await mailBackup(); } finally { backupBusy = false; }
 }
 
 /* ================= 她的身体 =================
@@ -3156,6 +3320,10 @@ const server = http.createServer(async (req, res) => {
       const price = { ...PRICE0 };
       for (const k of ["in", "out", "cacheRead", "cacheWrite"]) price[k] = Math.max(0, +body[k] || 0);
       price.unit = String(body.unit || "元").slice(0, 4);
+      if (body.peak && typeof body.peak === "object") {
+        price.peak = { on: body.peak.on === true, times: String(body.peak.times || "").slice(0, 120),
+          weekdays: body.peak.weekdays !== false, x: Math.min(10, Math.max(1, +body.peak.x || 2)) };
+      }
       const chat = activeApi("chat");
       if (chat.fromEnv) writeJson("envprice", { price });
       else {
@@ -3163,7 +3331,9 @@ const server = http.createServer(async (req, res) => {
         const a = conf.list.find(x => x.id === chat.id);
         if (a) { a.price = price; saveApis(conf); }
       }
-      sendJson(res, 200, budgetState(Date.now()));
+      /* 填价格之前攒下的那些，按这回的价格补算一次（之后再改价格就不动了） */
+      const settled = settlePending(chat.id, price);
+      sendJson(res, 200, { ...budgetState(Date.now()), settled });
       return;
     }
     if (p === "/api/memconf" && req.method === "GET") { sendJson(res, 200, { auto: memAuto() }); return; }
@@ -3284,21 +3454,7 @@ const server = http.createServer(async (req, res) => {
        所以必须能一键打包带走，将来在任何地方十分钟就能原样长回来。 */
     if (p === "/api/backup" && req.method === "GET") {
       const withFiles = url.searchParams.get("files") === "1";
-      const out = { app: "wu-with-you", version: 2, at: new Date().toISOString(), data: {}, files: {} };
-      for (const f of fs.readdirSync(DATA_DIR)) {
-        if (!f.endsWith(".json")) continue;
-        try { out.data[f.replace(/\.json$/, "")] = JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), "utf8")); } catch {}
-      }
-      if (withFiles && fs.existsSync(UPLOAD_DIR)) {
-        for (const f of fs.readdirSync(UPLOAD_DIR)) {
-          try {
-            const fp = path.join(UPLOAD_DIR, f);
-            if (fs.statSync(fp).size > 8 * 1024 * 1024) continue;   // 单个超 8MB 的跳过
-            out.files[f] = fs.readFileSync(fp).toString("base64");
-          } catch {}
-        }
-      }
-      const body = JSON.stringify(out);
+      const body = JSON.stringify(buildBackup({ files: withFiles, secrets: true }));
       const name = "wu-backup-" + new Date().toISOString().slice(0, 10) + (withFiles ? "-full" : "") + ".json";
       res.writeHead(200, {
         "Content-Type": "application/json; charset=utf-8",
@@ -3314,7 +3470,8 @@ const server = http.createServer(async (req, res) => {
       let keys = 0, files = 0;
       for (const [k, v] of Object.entries(body.data)) {
         if (!/^[\w-]{1,40}$/.test(k)) continue;
-        writeJson(k, v); keys++;
+        /* 邮件里那份自动备份不带钥匙：空着的钥匙用现在的补上，别把它们清掉 */
+        writeJson(k, body.noSecrets ? keepSecrets(v, readJson(k, null)) : v); keys++;
       }
       for (const [name, b64] of Object.entries(body.files || {})) {
         const safe = path.basename(String(name));
@@ -3322,9 +3479,27 @@ const server = http.createServer(async (req, res) => {
         try { fs.writeFileSync(path.join(UPLOAD_DIR, safe), Buffer.from(b64, "base64")); files++; } catch {}
       }
       /* 备份里带着 auth（密码），恢复后密码回到备份时那个，现在的登录会失效 —— 这是对的，要说清楚 */
-      sendJson(res, 200, { ok: true, keys, files, note: "恢复完了，要重新输一次密码（备份时用的那个）" });
+      sendJson(res, 200, { ok: true, keys, files, note: body.noSecrets
+        ? "恢复完了。这份是邮件里的自动备份，不带密码和 Key —— 原来的都还在"
+        : "恢复完了，要重新输一次密码（备份时用的那个）" });
       return;
     }
+    if (p === "/api/backup/auto" && req.method === "GET") {
+      const st = backupAuto(), c = mailConf();
+      sendJson(res, 200, { ...st, mailReady: !!(c.user && c.pass), dest: backupDest(),
+        next: st.last ? st.last + st.every * 86400000 : 0 });
+      return;
+    }
+    if (p === "/api/backup/auto" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 1024) || "{}");
+      const cur = readJson("backupauto", null) || {};
+      writeJson("backupauto", { ...cur, ...(typeof body.on === "boolean" ? { on: body.on } : {}),
+        ...(Number(body.every) >= 1 && Number(body.every) <= 90 ? { every: Math.round(Number(body.every)) } : {}) });
+      sendJson(res, 200, backupAuto());
+      return;
+    }
+    /* 现在就寄一份（试一下能不能收到） */
+    if (p === "/api/backup/mail" && req.method === "POST") { sendJson(res, 200, await mailBackup()); return; }
     if (p === "/api/backup/size" && req.method === "GET") {
       let jsonBytes = 0, fileBytes = 0, fileCount = 0;
       for (const f of fs.readdirSync(DATA_DIR)) {
@@ -4093,6 +4268,8 @@ const server = http.createServer(async (req, res) => {
 /* 总闹钟：每 5 分钟看一眼有没有到点的事。绝大多数时候那道门会拦下来，
    连模型都不会惊动 —— 真正花钱的唤醒一天也就三五次 */
 setInterval(() => { wakeTick().catch(e => console.error("wake:", e.message)); }, 60 * 1000);
+/* 自动备份：每小时看一眼到没到 15 天（只在夜里三四点寄） */
+setInterval(() => { backupTick().catch(e => console.error("backup:", e.message)); }, 60 * 60 * 1000);
 /* 刚启动时也看一眼：服务器重启期间可能有攒下的 */
 setTimeout(() => { wakeTick().catch(() => {}); }, 30 * 1000);
 
