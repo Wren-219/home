@@ -15,7 +15,7 @@
    | `WORKER_API_KEY` | `AIza...` | 选填，后台杂务模型 Key（不配则共用聊天模型） |
    | `WORKER_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | 选填，例：Gemini 免费额度 |
    | `WORKER_MODEL` | `gemini-2.5-flash-lite` | 选填 |
-   | `HISTORY_BUDGET` | `30000` | 选填，每轮送给模型的聊天历史额度（token）。不再按"最近 N 条"截断，短消息能留几百条 |
+   | `HISTORY_BUDGET` | `30000` | 选填，每轮送给模型的聊天历史额度（token）。超了一次砍掉三成（不是每轮挤掉一句），缓存才接得上 |
    | `WU_PIN` | `0527` | 选填，四位页面密码。**设了就以它为准**，忘记密码时用它找回；不设则用服务器上 `data/auth.json` 里的（默认 0527，可在设置页里改） |
    | `WU_TZ_OFFSET` | `8` | 选填，你所在的时区（东八区是 8）。容器默认跑在 UTC，不设这个晤会把你晚上十点说的话当成下午两点 |
 
@@ -54,7 +54,9 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
   一年期的 HttpOnly cookie；改密码会让其他设备上的旧登录立刻失效
 - 清单 / 倒数日 / 日记 / 信箱 / 照片 / 聊天记录存在服务器（`/app/data`），
   localStorage 作离线兜底
-- 记忆系统：遗忘曲线 / 回忆强化 / 情绪打标 / dream 整理，聊天时自动注入
+- 记忆系统：遗忘曲线 / 回忆强化 / 情绪打标 / dream 整理。**跟聊天连不连有个开关**（记忆页顶上，默认断开）：
+  断开时不自动蒸馏聊天、不把卡片塞给他、屋里也不给他 `remember`，人设里那句「系统会在【你的记忆】里…」也拿掉；
+  卡片、手动记一笔、Claude 那边的 recall / remember 都照旧
 - 长期文件（手机「记忆 → 长期文件」，或 `/admin` → 长期文件）：**常驻**文件每轮完整注入，
   排在稳定前缀里吃满缓存；**备查**文件不占每轮额度，晤用 `list_docs` / `read_doc` 按需去翻。
   支持导入 `.txt` / `.md` / `.json` / `.docx`（docx 用 Node 自带 zlib 解压后抠正文，无第三方依赖）
@@ -114,7 +116,7 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
   服务端发给模型前才从 `/files/` 读出来转 base64：Claude 走 `image` 块，OpenAI 格式走
   `image_url` + data URL。每套 API 有「看得懂图片」开关 —— Claude 默认开，OpenAI 格式默认关
   （DeepSeek 看不了，发图会报错）；关着时他只收到「发来了 N 张照片（你这边看不到）」。
-  历史里只留最近 12 张是真图，字节不变，缓存接得上；只认 `/files/` 下的文件名
+  历史里的真图攒到 8 张就一次砍回最近 4 张（不是每来一张挤掉一张），字节不变，缓存接得上；只认 `/files/` 下的文件名
 - **真推送**（设置 → 推送）：零依赖手写的 Web Push。VAPID（RFC 8292，P-256 + ES256 JWT，
   签名必须是裸 r||s）+ 加密（RFC 8291，ECDH → HKDF → AES-128-GCM）+ 封装（RFC 8188）。
   HKDF 用 Node 内建的 `crypto.hkdfSync`，不自己写。`sw.js` 在根目录，由现成的静态路由托管。

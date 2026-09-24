@@ -11,7 +11,7 @@ const SIG = 'sig-ok';
 const bad = (res, message) => { res.writeHead(400, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } })); };
 http.createServer((req, res) => {
-  let b = ''; req.on('data', c => b += c); req.on('end', async () => {
+  let b = ''; req.setEncoding('utf8'); req.on('data', c => b += c); req.on('end', async () => {
     let body = {}; try { body = JSON.parse(b || '{}'); } catch {}
     const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, 'utf8')) : [];
     log.push(body); fs.writeFileSync(LOG, JSON.stringify(log, null, 1));

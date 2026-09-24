@@ -3,7 +3,7 @@ const { WORK } = require('./env');
 const http = require('http'), fs = require('fs');
 const P = WORK + '/plan.json';
 http.createServer((req, res) => {
-  let b = ''; req.on('data', c => b += c); req.on('end', () => {
+  let b = ''; req.setEncoding('utf8'); req.on('data', c => b += c); req.on('end', () => {
     let body = {}; try { body = JSON.parse(b || '{}'); } catch {}
     fs.writeFileSync(WORK + '/last.json', JSON.stringify(body, null, 2));
     const plan = fs.existsSync(P) ? JSON.parse(fs.readFileSync(P, 'utf8')) : { steps: ['{"say":false}'] };

@@ -1126,6 +1126,11 @@
         </div>
 
         <div id="memCards">
+        <div class="sw-row mem-auto">
+          <span class="lb">跟聊天连起来</span>
+          <button class="sw" id="swMemAuto" onclick="toggleMemAuto()"></button>
+        </div>
+        <div class="set-note" id="memAutoNote" style="margin:-2px 2px 10px"></div>
         <div class="mem-stats" id="memStats"></div>
         <div class="lt-tabs mem-tabs" id="memTabs">
           <button class="lt-tab active" data-t="全部">全部</button>
@@ -1275,7 +1280,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.9（叫他喊你他会真的喊 · 会看钟了 · 聊天打开就在最新一条）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.10（长聊天不再乱码、缓存接得上 · 图片攒够了才换 · 记忆可以先断开）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -3553,8 +3558,11 @@ function callLines(m) {
 }
 function toApiMessages() {
   const msgs = [];
-  /* 送足够多，具体留多少由服务器按额度决定 */
-  chatLog.slice(-600).forEach(m => {
+  /* 送足够多，具体留多少由服务器按额度决定。
+     超过 600 条时一次往后挪 200 条（以前是 slice(-600)，每来一条开头就挪一条，缓存每轮都废）。
+     ⚠️ 跟 server.js 的 histFrom() 是同一条规则 */
+  const from = chatLog.length <= 600 ? 0 : Math.floor((chatLog.length - 400) / 200) * 200;
+  chatLog.slice(from).forEach(m => {
     if (m.k === "me") msgs.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
     else if (m.k === "ai") msgs.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
     else if (m.k === "call") msgs.push(...callLines(m));
@@ -4013,7 +4021,29 @@ async function memAll() {
     .map(c => ({ ...c, eff: +memEffLocal(c).toFixed(3) }))
     .sort((a, b) => (b.created || "").localeCompare(a.created || ""));
 }
+/* 记忆跟聊天连不连（服务器上存着，默认不连） */
+let MEM_AUTO = false;
+function memAutoPaint() {
+  document.getElementById("swMemAuto").classList.toggle("on", MEM_AUTO);
+  document.getElementById("memAutoNote").textContent = MEM_AUTO
+    ? "连着：每聊几轮自动把值得记的整理成卡片，每轮把相关的几张带给他，他也能自己记。"
+    : "断开：不自动整理聊天，也不把卡片带给他。这里的卡片还在，手动记一笔也照旧；Claude 那边的记忆工具不受影响。";
+}
+async function memAutoLoad() {
+  if (!SERVER) return;
+  try { MEM_AUTO = !!(await (await fetch("api/memconf")).json()).auto; } catch {}
+  memAutoPaint();
+}
+async function toggleMemAuto() {
+  const want = !MEM_AUTO;
+  try {
+    const r = await fetch("api/memconf", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ auto: want }) });
+    MEM_AUTO = !!(await r.json()).auto;
+  } catch { toast("没连上服务器"); }
+  memAutoPaint();
+}
 async function memRefresh() {
+  memAutoLoad();
   memCache = await memAll();
   const list = memCache.filter(c => memCur === "全部" || c.type === memCur);
   document.getElementById("memStats").textContent = (memCache.length

@@ -30,12 +30,13 @@ const SUITE = [
   ['界面', 'layout-keyboard', '底部空带、键盘顶导航栏、键盘开着点发送', true, {}],
   ['界面', 'chat-open', '打开聊天停在最新一条；开着 app 也收得到他的话', true, { apis: API_M1 }, OPENAI],
   ['界面', 'thinking-ui', '思考过程的展开 / 收起', true, { apis: API_M1, plan: THINK }, ['mock-think.js']],
-  ['界面', 'vision', '看图：小图、字节不变、开关、只留 12 张', true, { apis: NO_API }, ['mock-claude.js', 'mock-openai-log.js']],
+  ['界面', 'vision', '看图：小图、字节不变、开关、攒 8 张砍回 4 张', true, { apis: NO_API }, ['mock-claude.js', 'mock-openai-log.js']],
   ['界面', 'period-ui', '「她的身体」页面', true, { period: P4 }],
   ['界面', 'calendar-period', '日历上标经期', true, { period: { ...P4, list: P4.list.slice(1) } }],
   ['界面', 'search-ui', '「上网」设置页', true, {}],
   ['模型', 'claude-dialect', 'Claude 格式：不发 temperature、思考开关', true, { apis: API_M1 }, ['mock-claude.js']],
   ['模型', 'thinking-tools', '会思考的模型调工具：思考原样带回，闹钟设得上', true, { apis: API_M1 }, ['mock-claude.js', 'mock-think.js']],
+  ['模型', 'cache-stable', '聊得很长以后缓存还接得上；记忆断开就一点不塞', true, { apis: API_M1, env: { WORKER_API_KEY: 'sk-test' } }, ['mock-openai-log.js']],
   ['模型', 'wake-cache', '唤醒和聊天的缓存前缀逐字相同', true, { apis: API_M1 }, ['mock-openai-log.js']],
   ['模型', 'search-api', '上网：三家搜索、读网页、钥匙只进不出', true, {}],
   ['唤醒', 'alarm-hidden', '他偷偷设闹钟，她看不见', true, { apis: API_M1 }, OPENAI],
@@ -75,7 +76,7 @@ async function runOne([group, name, desc, needServer, seed = {}, mocks = []], ve
     if (needServer) {
       const log = fs.openSync(path.join(WORK, 'srv.log'), 'w');
       kids.push(spawn('node', ['-r', path.join(LIB, 'fakenet.js'), path.join(ROOT, 'server.js')],
-        { cwd: WORK, env: { ...process.env, DATA_DIR: DAT, PORT: '8081' }, stdio: ['ignore', log, log] }));
+        { cwd: WORK, env: { ...process.env, DATA_DIR: DAT, PORT: '8081', ...(seed.env || {}) }, stdio: ['ignore', log, log] }));
       await sleep(1800);
     }
     const out = await new Promise(res => {

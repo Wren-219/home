@@ -5,7 +5,7 @@ const { WORK } = require('./env');
 const http = require('http'), fs = require('fs');
 const P = WORK + '/plan.json', LOG = WORK + '/treqs.json';
 http.createServer((req, res) => {
-  let b = ''; req.on('data', c => b += c); req.on('end', async () => {
+  let b = ''; req.setEncoding('utf8'); req.on('data', c => b += c); req.on('end', async () => {
     let body = {}; try { body = JSON.parse(b || '{}'); } catch {}
     const log = fs.existsSync(LOG) ? JSON.parse(fs.readFileSync(LOG, 'utf8')) : [];
     log.push(body); fs.writeFileSync(LOG, JSON.stringify(log));

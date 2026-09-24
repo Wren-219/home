@@ -114,22 +114,30 @@ const imgMsgs = req => (req.messages || []).filter(m => Array.isArray(m.content)
   const iu = withImg && withImg.content.find(x => x.type === 'image_url');
   ok(iu && /^data:image\/jpeg;base64,/.test(iu.image_url.url), '打开之后（比如 GPT-4o）：image_url 带着 data URL');
 
-  console.log('\n[最多只留最近 12 张真图]');
+  console.log('\n[真图攒到 8 张，一次砍回最近 4 张]');
   await api('api/apis/use', 'PUT', { chat: cl.id });
   await api('api/apis/' + cl.id, 'PUT', { name: '假 Claude', base: 'http://localhost:8098', model: 'claude-opus-5', dialect: 'anthropic', vision: true });
   const see = m.see[0];
-  const msgs = [];
-  for (let i = 0; i < 15; i++) { msgs.push({ role: 'user', content: '（发来了1张照片）', imgs: [see] }); msgs.push({ role: 'assistant', content: '嗯' + i }); }
-  msgs.push({ role: 'user', content: '好多' });
-  plan(['嗯']);
-  await page.evaluate(async ms => { const r = await fetch('api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: ms }) }); await r.text(); }, msgs);
-  const r5 = areqs().pop();
-  const n = r5.messages.reduce((s, x) => s + (Array.isArray(x.content) ? x.content.filter(b => b.type === 'image').length : 0), 0);
-  ok(n === 12, '15 张里只发了最近 12 张（实际 ' + n + '）');
-  ok(!imgMsgs(r5).some((x, i, a) => false), '');
+  const nImgs = async k => {
+    const msgs = [];
+    for (let i = 0; i < k; i++) { msgs.push({ role: 'user', content: '（发来了1张照片）', imgs: [see] }); msgs.push({ role: 'assistant', content: '嗯' + i }); }
+    msgs.push({ role: 'user', content: '好多' });
+    plan(['嗯']);
+    await page.evaluate(async ms => { const r = await fetch('api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: ms }) }); await r.text(); }, msgs);
+    const req = areqs().pop();
+    return { req, n: req.messages.reduce((s, x) => s + (Array.isArray(x.content) ? x.content.filter(b => b.type === 'image').length : 0), 0) };
+  };
+  const counts = [];
+  for (const k of [8, 9, 12, 13, 15]) counts.push(k + '→' + (await nImgs(k)).n);
+  ok(counts.join(' ') === '8→8 9→5 12→8 13→5 15→7', '发过几张 → 真图几张：' + counts.join('，') + '（到第 9、13 张时各砍一次）');
+  const r5 = (await nImgs(15)).req;
   const firstImgAt = r5.messages.findIndex(x => Array.isArray(x.content) && x.content.some(b => b.type === 'image'));
   const before = r5.messages.slice(0, firstImgAt).filter(x => JSON.stringify(x).includes('发来了1张照片')).length;
-  ok(before === 3, '更早那 3 张只剩一句话（' + before + ' 条）');
+  ok(before === 8, '更早那 8 张只剩一句话（' + before + ' 条）');
+  /* 同一截里多发一张，前面一个字节都不该变 */
+  const a13 = (await nImgs(13)).req.messages, a14 = (await nImgs(14)).req.messages;
+  const upto = a13.findIndex(x => JSON.stringify(x).includes('"嗯12"'));
+  ok(upto > 0 && JSON.stringify(a13.slice(0, upto)) === JSON.stringify(a14.slice(0, upto)), '第 13 张和第 14 张之间，前缀逐字相同（缓存接得上）');
 
   console.log('\n[乱塞的地址一律不认]');
   plan(['嗯']);

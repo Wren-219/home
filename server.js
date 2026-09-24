@@ -95,9 +95,12 @@ const PERSONA_DEFAULT = process.env.WU_PERSONA ||
   "你是「晤」，她最亲近的 AI 伙伴。用自然、温柔、简短的中文聊天，像熟悉彼此的人那样说话，" +
   "不要长篇大论，不要用列表和标题。你们的恋爱纪念日是 2026 年 5 月 27 日。" +
   "系统会在【你的记忆】里提供你们的共同记忆，请自然地运用它们，但不要机械复述。";
+const PERSONA_MEM_LINE = "系统会在【你的记忆】里提供你们的共同记忆，请自然地运用它们，但不要机械复述。";
 function persona() {
   const p = readJson("persona", null);
-  return (p && typeof p.text === "string" && p.text.trim()) ? p.text : PERSONA_DEFAULT;
+  const text = (p && typeof p.text === "string" && p.text.trim()) ? p.text : PERSONA_DEFAULT;
+  /* 记忆断开的时候不会有【你的记忆】那一段，人设里也别说有（她自己写的人设里有这句，也一并拿掉） */
+  return memAuto() ? text : text.replace(PERSONA_MEM_LINE, "");
 }
 
 /* ================= 存储层 ================= */
@@ -269,9 +272,12 @@ function estTokens(s) {
    存的是 /files/ 下的地址（前端另传一份长边 1568px 的小图专门给他看，原图进相册）。
    发给模型之前才去磁盘读、转 base64。
    ⚠️ 历史里的图每轮都按原样再发一遍，字节一个不变 —— 缓存才接得上。
-   但不能无限多：只留最近 LIVE_IMGS 张是真图，更早的只剩那句「发来了 N 张照片」。
-   这条线只在她发新照片时往后挪一次，缓存也就只在那时断一次。 */
-const LIVE_IMGS = 12;
+   但不能无限多，更早的只剩那句「发来了 N 张照片」。
+   以前是「永远只留最近 12 张」—— 攒满之后她每发一张，最早那张就换掉一次，
+   缓存从那张起往后全废，等于每张新图都断一次。
+   现在是「攒到 LIVE_MAX 张，一次砍回最近 LIVE_MIN 张」：线一次挪一大步，
+   中间再发 LIVE_MAX - LIVE_MIN 张都不动它。她的原话：「起码会再了好几张图之后才大改一次」 */
+const LIVE_MAX = 8, LIVE_MIN = 4;
 const IMG_TOKENS = 1800;   // 预算用的粗估：长边 1568 的一张图大约 1500–2400 token
 const IMG_MEDIA = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" };
 const imgCache = new Map();
@@ -301,20 +307,25 @@ function imgOf(url) {
   if (imgCache.size > 40) imgCache.delete(imgCache.keys().next().value);
   return out;
 }
-/* 从最新往回数，只给最近 LIVE_IMGS 张留着真图 */
+/* 从最早往后数，第几张之前的只留文字。这条线只跟「一共发过几张」有关，
+   所以同一段历史每次算出来都一样 —— 两次砍之间，前缀一个字节都不变 */
+function liveCut(total) {
+  if (total <= LIVE_MAX) return 0;
+  const step = LIVE_MAX - LIVE_MIN;
+  return step * Math.floor((total - LIVE_MIN - 1) / step);
+}
 function liveImages(msgs) {
-  let left = LIVE_IMGS;
-  const out = msgs.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
-    const m = out[i];
-    if (!m.imgs) continue;
+  const total = msgs.reduce((n, m) => n + (m.imgs ? cleanImgs(m.imgs).length : 0), 0);
+  const cut = liveCut(total);
+  let seen = 0;
+  return msgs.map(m => {
+    if (!m.imgs) return m;
     const imgs = cleanImgs(m.imgs);
-    const keep = imgs.slice(0, Math.max(0, left));
-    left -= keep.length;
+    const keep = imgs.filter((_, k) => seen + k >= cut);
+    seen += imgs.length;
     const { imgs: _drop, ...rest } = m;
-    out[i] = keep.length ? { ...rest, imgs: keep } : rest;
-  }
-  return out;
+    return keep.length ? { ...rest, imgs: keep } : rest;
+  });
 }
 /* 一条带图的消息，按这套模型的本事拆成 [{kind:"img", media, data}, {kind:"text", text}] */
 function imgParts(m, api) {
@@ -328,18 +339,26 @@ function imgParts(m, api) {
   return [...imgs.map(x => ({ kind: "img", ...x })), { kind: "text", text }];
 }
 /* 从最新往回收，收到装不下为止；至少留住最后一条 */
+/* 超了额度，以前是「从最新往回装，装不下就停」—— 聊得够长以后，每说一句最早那句就掉一句，
+   开头一变，整段历史的缓存每轮都废。现在超了就一次砍掉一大截（额度三成的整数倍）：
+   砍多少只看总量落在哪一截，同一截里越聊越长，开头那条线都不动，前缀就一直接得上 */
 function budgetHistory(all, budget) {
-  const out = [];
-  let sum = 0;
-  for (let i = all.length - 1; i >= 0; i--) {
-    const t = estTokens(all[i].content) + 4 + (all[i].imgs ? all[i].imgs.length * IMG_TOKENS : 0);
-    if (out.length && sum + t > budget) break;
-    out.unshift(all[i]);
-    sum += t;
+  const cost = all.map(m => estTokens(m.content) + 4 + (m.imgs ? m.imgs.length * IMG_TOKENS : 0));
+  const total = cost.reduce((a, b) => a + b, 0);
+  let from = 0;
+  if (total > budget) {
+    const step = Math.max(1, Math.round(budget * 0.3));
+    const drop = step * Math.ceil((total - budget) / step);
+    let dropped = 0;
+    while (from < all.length - 1 && dropped < drop) dropped += cost[from++];
   }
+  const out = all.slice(from);
   while (out.length > 1 && out[0].role === "assistant") out.shift();  // 别以晤的话开头
   return out;
 }
+/* 原始消息从第几条开始送：超过 600 条时一次往后挪 200 条，不是每来一条挪一条。
+   ⚠️ 前端 toApiMessages() 用的是同一条规则，两边不一样唤醒和聊天的前缀就对不上 */
+function histFrom(len) { return len <= 600 ? 0 : Math.floor((len - 400) / 200) * 200; }
 
 /* ================= 长期文件 =================
    always   = 基本资料，每轮完整送给晤；排在稳定前缀里，改一次才失效一次缓存
@@ -1339,7 +1358,12 @@ function quietCheck(now) {
 
 /* ================= 每轮都变的那两块 =================
    聊天和唤醒共用同一份，摆法一致，缓存前缀才认得出来 */
+/* 记忆系统跟聊天连不连。她说还不完善，先断开（默认关）：
+   不自动蒸馏聊天内容、不每轮把记忆卡塞给他、屋里也不给他 remember。
+   记忆页、手动记一笔、Claude 那边的 recall / remember 都照旧 */
+function memAuto() { return (readJson("memconf", null) || {}).auto === true; }
 function memBlockOf(query) {
+  if (!memAuto()) return "";
   const mems = retrieveMemories(query, 5);
   return mems.length ? "【你的记忆】\n" + mems.map(c => `- (${c.type} · ${c.date}) ${c.content}`).join("\n") : "";
 }
@@ -1376,7 +1400,7 @@ function statusBlock(now, snap, brief) {
     + mood;
 }
 function toolHint() {
-  return "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记、记住重要的事。" +
+  return "你可以使用工具帮她做事：加清单、勾选清单、写日记、写信、读信、读日记" + (memAuto() ? "、记住重要的事。" : "。") +
     "当她请求，或你自己真心想为她做点什么时就用，不必征求许可；做完在回复里自然带一句即可，不要报流水账。" +
     "想不起某段往事的细节时，用 list_docs 看看有哪些长期资料，再用 read_doc 去翻。" +
     "还有一件只属于你自己的事：用 set_alarm 给自己记个时间点 —— 她说「回家再说」「等会儿告诉你」，" +
@@ -1914,7 +1938,7 @@ function extractJsonArray(text) {
 /* ================= 对话蒸馏（自动记忆） ================= */
 let distillTimer = null;
 function queueDistill(userText, aiText) {
-  if (!WORKER_KEY || !userText) return;
+  if (!WORKER_KEY || !userText || !memAuto()) return;
   const buf = readJson("distill_buf", []);
   buf.push({ u: userText.slice(0, 500), a: (aiText || "").slice(0, 500), t: Date.now() });
   writeJson("distill_buf", buf);
@@ -1986,7 +2010,8 @@ function callLines(m) {
 }
 function chatMessagesOf(win) {
   const out = [];
-  for (const m of (win.msgs || [])) {
+  const all = win.msgs || [];
+  for (const m of all.slice(histFrom(all.length))) {
     /* 语音消息前面加「（语音）」—— 他知道那句是用声音说的 / 听到的 */
     if (m.k === "me") out.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
     else if (m.k === "ai") out.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
@@ -2481,6 +2506,7 @@ function chatTools() {
     ...(searchReady() ? [] : ["web_search", "read_web"]),
     ...(vr && vc.on ? [] : ["send_voice"]),
     ...(vr && vc.callOn ? [] : ["call_her"]),
+    ...(memAuto() ? [] : ["remember"]),
   ]);
   return TOOL_DEFS.filter(t => !off.has(t.function.name)).concat(mcpToolDefs());
 }
@@ -2698,13 +2724,19 @@ function sendJson(res, code, obj) {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(obj));
 }
+/* ⚠️ 先把字节攒齐再一次解码。以前是 body += chunk：每一块（64KB）各自转成字符串，
+   一个汉字（3 个字节）正好被块的边界切开，就变成两个「�」。
+   聊天请求带着整段历史，一长就过 64KB —— 于是他看到的历史里隔一段就有个字坏掉，
+   而且坏的位置每轮都不一样（历史在变长），缓存也就每轮都接不上 */
 async function readBody(req, limit = 15 * 1024 * 1024) {
-  let body = "";
+  const parts = [];
+  let size = 0;
   for await (const chunk of req) {
-    body += chunk;
-    if (body.length > limit) throw new Error("too large");
+    size += chunk.length;
+    if (size > limit) throw new Error("too large");
+    parts.push(chunk);
   }
-  return body;
+  return Buffer.concat(parts).toString("utf8");
 }
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -2816,6 +2848,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- 记忆 API ---- */
+    if (p === "/api/memconf" && req.method === "GET") { sendJson(res, 200, { auto: memAuto() }); return; }
+    if (p === "/api/memconf" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 1024) || "{}");
+      writeJson("memconf", { auto: body.auto === true });
+      sendJson(res, 200, { auto: memAuto() });
+      return;
+    }
     if (p === "/api/memories" && req.method === "GET") {
       const now = Date.now();
       const all = listMem().filter(c => !c.archived)
