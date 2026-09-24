@@ -261,6 +261,50 @@ function recordUsage(api, role, u) {
   return { ...u, cost, unit: t.unit, estimated: !!u.estimated };
 }
 
+/* ================= 缓存体检 =================
+   她的原话：「平时用的时候也不会出现什么异常，我这边也看不到什么不对劲，但它就是会让我多花很多很多钱」。
+   这种 bug 功能上都是对的，只在账上显形：连着聊（上一轮就在几分钟前、缓存还活着）的时候，
+   命中率本该很高。所以每轮都跟上一轮比一比 —— 开头要是变了，记下是在哪儿变的：
+     到额度砍了一截、攒够了换一批旧图、她改了人设、工具清单变了、她删改了消息 —— 这些是正常的；
+     命中率低却说不出原因的，才是 bug */
+const lastSig = new Map();   // 窗口 → 上一轮请求里能被缓存的那段长什么样（只在内存里，重启就从头比）
+function sigOf(x) { return crypto.createHash("sha1").update(JSON.stringify(x)).digest("base64").slice(0, 12); }
+function prefixBreak(winKey, messages, tools) {
+  /* 能被下一轮用上的，是最新那张纸条和她最新那句之前的部分 */
+  const stable = messages.filter(m => !m.wuVolatile).slice(0, -1);
+  const lead = stable.findIndex(m => m.role !== "system");
+  const cur = {
+    tools: sigOf(tools || []),
+    sys: lead < 0 ? stable.length : lead,
+    msgs: stable.map(m => ({ all: sigOf([m.role, m.content, m.imgs || null]), text: sigOf([m.role, m.content]) })),
+  };
+  const prev = lastSig.get(winKey);
+  lastSig.set(winKey, cur);
+  if (!prev) return null;
+  if (prev.tools !== cur.tools) return "工具清单变了";
+  let i = 0;
+  while (i < prev.msgs.length && i < cur.msgs.length && prev.msgs[i].all === cur.msgs[i].all) i++;
+  if (i >= prev.msgs.length) return null;   // 上一轮的原样都在，接得上
+  if (i < prev.sys) return i === 0 ? "人设改了" : "工具说明或常驻资料变了";
+  if (cur.msgs[i] && prev.msgs[i].text === cur.msgs[i].text) return "图片攒够了，换掉了一批旧图";
+  if (i === prev.sys) return "聊天记录开头挪了（到额度，砍了一截）";
+  return "聊天记录第 " + (i - prev.sys + 1) + " 条变了（删改过消息的话是正常的）";
+}
+function cacheStats() {
+  const WARM = 5 * 60000;   // Claude 的缓存默认只活 5 分钟，按最短的算
+  const chats = usageStore().recent.filter(e => e && e.role === "chat" && !e.estimated && e.in > 0);
+  const turns = [];
+  for (let k = 0; k < chats.length - 1 && turns.length < 30; k++) {
+    const e = chats[k], p = chats[k + 1];
+    if (e.api !== p.api || Date.parse(e.t) - Date.parse(p.t) > WARM) continue;   // 隔久了，缓存本来就过期了
+    const rate = (e.cacheRead || 0) / e.in;
+    turns.push({ t: e.t, api: e.api, in: e.in, cacheRead: e.cacheRead || 0, rate: +rate.toFixed(3), brk: e.brk || null,
+      bad: rate < 0.5 && e.in >= 2000 && !e.brk });
+  }
+  const sumIn = turns.reduce((n, x) => n + x.in, 0), sumHit = turns.reduce((n, x) => n + x.cacheRead, 0);
+  return { turns, rate: sumIn ? +(sumHit / sumIn).toFixed(3) : null, bad: turns.filter(x => x.bad).length };
+}
+
 /* ================= 上下文额度 =================
    不按"最近 N 条"截断，按装了多少截断：短消息能留几百条，长消息自动少留几条。
    零依赖的粗估：中日韩字符约 1 token，其余约 3.5 个字符 1 token —— 只用来做预算，不求精确 */
@@ -2852,6 +2896,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     /* ---- 记忆 API ---- */
+    if (p === "/api/cachestats" && req.method === "GET") { sendJson(res, 200, cacheStats()); return; }
     if (p === "/api/memconf" && req.method === "GET") { sendJson(res, 200, { auto: memAuto() }); return; }
     if (p === "/api/memconf" && req.method === "PUT") {
       const body = JSON.parse(await readBody(req, 1024) || "{}");
@@ -3624,6 +3669,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" });
       const dec = new TextDecoder();
       const allTools = chatTools();
+      /* 跟这个窗口上一轮比：能缓存的那段开头变了没有（见「缓存体检」） */
+      const brk = prefixBreak(String(payload.windowId || "-") + "|" + (chatApi.id || ""), messages, allTools);
       const usedTotal = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 };
       /* 单轮流式请求：内容边到边转发给前端；同时攒 tool_calls 与用量。
          两种方言的事件形状不同，在这里各解析各的，对外形状一致。 */
@@ -3737,6 +3784,7 @@ const server = http.createServer(async (req, res) => {
         usedTotal.out = estTokens(fullAcc);
         usedTotal.estimated = true;
       }
+      if (brk) usedTotal.brk = brk;
       const billed = recordUsage(chatApi, "chat", usedTotal);
       if (billed) res.write("data: " + JSON.stringify({ wu_usage: billed }) + "\n\n");
       res.write("data: [DONE]\n\n");

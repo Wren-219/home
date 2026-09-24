@@ -888,6 +888,11 @@
   .cost-row + .cost-row { border-top: 1px dashed rgba(168,178,196,.25); }
   .cost-row .nm { flex: 1; color: var(--ink); font-size: 13px; }
   .cost-row .amt { font-family: var(--serif); font-size: 15px; color: var(--blue-deep); }
+  .cache-box { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(168,178,196,.10); font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
+  .cache-box .big { font-family: var(--serif); font-size: 17px; color: var(--blue-deep); }
+  .cache-box.alarm { background: rgba(214,120,110,.12); }
+  .cache-box .bad { color: #C0605A; }
+  .cache-box .why { display: block; font-size: 11px; opacity: .85; }
   /* API 列表 */
   .api-item { border-radius: 18px; padding: 13px 16px; margin-bottom: 11px;
     background: var(--glass); border: 1px solid var(--glass-border);
@@ -1219,6 +1224,7 @@
             这段不会被当成对话记下来，也不会喂回给他 —— 只是给你看的。
           </div>
           <div id="costList" style="margin-top:6px"></div>
+          <div id="cacheBox" class="cache-box" style="display:none"></div>
           <div class="btn-row">
             <button class="btn ghost" onclick="usageClear()">清零统计</button>
             <button class="btn" onclick="openSub('apis')">管理 API</button>
@@ -1280,7 +1286,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.11（界面上换模型不用再填 Key）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.12（设置页能看缓存接上了没有）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -4287,6 +4293,7 @@ function fmtCost(c, unit) {
 }
 async function renderCost() {
   if (!SERVER) return;
+  renderCacheStats();
   let u;
   try { u = await (await fetch("api/usage")).json(); } catch { return; }
   const rows = Object.values(u.total || {});
@@ -4314,6 +4321,24 @@ async function renderCost() {
       el.appendChild(d);
     }
   } catch {}
+}
+/* 缓存接上了没有。连着聊（上一轮就在 5 分钟内）的时候本该大部分命中；
+   低了又说不出原因的那几轮，多半是 bug 在白花钱 */
+async function renderCacheStats() {
+  const box = document.getElementById("cacheBox");
+  if (!box || !SERVER) return;
+  let c;
+  try { c = await (await fetch("api/cachestats")).json(); } catch { return; }
+  box.style.display = "";
+  box.classList.toggle("alarm", c.bad > 0);
+  if (!c.turns || !c.turns.length) { box.textContent = "缓存：连着聊几轮之后，这里会显示命中了多少。"; return; }
+  const pct = v => Math.round(v * 100) + "%";
+  const when = t => { const d = new Date(t); return (d.getMonth() + 1) + "." + d.getDate() + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+  const esc = x => String(x).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const breaks = c.turns.filter(x => x.brk || x.bad).slice(0, 5);
+  box.innerHTML = `连着聊的最近 ${c.turns.length} 轮，缓存命中 <span class="big">${pct(c.rate)}</span>` +
+    (c.bad ? `<br><span class="bad">有 ${c.bad} 轮没接上、又说不出原因 —— 可能是 bug 在白花钱，截图给 Claude 看看</span>` : "") +
+    (breaks.length ? breaks.map(x => `<span class="why${x.bad ? " bad" : ""}">${when(x.t)} · 命中 ${pct(x.rate)} · ${esc(x.brk || "没找到原因")}</span>`).join("") : "");
 }
 async function usageClear() {
   try { await fetch("api/usage", { method: "DELETE" }); } catch {}
