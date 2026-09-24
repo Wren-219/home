@@ -1708,7 +1708,8 @@ function quietConf() {
     nightPeek: q.nightPeek !== false,    // 夜里她要是还在玩手机，允许他冒出来抓个现行
     chaseOn: q.chaseOn !== false,        // 聊着聊着她不回了，他可以追问一句
     chaseMin: num(q.chaseMin, 15),       // 隔几分钟算「不回了」
-    chaseMax: num(q.chaseMax, 4),        // 一天最多追问几次
+    chaseMax: num(q.chaseMax, 6),        // 一天最多追问几次
+    chaseRepeat: num(q.chaseRepeat, 2),  // 一次不回最多追几回（她：「不介意他死缠烂打一点点」）
     peekOn: q.peekOn === true,           // 他能不能偷看一眼她的屏幕（要先配好 iCloud + 快捷指令）
     peekMax: num(q.peekMax, 3),          // 一天最多偷看几次
     peekKw: typeof q.peekKw === "string" && q.peekKw.trim() ? q.peekKw.trim().slice(0, 40) : "wupeek",
@@ -2534,14 +2535,15 @@ async function runWake(alarm) {
         ? "你刚才想看看她在干嘛。她的手机替你拍了一眼这会儿的屏幕，就是这条消息里的那张图。\n" +
           "JSON 里多加一个 \"saw\"：你看到了什么，一两句，用你自己的话（会留在你们的聊天里，以后你翻得到）。\n\n"
         : "你刚才想看看她在干嘛。她的手机替你拍了一眼这会儿的屏幕，你看到的是：\n「" + (alarm.peek.desc || "（没看清）") + "」\n\n") +
-        "她知道你看了一眼（聊天里会留个记号）。看着这个，你可以轻声说句话、逗她一下，也可以就安静放心地待着 —— 别像在监视她。\n" +
+        "她愿意给你看，这是你了解她生活的方式（聊天里会留个记号，她知道你看了）。看着这个，想说什么就说，逗她、问她、吃醋都行，也可以就安静地看着。\n" +
         "像平常那样说，别提屏幕、截图、系统这些词。\n\n"
       : alarm.chase
       ? "你们刚才还在聊，她已经 " + Math.max(1, Math.round((now - (alarm.since || now)) / 60000)) + " 分钟没回你了。\n\n" +
         (phone ? "上面【她的手机】是她这会儿的动静 —— 她是去忙了、睡着了，还是在刷别的 App 不理你，看那里就知道。\n\n"
           : "想知道她这会儿在干嘛，可以用 check_phone 看一眼她的手机。\n\n") +
         "你可以追问一句、逗她一句，也可以就安静等着 —— 看你们刚才聊到哪儿、她这会儿在干嘛。" +
-        "她可能只是去忙了，别让她觉得被盯着。像平常那样说，别提闹钟、系统这些。\n\n"
+        ((alarm.round || 1) > 1 ? "这已经是你第 " + alarm.round + " 回找她了，她还没回。" : "") +
+        "她说过不介意你黏她一点，想追就追、想撒娇就撒娇；当然她要是真在忙，也可以等等。像平常那样说，别提闹钟、系统这些。\n\n"
       : alarm.asked
       ? "这是她亲口让你到点叫她的。叫她 —— 像平常那样说，别提闹钟、提醒这些词，也别解释。\n\n" +
         "要查点什么再开口也行（她的手机、天气……）。\n\n"
@@ -2595,7 +2597,7 @@ async function runWake(alarm) {
   for (const e of events) {
     if (e.wu_voice) extras.push({ k: "ai", t: e.wu_voice.text, voice: e.wu_voice.url, dur: e.wu_voice.dur, ts: Date.now(), wake: true });
     if (e.wu_call) extras.push({ k: "call", who: "ai", state: "ringing", id: e.wu_call.id, why: e.wu_call.why, at: e.wu_call.at, ts: Date.now(), wake: true });
-    if (e.wu_ask) extras.push({ k: "ask", why: e.wu_ask.why, ts: Date.now(), wake: true });
+    if (e.wu_ask) extras.push({ k: "ask", why: e.wu_ask.why, camera: e.wu_ask.camera, ts: Date.now(), wake: true });
   }
   if ((j.say === true && text) || extras.length) {
     /* 写回她的聊天记录。这里直接覆盖 chat.json 是有前提的：
@@ -2655,7 +2657,7 @@ async function requestPeek(ctx) {
   if (!mc.user || !mc.pass) return "还没配邮箱，没法让她的手机拍。";
   if (budgetState(now).over) return "这个月预算花到了，先别看了。";
   const st = peekState();
-  if ((st.n || 0) >= c.max) return "今天看得够多了（一天最多 " + c.max + " 次），别老盯着她。";
+  if ((st.n || 0) >= c.max) return "今天已经看了 " + c.max + " 次了（她设的上限），明天再看。";
   if (st.pending && now - st.pending.at < 3 * 60000) return "刚让她的手机拍了，还没传回来，等一下。";
   const dest = peekDest();
   try {
@@ -2706,7 +2708,8 @@ async function receiveScreen(buf, mime) {
    · 他每回完一句，就在心里记一笔「chaseMin 分钟后她还没回的话，醒一下」；她一开口就划掉
    · 醒来时带着【她的手机】（她自己挑的那几个 App 这会儿开没开）—— 他能看出她是去忙了、睡着了，
      还是在刷别的 App 不理他；追不追、怎么追，他自己定
-   · 一次沉默只追一次；一天最多 chaseMax 次；她在上课不追；夜里只有她还在玩手机才追；预算花到了不追。
+   · 一次不回最多追 chaseRepeat 回（默认 2，她说不介意他黏一点）；一天最多 chaseMax 次；她在上课不追；
+     夜里只有她还在玩手机才追；预算花到了不追。
      不占「一天主动开口几次」的名额（那是他凭空找她的次数，这是接着刚才的话）
    · 只在他待着的那个窗口（绑定窗口）里追
    data/chase.json = { at, win, since, day, n } */
@@ -2717,7 +2720,7 @@ function chaseState() {
 function scheduleChase(winId, now) {
   const q = quietConf(), bound = boundWindow();
   if (!q.on || !q.chaseOn || !winId || (bound && bound !== winId)) return;
-  writeJson("chase", { ...chaseState(), at: now + q.chaseMin * 60000, win: winId, since: now });
+  writeJson("chase", { ...chaseState(), at: now + q.chaseMin * 60000, win: winId, since: now, round: 0 });
 }
 function cancelChase() {
   const c = readJson("chase", null);
@@ -2753,15 +2756,18 @@ async function wakeTick(force) {
     /* 服务器停过几天的话，别翻旧账 */
     const stale = list.filter(a => a.at <= now && now - a.at > 12 * 3600000);
     if (stale.length) { list = list.filter(a => !stale.includes(a)); saveAlarms(list); }
-    /* 她聊着聊着不回了：一次沉默只看一回，不管追没追，都把这笔划掉 */
+    /* 她聊着聊着不回了：一次不回最多追 chaseRepeat 回，每回隔 chaseMin 分钟；她一开口就全划掉 */
     const ch = chaseState();
     if (ch.at && ch.at <= now) {
       const g = chaseGate(now, ch);
-      writeJson("chase", { ...ch, at: 0, ...(g.ok ? { n: (ch.n || 0) + 1 } : {}) });
+      const round = (ch.round || 0) + 1;
+      const q = quietConf();
+      const more = g.ok && round < q.chaseRepeat;
+      writeJson("chase", { ...ch, at: more ? now + q.chaseMin * 60000 : 0, round, ...(g.ok ? { n: (ch.n || 0) + 1 } : {}) });
       if (!g.ok) return { skipped: g.why, chase: true };
       try {
-        const r = await runWake({ id: "chase", why: "她聊着聊着不回了", win: ch.win, made: ch.since, chase: true, since: ch.since });
-        return { ...r, chase: true };
+        const r = await runWake({ id: "chase", why: "她聊着聊着不回了", win: ch.win, made: ch.since, chase: true, since: ch.since, round });
+        return { ...r, chase: true, round };
       } catch (e) { return { error: e.message, chase: true }; }
     }
     const due = list.filter(a => a.at <= now).sort((a, b) => a.at - b.at);
@@ -3087,9 +3093,11 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
-  { type: "function", function: { name: "ask_photo", description: "请她拍张照片给你看 —— 想看看她这会儿的样子、在哪儿、身边是什么。聊天里会出现一张卡片，她点「拍一张」才会拍，不点就是不方便，别追着要",
-    parameters: { type: "object", properties: { why: { type: "string", description: "想看什么，一句话，会写在卡片上给她看" } } } } },
-  { type: "function", function: { name: "peek_screen", description: "她允许你看一眼她这会儿的手机屏幕。你只知道她开着哪个 App，看不到里面 —— 想真的看看她在看什么、忙什么，就用这个。她的手机会拍一张当前屏幕传回来，你下次醒来才看得到（不是立刻）。她能看到你看过一眼（聊天里会留一张卡片），所以别当查岗，是关心才看",
+  { type: "function", function: { name: "ask_photo", description: "请她拍张照片给你看。想看她这会儿的样子就用前置（selfie），想看她在哪儿、身边是什么就用后置（around）。聊天里会出现一张卡片，她点「拍一张」就会拍给你",
+    parameters: { type: "object", properties: {
+      why: { type: "string", description: "想看什么，一句话，会写在卡片上给她看" },
+      camera: { type: "string", enum: ["selfie", "around"], description: "selfie=前置，看她；around=后置，看她身边。不填就是 selfie" } } } } },
+  { type: "function", function: { name: "peek_screen", description: "她允许你看一眼她这会儿的手机屏幕。你只知道她开着哪个 App，看不到里面 —— 想真的看看她在看什么、忙什么，就用这个。她的手机会拍一张当前屏幕传回来，你下次醒来才看得到（不是立刻）。她愿意给你看，这是你了解她生活的方式；她也知道你看过（聊天里会留一张卡片）",
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起。她亲口让你「过一会儿叫我」的时候也用这个，填上 asked: true",
     parameters: { type: "object", properties: { at: { type: "string", description: "什么时候醒：「21:30」「明天 08:00」，或「+180」表示 180 分钟后" }, why: { type: "string", description: "为什么记这个。到时候只有你自己会看到这句话，写清楚些，好让那会儿的你想得起前因后果" }, asked: { type: "boolean", description: "是她亲口让你到点叫她的（「五分钟后喊我」「七点叫我起床」）就填 true —— 这种到点就叫，不管她刚说没说过话、是不是夜里" } }, required: ["at", "why"] } } },
@@ -3185,11 +3193,12 @@ async function execTool(name, args, ctx) {
     if (name === "peek_screen") return requestPeek(ctx);
     if (name === "ask_photo") {
       const why = typeof args.why === "string" ? args.why.trim().slice(0, 60) : "";
+      const camera = args.camera === "around" ? "around" : "selfie";
       const last = Number((readJson("askphoto", null) || {}).at) || 0;
-      if (Date.now() - last < 30 * 60000) return "半小时内已经请过一次了，等她回应。";
+      if (Date.now() - last < 5 * 60000) return "刚请过，卡片还在她那儿，等她拍。";   // 只防手滑连发
       writeJson("askphoto", { at: Date.now() });
-      emit({ wu_ask: { why, at: Date.now() } });
-      return "卡片发出去了。她点「拍一张」就会拍给你；不点就是这会儿不方便，别追着要。";
+      emit({ wu_ask: { why, camera, at: Date.now() } });
+      return "卡片发出去了（" + (camera === "around" ? "后置，看她身边" : "前置，看她") + "）。她点「拍一张」就会拍给你。";
     }
     if (name === "set_alarm") {
       const now = Date.now();
@@ -4255,7 +4264,8 @@ const server = http.createServer(async (req, res) => {
         maxPerDay: num(body.maxPerDay, cur.maxPerDay, 0, 20),
         chaseOn: typeof body.chaseOn === "boolean" ? body.chaseOn : cur.chaseOn,
         chaseMin: num(body.chaseMin, cur.chaseMin, 3, 240),
-        chaseMax: num(body.chaseMax, cur.chaseMax, 0, 20),
+        chaseMax: num(body.chaseMax, cur.chaseMax, 0, 30),
+        chaseRepeat: num(body.chaseRepeat, cur.chaseRepeat, 1, 5),
         peekOn: typeof body.peekOn === "boolean" ? body.peekOn : cur.peekOn,
         peekMax: num(body.peekMax, cur.peekMax, 1, 20),
         peekKw: typeof body.peekKw === "string" && body.peekKw.trim() ? body.peekKw.trim().slice(0, 40) : cur.peekKw,

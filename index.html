@@ -1097,6 +1097,7 @@
         <div class="att-prev" id="attPrev" style="display:none"></div>
         <input type="file" id="pickPhoto" accept="image/*" multiple hidden>
         <input type="file" id="pickCam" accept="image/*" capture="user" hidden>
+        <input type="file" id="pickCamBack" accept="image/*" capture="environment" hidden>
         <input type="file" id="pickFile" hidden>
         <div class="sealed-bar" id="sealedBar" style="display:none">
           <span>🕯️</span><span>这个窗口已经封存，只能翻看</span>
@@ -1384,7 +1385,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.17（他记得看过你的屏幕 · 能请你拍张照片 · 照片张数自己调）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.18（拍照前置后置都能要 · 你不回他可以多追几回）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -1920,9 +1921,17 @@
             <span class="lb" style="flex:1;font-size:13px">隔几分钟不回算「不理他了」</span>
             <input type="number" id="qChaseMin" min="3" max="240" style="flex:0 0 64px;width:64px;text-align:center">
           </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">一次不回，最多追几回</span>
+            <input type="number" id="qChaseRepeat" min="1" max="5" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
+          <div class="row">
+            <span class="lb" style="flex:1;font-size:13px">一天最多追几次</span>
+            <input type="number" id="qChaseMax" min="0" max="30" style="flex:0 0 64px;width:64px;text-align:center">
+          </div>
           <div class="set-note" style="margin:-2px 2px 6px">
-            他会先看一眼你手机上那几个 App 开没开，看出你是去忙了、睡着了，还是在刷别的不理他，再决定追不追。
-            一次不回只追一回，一天最多 4 次；上课、夜里睡着了都不追。
+            他会先看一眼你手机上那几个 App 开没开，看出你是去忙了、睡着了，还是在刷别的不理他，再决定怎么追。
+            每回隔上面那个分钟数；你一回他就停。上课、夜里睡着了都不追。
           </div>
           <div class="sw-row" style="margin-top:8px">
             <span class="lb">让他能看一眼我的屏幕</span>
@@ -3411,14 +3420,16 @@ let askCur = null;
 function askCardNode(m) {
   const d = document.createElement("div");
   d.className = "peek-card ask-card";
-  d.innerHTML = '<div class="pk-top">📷 他想看看你</div><div class="pk-desc"></div><div class="ask-ops"></div>';
-  d.querySelector(".pk-desc").textContent = m.why || "拍一张现在的你，或者你身边的样子";
+  const around = m.camera === "around";
+  d.innerHTML = '<div class="pk-top"></div><div class="pk-desc"></div><div class="ask-ops"></div>';
+  d.querySelector(".pk-top").textContent = around ? "📷 他想看看你身边" : "📷 他想看看你";
+  d.querySelector(".pk-desc").textContent = m.why || (around ? "拍一张你这会儿身边的样子" : "拍一张现在的你");
   const ops = d.querySelector(".ask-ops");
   if (m.done) ops.textContent = m.done === "sent" ? "拍给他了" : "这次没拍";
   else {
     const yes = document.createElement("button"); yes.className = "btn"; yes.textContent = "拍一张";
     const no = document.createElement("button"); no.className = "btn ghost"; no.textContent = "这会儿不方便";
-    yes.onclick = () => { askCur = m; document.getElementById("pickCam").click(); };
+    yes.onclick = () => { askCur = m; document.getElementById(around ? "pickCamBack" : "pickCam").click(); };
     no.onclick = () => { m.done = "no"; saveChat(); rerenderChat(); };
     ops.append(yes, no);
   }
@@ -3899,7 +3910,7 @@ async function aiReplyRun() {
           if (j.wu_ask) {
             foldThink();
             if (acc.trim()) { sealBubble(acc.trim()); acc = ""; curBub = newBubble(); }
-            const m = { k: "ask", why: j.wu_ask.why, ts: Date.now() };
+            const m = { k: "ask", why: j.wu_ask.why, camera: j.wu_ask.camera, ts: Date.now() };
             chatLog.push(m); saveChat();
             const node = msgNode(m);
             bindLongPress(node, chatLog.length - 1);
@@ -4081,12 +4092,14 @@ function humanSize(n) {
 }
 document.getElementById("pickPhoto").addEventListener("change", e => pickPhotos(e));
 /* 他请她拍的那张：拍完直接发出去，卡片标成「拍给他了」 */
-document.getElementById("pickCam").addEventListener("change", async e => {
+async function camShot(e) {
   if (!e.target.files.length) return;
   await pickPhotos(e);
   if (askCur) { askCur.done = "sent"; askCur = null; }
   sendMsg();
-});
+}
+document.getElementById("pickCam").addEventListener("change", camShot);
+document.getElementById("pickCamBack").addEventListener("change", camShot);
 async function pickPhotos(e) {
   const files = [...e.target.files].slice(0, 9);
   if (!files.length) return;
@@ -5871,6 +5884,8 @@ async function quietRefresh() {
     document.getElementById("qPeek").classList.toggle("on", q.nightPeek !== false);
     document.getElementById("qChase").classList.toggle("on", q.chaseOn !== false);
     document.getElementById("qChaseMin").value = q.chaseMin || 15;
+    document.getElementById("qChaseRepeat").value = q.chaseRepeat || 2;
+    document.getElementById("qChaseMax").value = q.chaseMax != null ? q.chaseMax : 6;
     document.getElementById("qPeek2").classList.toggle("on", !!q.peekOn);
     document.getElementById("qPeekMax").value = q.peekMax || 3;
     document.getElementById("qPeekTo").value = q.peekTo || "";
@@ -5947,6 +5962,8 @@ async function quietSave() {
     nightPeek: quietCur ? quietCur.nightPeek !== false : true,
     chaseOn: quietCur ? quietCur.chaseOn !== false : true,
     chaseMin: Number(document.getElementById("qChaseMin").value) || 15,
+    chaseRepeat: Number(document.getElementById("qChaseRepeat").value) || 2,
+    chaseMax: Number(document.getElementById("qChaseMax").value),
     peekOn: quietCur ? !!quietCur.peekOn : false,
     peekMax: Number(document.getElementById("qPeekMax").value) || 3,
     peekTo: document.getElementById("qPeekTo").value.trim(),

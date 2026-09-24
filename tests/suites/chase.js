@@ -45,11 +45,21 @@ const tick = async () => (await j('/api/wake/test', 'POST', { force: false })).d
   const sys = sent.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
   ok(/已经 1[56] 分钟没回你了/.test(prompt), '醒来那张纸条：她多久没回了');
   ok(/【她的手机】[\s\S]*小红书/.test(sys) && /看那里就知道/.test(prompt), '带着她的手机动静（看得到小红书开着）');
-  ok(/别让她觉得被盯着/.test(prompt) && !/沉默是默认答案/.test(prompt), '追不追他自己定，但别像查岗');
+  ok(/想追就追/.test(prompt) && !/沉默是默认答案/.test(prompt), '纸条上说：想追就追（她不介意他黏），不讲「沉默是默认」');
   ok(msgs().pop().t === '在刷小红书就不理我啦？', '她那边收到了');
   ok(((await j('/api/alarms')).d.today.said || 0) === 0, '不占他一天主动开口的名额');
-  ok(!chase().at && chase().n === 1, '一次不回只追一回（划掉了，今天追了 1 次）');
-  ok((await tick()).chase !== true, '再过一分钟也不会再追');
+  ok(chase().round === 1 && chase().at > Date.now() + 14 * 60000 && chase().n === 1, '追了第 1 回；她还不回的话，15 分钟后再追一回（默认一次不回追 2 回）');
+  ok((await tick()).chase !== true, '没到那 15 分钟，不会马上又追');
+  setChase({ at: Date.now() - 1000 });
+  plan(['{"say":true,"text":"人呢人呢","again":null}']);
+  const w2 = await tick();
+  const p2 = JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
+  ok(w2.chase && w2.round === 2 && /第 2 回找她了/.test(p2.messages[p2.messages.length - 1].content), '第 2 回：纸条上写着「这已经是你第 2 回找她了」');
+  ok(/不介意你黏她一点/.test(p2.messages[p2.messages.length - 1].content), '纸条上告诉他：她不介意他黏一点');
+  ok(!chase().at, '追满 2 回就停');
+  await j('/api/quiet', 'PUT', { chaseRepeat: 3 });
+  ok((await j('/api/quiet')).d.chaseRepeat === 3, '「一次不回最多追几回」能改');
+  await j('/api/quiet', 'PUT', { chaseRepeat: 2 });
 
   console.log('\n[不该追的时候]');
   const p = new Date(Date.now() + 8 * 3600000);
@@ -58,8 +68,8 @@ const tick = async () => (await j('/api/wake/test', 'POST', { force: false })).d
   due();
   ok((await tick()).skipped === '她在上高等数学', '她在上课 → 不追');
   await j('/api/quiet', 'PUT', { classes: '' });
-  due(); setChase({ n: 4 });
-  ok((await tick()).skipped === '今天追问够多了', '一天追满 4 次就不追了');
+  due(); setChase({ n: 6, round: 0 });
+  ok((await tick()).skipped === '今天追问够多了', '一天追满 6 次（默认）就不追了');
   setChase({ n: 0 });
   await j('/api/quiet', 'PUT', { chaseOn: false });
   plan(['嗯。']); await say('关掉以后');

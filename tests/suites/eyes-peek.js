@@ -97,7 +97,7 @@ const say = async (t, imgs) => { const r = await fetch(B + '/api/chat', { method
   plan([{ tool: 'peek_screen', args: {} }, '{"say":false}']);
   await j('/api/wake/test', 'POST', { why: '再看看' });
   const t2 = (last().messages.filter(x => x.role === 'tool').pop() || {}).content || '';
-  ok(/够多|最多/.test(t2), '今天看满了就不让看了（' + t2.slice(0, 20) + '）');
+  ok(/上限/.test(t2), '今天看满了就不让看了（' + t2.slice(0, 24) + '）');
 
   console.log('\n[他记得自己看过：历史里留一句固定的话]');
   const hist = () => apiMsgs(msgs());
@@ -119,7 +119,12 @@ const say = async (t, imgs) => { const r = await fetch(B + '/api/chat', { method
   ok(ask && ask.why === '想看看你今天的样子' && !ask.done, '聊天里出现「📷 他想看看你」的卡片，还没回应');
   plan([{ tool: 'ask_photo', args: { why: '再看一眼' } }, '{"say":false}']);
   await j('/api/wake/test', 'POST', { why: '还想看' });
-  ok(/半小时内/.test((last().messages.filter(x => x.role === 'tool').pop() || {}).content || ''), '半小时内不会反复要');
+  ok(/刚请过/.test((last().messages.filter(x => x.role === 'tool').pop() || {}).content || ''), '5 分钟内不会连发（只防手滑）');
+  fs.rmSync(WORK + '/dat/askphoto.json', { force: true });
+  plan([{ tool: 'ask_photo', args: { why: '想看看你那边天气', camera: 'around' } }, '{"say":false}']);
+  await j('/api/wake/test', 'POST', { why: '想看她那边' });
+  const back = msgs().filter(x => x.k === 'ask').pop();
+  ok(back && back.camera === 'around', '也能请她用后置拍身边');
   plan(['嗯。']);
   await sayHist('等下拍');
   ok(last().messages.some(m => m.content === '（你请她拍张照片给你看：想看看你今天的样子）'), '历史里他记得自己请过');
@@ -169,6 +174,9 @@ const say = async (t, imgs) => { const r = await fetch(B + '/api/chat', { method
   ok(ui.trace.some(t => t === '醒来 · 看了眼你在忙什么'), '他那句话上面有「' + (ui.trace[0] || '') + '」');
   const askUi = await page.evaluate(() => { const c = document.querySelector('#chatMsgs .ask-card'); return c ? { t: c.innerText, btns: c.querySelectorAll('button').length, cam: document.getElementById('pickCam').getAttribute('capture') } : null; });
   ok(askUi && /他想看看你/.test(askUi.t) && askUi.btns === 2 && askUi.cam === 'user', '请求卡片：「拍一张」「这会儿不方便」两个按钮，拍照用前置镜头');
+  const backUi = await page.evaluate(() => [...document.querySelectorAll('#chatMsgs .ask-card .pk-top')].map(x => x.textContent));
+  ok(backUi.includes('📷 他想看看你身边'), '后置的卡片写着「他想看看你身边」');
+  ok(await page.evaluate(() => document.getElementById('pickCamBack').getAttribute('capture')) === 'environment', '后置那张拍照用后置镜头');
   await page.evaluate(() => [...document.querySelectorAll('#chatMsgs .ask-card button')].find(b => /不方便/.test(b.textContent)).click());
   await page.waitForTimeout(800);
   ok((await page.evaluate(() => (document.querySelector('#chatMsgs .ask-card') || {}).innerText || '')).includes('这次没拍'), '点了「这会儿不方便」，卡片收起');
