@@ -94,6 +94,8 @@ DEEPSEEK_API_KEY=sk-xxx node server.js
   配好邮箱和授权码，晤就能用 `send_mail` 往外寄信。
   可以打开「他主动找我时顺手寄一封」—— 手机的邮件提醒就是现成的推送，
   省掉整套 Service Worker。授权码只进不出，界面上永远只显示「已存」
+- **体检**（`tests/`）：29 组、三百多条检查，全用假数据和假服务，不碰真数据、不花钱。
+  定期跑一次就好：`cd tests && npm install && npm run check`，说明见 `tests/README.md`
 - **静态文件只发白名单**：`/`、`/admin`、`/sw.js`、两张图标，别的一律 404。
   数据目录在 Zeabur 上是 `/app/data`，就在项目目录里 —— 以前的「有什么发什么」
   会让 `/data/*.json` 不用登录就能下载。新加公开文件要在 `PUBLIC_FILES` 里登记
