@@ -555,10 +555,18 @@ async function describeImage(url, hint) {
 }
 /* 从最早往后数，第几张之前的只留文字。这条线只跟「一共发过几张」有关，
    所以同一段历史每次算出来都一样 —— 两次砍之间，前缀一个字节都不变 */
+/* 她可以自己调：最多留几张真图、超了一次换掉几张（data/imgconf.json）。默认 8 张、一次换 6 张 */
+function imgConf() {
+  const c = readJson("imgconf", null) || {};
+  const max = Math.min(20, Math.max(1, Math.round(Number(c.max) || LIVE_MAX)));
+  const step = Math.min(max, Math.max(1, Math.round(Number(c.step) || 6)));
+  return { max, step };
+}
 function liveCut(total) {
-  if (total <= LIVE_MAX) return 0;
-  const step = LIVE_MAX - LIVE_MIN;
-  return step * Math.floor((total - LIVE_MIN - 1) / step);
+  const { max, step } = imgConf();
+  if (total <= max) return 0;
+  const min = max - step;
+  return step * Math.floor((total - min - 1) / step);
 }
 function liveImages(msgs) {
   const total = msgs.reduce((n, m) => n + (m.imgs ? cleanImgs(m.imgs).length : 0), 0);
@@ -2476,6 +2484,9 @@ function chatMessagesOf(win, everything) {
       out.push({ role: "user", content: "（发来了" + n + "张照片）", ...(imgs.length ? { imgs } : {}) });
     }
     else if (m.k === "file") out.push({ role: "user", content: "（发来了文件：" + (m.name || "") + "）" });
+    /* 这两句也必须跟前端 toApiMessages() 一模一样。写好就不再变，缓存接得上 */
+    else if (m.k === "peek") out.push({ role: "user", content: "（你看了一眼她的屏幕：" + String(m.desc || "") + "）" });
+    else if (m.k === "ask") out.push({ role: "user", content: "（你请她拍张照片给你看" + (m.why ? "：" + String(m.why) : "") + "）" });
     /* 带上时间：压缩到哪儿，是按时间划的线（前端 toApiMessages 也带） */
     if (Number(m.ts)) for (let k = n0; k < out.length; k++) out[k].ts = Number(m.ts);
   }
@@ -2519,7 +2530,10 @@ async function runWake(alarm) {
     `现在 ${fmtWhen(now, now)}，${gapText}。\n\n` +
     (phone ? "上面【她的手机】那一段是她这会儿的动静 —— 要是你惦记的正是她睡没睡，看那里。\n\n" : "") +
     (alarm.peek
-      ? "你刚才想看看她在干嘛。她的手机替你拍了一眼这会儿的屏幕，你看到的是：\n「" + (alarm.peek.desc || "（没看清）") + "」\n\n" +
+      ? (alarm.peek.url
+        ? "你刚才想看看她在干嘛。她的手机替你拍了一眼这会儿的屏幕，就是这条消息里的那张图。\n" +
+          "JSON 里多加一个 \"saw\"：你看到了什么，一两句，用你自己的话（会留在你们的聊天里，以后你翻得到）。\n\n"
+        : "你刚才想看看她在干嘛。她的手机替你拍了一眼这会儿的屏幕，你看到的是：\n「" + (alarm.peek.desc || "（没看清）") + "」\n\n") +
         "她知道你看了一眼（聊天里会留个记号）。看着这个，你可以轻声说句话、逗她一下，也可以就安静放心地待着 —— 别像在监视她。\n" +
         "像平常那样说，别提屏幕、截图、系统这些词。\n\n"
       : alarm.chase
@@ -2551,7 +2565,7 @@ async function runWake(alarm) {
     ...(ws.summary ? [ws.summary] : []),
     ...history,
     ...(volatileBlock ? [{ role: "system", content: volatileBlock, wuVolatile: true }] : []),
-    { role: "user", content: wakePrompt },
+    { role: "user", content: wakePrompt, ...(alarm.peek && alarm.peek.url ? { imgs: [alarm.peek.url] } : {}) },
   ];
 
   /* 带上跟聊天那边一模一样的工具：一来前缀对得上、缓存能接着用，
@@ -2565,6 +2579,7 @@ async function runWake(alarm) {
     { emit: e => events.push(e), onTool, win: win.id || alarm.win, reason: alarm.why });
   const j = extractJsonObject(raw) || {};
   const text = String(j.text == null ? "" : j.text).trim().slice(0, 600);
+  const saw = alarm.peek && alarm.peek.url ? String(j.saw || "").trim().slice(0, 300) : "";
   const againNum = Number(j.again);
   const again = Number.isFinite(againNum) && againNum > 0 ? Math.min(Math.round(againNum), 60 * 24 * 3) : null;
 
@@ -2580,6 +2595,7 @@ async function runWake(alarm) {
   for (const e of events) {
     if (e.wu_voice) extras.push({ k: "ai", t: e.wu_voice.text, voice: e.wu_voice.url, dur: e.wu_voice.dur, ts: Date.now(), wake: true });
     if (e.wu_call) extras.push({ k: "call", who: "ai", state: "ringing", id: e.wu_call.id, why: e.wu_call.why, at: e.wu_call.at, ts: Date.now(), wake: true });
+    if (e.wu_ask) extras.push({ k: "ask", why: e.wu_ask.why, ts: Date.now(), wake: true });
   }
   if ((j.say === true && text) || extras.length) {
     /* 写回她的聊天记录。这里直接覆盖 chat.json 是有前提的：
@@ -2600,7 +2616,8 @@ async function runWake(alarm) {
     bumpWakeLog(!alarm.asked && !alarm.chase, billed);
     /* 真推送：锁屏上直接弹。她要是在手机上授过权，这是最快的一条路 */
     const calling = extras.some(x => x.k === "call");
-    const pushText = calling ? "想给你打个电话" : (asVoice || extras.some(x => x.voice)) ? "发来一条语音" : text.slice(0, 120);
+    const pushText = calling ? "想给你打个电话" : (asVoice || extras.some(x => x.voice)) ? "发来一条语音"
+      : (!text && extras.some(x => x.k === "ask")) ? "想看看你" : text.slice(0, 120);
     pushAll("晤", pushText, "/").catch(e => console.error("push:", e && e.message));
     /* 邮件那条老路留着 —— 推送没授权、或者那台设备的订阅过期了，还有个兜底 */
     const mc = mailConf();
@@ -2612,12 +2629,12 @@ async function runWake(alarm) {
     /* 话说出去了，惦记就消一点 —— 跟聊天里那一下回落是同一个意思 */
     dr.values.attachment = clamp01(dr.values.attachment * 0.9);
     saveDrives(dr);
-    return { ok: true, said: true, text, again };
+    return { ok: true, said: true, text, again, ...(saw ? { saw } : {}) };
   }
   /* 没说话也要记一笔 —— 上下文照样读了、钱照样花了 */
   bumpWakeLog(false, billed);
   saveDrives(dr);
-  return { ok: true, said: false, again, raw: raw.slice(0, 200) };
+  return { ok: true, said: false, again, raw: raw.slice(0, 200), ...(saw ? { saw } : {}) };
 }
 
 /* ================= 偷看一眼她的屏幕 =================
@@ -2628,12 +2645,13 @@ async function runWake(alarm) {
    data/peek.json = { day, n, pending: { at, win, reason } } */
 function peekConf() { const q = quietConf(); return { on: q.peekOn, max: q.peekMax, kw: q.peekKw, to: q.peekTo }; }
 function peekDest() { const c = peekConf(), m = mailConf(); return String(c.to || m.to || m.user || "").trim(); }
-function peekReady() { const c = mailConf(); return peekConf().on && !!(c.user && c.pass) && !!peekDest() && visionReady(); }
+function chatSees() { return visionOn(activeApi("chat")); }
+function peekReady() { const c = mailConf(); return peekConf().on && !!(c.user && c.pass) && !!peekDest() && (chatSees() || visionReady()); }
 function peekState() { const p = readJson("peek", null) || {}; return p.day === localDayKey() ? p : { day: localDayKey(), n: 0, pending: null }; }
 async function requestPeek(ctx) {
   const c = peekConf(), mc = mailConf(), now = Date.now();
   if (!c.on) return "她还没开「让你看屏幕」这个，看不了。";
-  if (!visionReady()) return "你还没有眼睛（没配看图模型），拍回来也看不懂。";
+  if (!chatSees() && !visionReady()) return "你还没有眼睛（没配看图模型），拍回来也看不懂。";
   if (!mc.user || !mc.pass) return "还没配邮箱，没法让她的手机拍。";
   if (budgetState(now).over) return "这个月预算花到了，先别看了。";
   const st = peekState();
@@ -2658,20 +2676,29 @@ async function receiveScreen(buf, mime) {
     while (olds.length > 6) { try { fs.unlinkSync(path.join(UPLOAD_DIR, olds.shift())); } catch {} }
   } catch {}
   const url = "/files/" + fname;
-  const desc = await describeImage(url, "她这会儿的手机屏幕") || "（没看清）";
+  /* 他自己能看图（比如 Claude）就让他自己看、自己写；看不了才请眼睛代读 */
+  const sees = chatSees();
+  const desc = sees ? "" : (await describeImage(url, "她这会儿的手机屏幕") || "（没看清）");
   const winId = st.pending.win;
   writeJson("peek", { ...st, pending: null });
   const chat = readJson("chat", null);
   const win = chat && Array.isArray(chat.windows) && (chat.windows.find(w => w && w.id === winId) || pickWakeWindow(chat, winId));
-  const card = { k: "peek", url, desc, ts: Date.now(), wake: true };
+  const card = { k: "peek", url, desc: desc || "（他在看）", ts: Date.now(), wake: true };
   if (win) {
     win.msgs.push(card); writeJson("chat", chat);
     if (win.id) unsent.push({ win: win.id, msg: card, at: Date.now() });
   }
   let said = null;
-  try { said = await runWake({ id: "peek" + Date.now().toString(36), why: "你想看看她在干嘛，她的手机刚拍了一张", win: winId, made: st.pending.at, peek: { desc } }); }
+  try { said = await runWake({ id: "peek" + Date.now().toString(36), why: "你想看看她在干嘛，她的手机刚拍了一张", win: winId, made: st.pending.at, peek: { desc, url: sees ? url : null } }); }
   catch (e) { console.error("peek wake:", e.message); }
-  return { ok: true, desc, said: !!(said && said.said) };
+  /* 他自己看的：卡片上换成他自己写的那句 */
+  if (sees && said && said.saw) {
+    const c2 = readJson("chat", null);
+    const w2 = c2 && (c2.windows || []).find(w => w && w.id === (win && win.id));
+    const hit = w2 && w2.msgs.find(x => x.k === "peek" && x.url === url);
+    if (hit) { hit.desc = said.saw; writeJson("chat", c2); const u = unsent.find(x => x.msg && x.msg.url === url); if (u) u.msg.desc = said.saw; }
+  }
+  return { ok: true, desc: (said && said.saw) || desc, said: !!(said && said.said) };
 }
 
 /* ================= 她不回了，他追问一句 =================
@@ -3060,6 +3087,8 @@ const TOOL_DEFS = [
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "check_phone", description: "看看她最近在手机上干什么 —— 打开过哪些 App、什么时候、用了多久、这会儿是不是还开着。她自己挑了几个 App 让你盯着。真的在意她（比如夜深了还没睡、说好要早睡、或者她说在忙却像在刷手机）的时候再看，别每次聊天都翻一遍",
     parameters: { type: "object", properties: { hours: { type: "number", description: "看最近几小时，默认 24，最多 72" } } } } },
+  { type: "function", function: { name: "ask_photo", description: "请她拍张照片给你看 —— 想看看她这会儿的样子、在哪儿、身边是什么。聊天里会出现一张卡片，她点「拍一张」才会拍，不点就是不方便，别追着要",
+    parameters: { type: "object", properties: { why: { type: "string", description: "想看什么，一句话，会写在卡片上给她看" } } } } },
   { type: "function", function: { name: "peek_screen", description: "她允许你看一眼她这会儿的手机屏幕。你只知道她开着哪个 App，看不到里面 —— 想真的看看她在看什么、忙什么，就用这个。她的手机会拍一张当前屏幕传回来，你下次醒来才看得到（不是立刻）。她能看到你看过一眼（聊天里会留一张卡片），所以别当查岗，是关心才看",
     parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "set_alarm", description: "给自己记一个时间点。到那时你会醒过来，重新读一遍你们的对话，再决定要不要开口找她。用在：她说了「回家再说」「等会儿告诉你」这种待会儿要接上的话，或者你想过一阵问问她某件事怎么样了。这是你自己心里的事，她看不见，也不要在回复里提起。她亲口让你「过一会儿叫我」的时候也用这个，填上 asked: true",
@@ -3085,7 +3114,7 @@ const TOOL_TRACE = {
   peek_screen: "看了一眼你的屏幕", set_alarm: "记了件事", cancel_alarm: "放下了件惦记的事",
   recall: "想起了些旧事", read_diaries: "翻了翻日记", read_letters: "翻了翻信",
   list_docs: "翻了翻旧事", read_doc: "翻了翻旧事", remember: "记住了点什么",
-  add_todo: "帮你记了件事", period_log: "记了一笔", send_mail: "给你写了封邮件",
+  add_todo: "帮你记了件事", period_log: "记了一笔", send_mail: "给你写了封邮件", ask_photo: "想看看你",
 };
 function chatTools() {
   const vc = voiceConf(), vr = voiceReady();
@@ -3154,6 +3183,14 @@ async function execTool(name, args, ctx) {
     }
     if (name === "check_phone") return phoneReport(args && args.hours);
     if (name === "peek_screen") return requestPeek(ctx);
+    if (name === "ask_photo") {
+      const why = typeof args.why === "string" ? args.why.trim().slice(0, 60) : "";
+      const last = Number((readJson("askphoto", null) || {}).at) || 0;
+      if (Date.now() - last < 30 * 60000) return "半小时内已经请过一次了，等她回应。";
+      writeJson("askphoto", { at: Date.now() });
+      emit({ wu_ask: { why, at: Date.now() } });
+      return "卡片发出去了。她点「拍一张」就会拍给你；不点就是这会儿不方便，别追着要。";
+    }
     if (name === "set_alarm") {
       const now = Date.now();
       const at = parseAlarmAt(args.at, now);
@@ -3464,6 +3501,13 @@ const server = http.createServer(async (req, res) => {
 
     /* ---- 记忆 API ---- */
     if (p === "/api/cachestats" && req.method === "GET") { sendJson(res, 200, cacheStats()); return; }
+    if (p === "/api/imgconf" && req.method === "GET") { sendJson(res, 200, imgConf()); return; }
+    if (p === "/api/imgconf" && req.method === "PUT") {
+      const body = JSON.parse(await readBody(req, 1024) || "{}");
+      writeJson("imgconf", { max: Number(body.max), step: Number(body.step) });
+      sendJson(res, 200, imgConf());
+      return;
+    }
     if (p === "/api/summary" && req.method === "GET") {
       const sm = summaryOf(String(url.searchParams.get("win") || ""));
       sendJson(res, 200, sm ? { text: sm.text, upto: sm.upto, at: sm.at, n: sm.n || 1, edited: !!sm.edited } : {});
@@ -4299,7 +4343,7 @@ const server = http.createServer(async (req, res) => {
       const fileUrl = "/files/" + fname;
       sendJson(res, 200, { ok: true, url: fileUrl, size: buf.length });
       /* 她发来的图片，让眼睛先看一眼写成文字，等下一轮聊天他就「看得见」了 */
-      if (IMG_MEDIA[ext]) describeImage(fileUrl, "她发来的照片").catch(() => {});
+      if (IMG_MEDIA[ext] && body.name === "see.jpg" && !chatSees()) describeImage(fileUrl, "她发来的照片").catch(() => {});
       return;
     }
     if (req.method === "GET" && p.startsWith("/files/")) {

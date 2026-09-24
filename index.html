@@ -894,6 +894,8 @@
   .peek-card .pk-top { font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; }
   .peek-card .pk-img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 10px; cursor: pointer; display: block; }
   .peek-card .pk-desc { font-size: 13px; color: var(--ink); margin-top: 6px; line-height: 1.6; }
+  .ask-card .ask-ops { display: flex; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--ink-soft); }
+  .ask-card .ask-ops .btn { flex: 1; padding: 8px 0; font-size: 13px; }
   .sum-text { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; line-height: 1.7; padding: 12px; border-radius: 12px;
     border: 1px solid rgba(168,178,196,.35); background: rgba(255,255,255,.6); color: var(--ink); resize: vertical; }
   .m-fold { margin: 10px auto 14px; padding: 4px 12px; width: fit-content; font-size: 11px; color: var(--ink-soft);
@@ -1094,6 +1096,7 @@
         </div>
         <div class="att-prev" id="attPrev" style="display:none"></div>
         <input type="file" id="pickPhoto" accept="image/*" multiple hidden>
+        <input type="file" id="pickCam" accept="image/*" capture="user" hidden>
         <input type="file" id="pickFile" hidden>
         <div class="sealed-bar" id="sealedBar" style="display:none">
           <span>🕯️</span><span>这个窗口已经封存，只能翻看</span>
@@ -1295,6 +1298,16 @@
             <select class="set-sel" id="selVision" onchange="apiUse('vision', this.value)"></select>
             <div class="set-note" id="visionNote" style="margin:4px 2px 0"></div>
           </div>
+          <div class="row" style="gap:8px;align-items:center">
+            <span class="lb" style="flex:1;font-size:13px">聊天里最多留几张真图</span>
+            <input type="number" id="imgMax" min="1" max="20" style="flex:0 0 56px;width:56px;text-align:center">
+          </div>
+          <div class="row" style="gap:8px;align-items:center">
+            <span class="lb" style="flex:1;font-size:13px">超了一次换掉几张（变成文字）</span>
+            <input type="number" id="imgStep" min="1" max="20" style="flex:0 0 56px;width:56px;text-align:center">
+            <button class="btn ghost" style="flex:0 0 auto;padding:6px 12px;font-size:12px" onclick="imgConfSave()">存</button>
+          </div>
+          <div class="set-note" style="margin:0 2px 8px">一次换得多，缓存断得少；留得多，他记得的图多，但每轮更贵。</div>
           <div class="sw-row">
             <span class="lb">每条消息显示用量和花费</span>
             <button class="sw" id="swUsage" onclick="toggleUsage()"></button>
@@ -1371,7 +1384,7 @@
           <div class="field"><label>新密码（四位数字）</label><input type="password" id="pwNew" placeholder="••••" maxlength="4"></div>
           <div class="btn-row"><button class="btn" onclick="changePin()">修改密码</button></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.16（他有眼睛了 · 能看一眼你的屏幕 · 醒来做了什么）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.17（他记得看过你的屏幕 · 能请你拍张照片 · 照片张数自己调）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2601,7 +2614,7 @@ document.getElementById("tabbar").addEventListener("click", e => {
   document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab.dataset.page));
   if (tab.dataset.page === "chat") { markChatSeen(); chatToBottom(); }
   if (tab.dataset.page === "memory" && typeof memRefresh === "function") memRefresh();
-  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); bkAutoLoad(); quietRefresh(); phoneRefresh(); pushRefresh(); }
+  if (tab.dataset.page === "settings") { renderCtxUsage(); renderCost(); apiRefresh(); mcpRefresh(); renderBackupSize(); bkAutoLoad(); imgConfLoad(); quietRefresh(); phoneRefresh(); pushRefresh(); }
 });
 function openSub(name) {
   document.getElementById("page-" + name).classList.add("open");
@@ -3374,6 +3387,7 @@ function msgNode(m) {
   }
   if (m.k === "call") return callCardNode(m);
   if (m.k === "peek") return peekCardNode(m);
+  if (m.k === "ask") return askCardNode(m);
   if ((m.k === "me" || m.k === "ai") && m.voice) return voiceNode(m);
   const b = document.createElement("div");
   b.className = "bub " + (m.k === "me" ? "me" : "ai");
@@ -3391,6 +3405,24 @@ function msgNode(m) {
     return wrap;
   }
   return b;
+}
+/* 他想看看你：她点「拍一张」才会打开相机，拍完照常发给他；点「这会儿不方便」就收起 */
+let askCur = null;
+function askCardNode(m) {
+  const d = document.createElement("div");
+  d.className = "peek-card ask-card";
+  d.innerHTML = '<div class="pk-top">📷 他想看看你</div><div class="pk-desc"></div><div class="ask-ops"></div>';
+  d.querySelector(".pk-desc").textContent = m.why || "拍一张现在的你，或者你身边的样子";
+  const ops = d.querySelector(".ask-ops");
+  if (m.done) ops.textContent = m.done === "sent" ? "拍给他了" : "这次没拍";
+  else {
+    const yes = document.createElement("button"); yes.className = "btn"; yes.textContent = "拍一张";
+    const no = document.createElement("button"); no.className = "btn ghost"; no.textContent = "这会儿不方便";
+    yes.onclick = () => { askCur = m; document.getElementById("pickCam").click(); };
+    no.onclick = () => { m.done = "no"; saveChat(); rerenderChat(); };
+    ops.append(yes, no);
+  }
+  return d;
 }
 /* 他看了一眼你的屏幕：一张缩略图 + 他看到了什么。她随时能删（长按） */
 function peekCardNode(m) {
@@ -3754,6 +3786,9 @@ function toApiMessages() {
       msgs.push({ role: "user", content: "（发来了" + n + "张照片）", ...(imgs.length ? { imgs } : {}) });
     }
     else if (m.k === "file") msgs.push({ role: "user", content: "（发来了文件：" + m.name + "）" });
+    /* 跟 server.js chatMessagesOf() 一模一样 */
+    else if (m.k === "peek") msgs.push({ role: "user", content: "（你看了一眼她的屏幕：" + String(m.desc || "") + "）" });
+    else if (m.k === "ask") msgs.push({ role: "user", content: "（你请她拍张照片给你看" + (m.why ? "：" + String(m.why) : "") + "）" });
     /* 带上时间：服务器按它认出哪些已经压进前情提要了（不会发给模型） */
     if (m.ts) for (let k = n0; k < msgs.length; k++) msgs[k].ts = m.ts;
   });
@@ -3861,6 +3896,17 @@ async function aiReplyRun() {
           if (j.wu_usage) { lastUsage = j.wu_usage; continue; }
           if (j.wu_think) { onThink(j.wu_think); continue; }
           /* 他发了语音 / 打了电话：先把他前面已经说出来的字定稿，再把语音插进去，先后顺序才对 */
+          if (j.wu_ask) {
+            foldThink();
+            if (acc.trim()) { sealBubble(acc.trim()); acc = ""; curBub = newBubble(); }
+            const m = { k: "ask", why: j.wu_ask.why, ts: Date.now() };
+            chatLog.push(m); saveChat();
+            const node = msgNode(m);
+            bindLongPress(node, chatLog.length - 1);
+            chatMsgs.insertBefore(node, curBub);
+            chatMsgs.scrollTop = chatMsgs.scrollHeight;
+            continue;
+          }
           if (j.wu_voice || j.wu_call) {
             foldThink();
             if (acc.trim()) { sealBubble(acc.trim()); acc = ""; curBub = newBubble(); }
@@ -4033,7 +4079,15 @@ async function uploadFile(f) {
 function humanSize(n) {
   return n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
 }
-document.getElementById("pickPhoto").addEventListener("change", async e => {
+document.getElementById("pickPhoto").addEventListener("change", e => pickPhotos(e));
+/* 他请她拍的那张：拍完直接发出去，卡片标成「拍给他了」 */
+document.getElementById("pickCam").addEventListener("change", async e => {
+  if (!e.target.files.length) return;
+  await pickPhotos(e);
+  if (askCur) { askCur.done = "sent"; askCur = null; }
+  sendMsg();
+});
+async function pickPhotos(e) {
   const files = [...e.target.files].slice(0, 9);
   if (!files.length) return;
   toast(SERVER ? "上传照片中…" : "处理照片中…");
@@ -4052,7 +4106,7 @@ document.getElementById("pickPhoto").addEventListener("change", async e => {
     pushState("photos", photos);
     renderPhotosPage(); renderHomeStack();
   }
-});
+}
 document.getElementById("pickFile").addEventListener("change", async e => {
   const f = e.target.files[0];
   if (!f) return;
@@ -4374,10 +4428,21 @@ function renderApiSelects() {
     ? "配好了。以后你发的照片、他偷看到的屏幕，都会先让它读成文字。"
     : "还没配。挑个便宜或免费的看图模型（智谱 glm-4v-flash、阿里云 qwen-vl 之类），在上面「管理 API」里新建一套、选到这里。";
 }
+async function imgConfLoad() {
+  try { const c = await (await fetch("api/imgconf")).json(); document.getElementById("imgMax").value = c.max; document.getElementById("imgStep").value = c.step; } catch {}
+}
+async function imgConfSave() {
+  const max = Number(document.getElementById("imgMax").value), step = Number(document.getElementById("imgStep").value);
+  try {
+    const c = await (await fetch("api/imgconf", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ max, step }) })).json();
+    document.getElementById("imgMax").value = c.max; document.getElementById("imgStep").value = c.step;
+    toast("存好了：最多 " + c.max + " 张，超了一次换 " + c.step + " 张");
+  } catch { toast("没存上"); }
+}
 async function apiUse(role, id) {
   try { await fetch("api/apis/use", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [role]: id || null }) }); }
   catch { toast("切换失败"); return; }
-  toast((role === "chat" ? "聊天" : "干活") + "改用这套了");
+  toast((role === "chat" ? "聊天" : role === "vision" ? "看图" : "干活") + "改用这套了");
   apiRefresh(); checkHealth();
 }
 function apiFormShow() { document.getElementById("apiForm").style.display = "block"; document.querySelector("#page-apis .sp-scroll").scrollTop = 0; }

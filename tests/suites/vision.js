@@ -114,7 +114,7 @@ const imgMsgs = req => (req.messages || []).filter(m => Array.isArray(m.content)
   const iu = withImg && withImg.content.find(x => x.type === 'image_url');
   ok(iu && /^data:image\/jpeg;base64,/.test(iu.image_url.url), '打开之后（比如 GPT-4o）：image_url 带着 data URL');
 
-  console.log('\n[真图攒到 8 张，一次砍回最近 4 张]');
+  console.log('\n[真图最多 8 张，超了一次换掉 6 张（她能自己调）]');
   await api('api/apis/use', 'PUT', { chat: cl.id });
   await api('api/apis/' + cl.id, 'PUT', { name: '假 Claude', base: 'http://localhost:8098', model: 'claude-opus-5', dialect: 'anthropic', vision: true });
   const see = m.see[0];
@@ -129,15 +129,21 @@ const imgMsgs = req => (req.messages || []).filter(m => Array.isArray(m.content)
   };
   const counts = [];
   for (const k of [8, 9, 12, 13, 15]) counts.push(k + '→' + (await nImgs(k)).n);
-  ok(counts.join(' ') === '8→8 9→5 12→8 13→5 15→7', '发过几张 → 真图几张：' + counts.join('，') + '（到第 9、13 张时各砍一次）');
+  ok(counts.join(' ') === '8→8 9→3 12→6 13→7 15→3', '发过几张 → 真图几张：' + counts.join('，') + '（到第 9、15 张时各换一次）');
   const r5 = (await nImgs(15)).req;
   const firstImgAt = r5.messages.findIndex(x => Array.isArray(x.content) && x.content.some(b => b.type === 'image'));
   const before = r5.messages.slice(0, firstImgAt).filter(x => JSON.stringify(x).includes('发来了1张照片')).length;
-  ok(before === 8, '更早那 8 张只剩一句话（' + before + ' 条）');
+  ok(before === 12, '更早那 12 张只剩一句话（' + before + ' 条）');
   /* 同一截里多发一张，前面一个字节都不该变 */
-  const a13 = (await nImgs(13)).req.messages, a14 = (await nImgs(14)).req.messages;
+  const a13 = (await nImgs(13)).req.messages, a14 = (await nImgs(14)).req.messages;   // 同一截（都是换掉 6 张）
   const upto = a13.findIndex(x => JSON.stringify(x).includes('"嗯12"'));
   ok(upto > 0 && JSON.stringify(a13.slice(0, upto)) === JSON.stringify(a14.slice(0, upto)), '第 13 张和第 14 张之间，前缀逐字相同（缓存接得上）');
+
+  await api('api/imgconf', 'PUT', { max: 4, step: 2 });
+  const custom = [];
+  for (const k of [4, 5, 6, 7]) custom.push(k + '→' + (await nImgs(k)).n);
+  ok(custom.join(' ') === '4→4 5→3 6→4 7→3', '她改成最多 4 张、一次换 2 张：' + custom.join('，'));
+  await api('api/imgconf', 'PUT', { max: 8, step: 6 });
 
   console.log('\n[乱塞的地址一律不认]');
   plan(['嗯']);
