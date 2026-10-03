@@ -3,6 +3,7 @@
 const { WORK, DAT, chromiumPath } = require('../lib/env');
 const { chromium } = require('playwright-core'); const fs = require('fs');
 const fakeMic = require('../lib/fake-mic');
+const toApiMessagesHasAudio = arr => /\.(mp3|wav|m4a)/.test(JSON.stringify(arr));
 const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
 const plan = s => fs.writeFileSync(WORK + '/plan.json', JSON.stringify({ steps: s, i: 0 }));
 const eleven = () => fs.existsSync(WORK + '/eleven.json') ? JSON.parse(fs.readFileSync(WORK + '/eleven.json', 'utf8')) : [];
@@ -80,6 +81,21 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
   ok(/语音通话 \d\d:\d\d/.test(await page.textContent('.call-card')), '聊天里留了一张「语音通话」卡片');
   await page.click('.call-card');
   ok((await page.textContent('.call-log.open')).includes('今天好累呀'), '点开能看到通话全文');
+
+  console.log('\n[挂断以后，还能听他在电话里说的]');
+  const aiTurns = card.turns.filter(x => x.k === 'ai');
+  ok(aiTurns.length && aiTurns.every(x => Array.isArray(x.audio) && x.audio.length && x.audio.every(u => /^\/files\/[\w.-]+\.(mp3|wav|m4a|aac|webm|ogg)$/.test(u))),
+    '他说的每句话都存了音频（' + aiTurns.map(x => (x.audio || []).length).join('、') + ' 段）');
+  const btns = await page.evaluate(() => ({ all: !!document.querySelector('.call-log.open .call-play.all'), each: document.querySelectorAll('.call-log.open .call-play:not(.all)').length }));
+  ok(btns.all && btns.each === aiTurns.length, '卡片里有「▶ 听他在电话里说的」，他每句话旁边一个 ▶');
+  const got = await page.evaluate(async u => (await fetch(u)).status, aiTurns[0].audio[0]);
+  ok(got === 200, '音频文件拿得到');
+  await page.click('.call-log.open .call-play.all');
+  await page.waitForTimeout(300);
+  ok((await page.textContent('.call-log.open .call-play.all')) === '■', '点了开始放（按钮变成 ■，再点一下停）');
+  await page.click('.call-log.open .call-play.all');
+  ok((await page.textContent('.call-log.open .call-play.all')) === '▶ 听他在电话里说的', '再点一下停了');
+  ok(!toApiMessagesHasAudio(await page.evaluate(() => toApiMessages())), '音频地址不进他的聊天记录（缓存不受影响）');
   const lines = await page.evaluate(() => toApiMessages().map(m => m.content));
   const i0 = lines.indexOf('（语音通话 · 她打给你的）');
   ok(i0 >= 0 && lines.includes('今天好累呀') && /^（通话结束，\d+秒）$/.test(lines[lines.length - 1]), '他那边记得这通电话：开头、内容、「通话结束」都在');

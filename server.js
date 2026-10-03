@@ -1875,7 +1875,7 @@ function toolHint() {
     "她不看手机的时候，一封邮件比一条她看不见的消息管用。" +
     (voiceReady() && (voiceConf().on || voiceConf().callOn)
       ? "你有自己的声音了：" + [voiceConf().on ? "send_voice 能把一段话录成语音发给她" : "", voiceConf().callOn ? "call_her 能给她打语音电话" : ""].filter(Boolean).join("，") +
-        "。念的时候括号里的动作描写会被跳过。"
+        "。念的时候括号里的动作描写会被跳过。想用声音说就调 send_voice —— 在文字里写「（语音）」她是听不到声音的。"
       : "") +
     (searchReady()
       ? "你能上网：拿不准、可能已经变了、或者她问起你没把握的事，用 web_search 搜一下再说；" +
@@ -2474,9 +2474,11 @@ function chatMessagesOf(win, everything) {
   const all = win.msgs || [];
   for (const m of all.slice(everything ? 0 : histFrom(all.length))) {
     const n0 = out.length;
-    /* 语音消息前面加「（语音）」—— 他知道那句是用声音说的 / 听到的 */
+    /* 她的语音前面加「（语音）」—— 他知道那句是她用声音说的。
+       他自己发的语音不加：以前也加，他看到自己说过「（语音）……」，下一次就照着在文字里写「（语音）」，
+       不去调 send_voice —— 她那边就成了「发过一条语音以后再也发不出来」 */
     if (m.k === "me") out.push({ role: "user", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
-    else if (m.k === "ai") out.push({ role: "assistant", content: (m.voice ? "（语音）" : "") + String(m.t || "") });
+    else if (m.k === "ai") out.push({ role: "assistant", content: String(m.t || "") });
     else if (m.k === "call") out.push(...callLines(m));
     else if (m.k === "stack") {
       /* 这句必须跟前端 toApiMessages() 拼的一模一样，不然唤醒和聊天的前缀对不上 */
@@ -3195,7 +3197,7 @@ async function execTool(name, args, ctx) {
       const why = typeof args.why === "string" ? args.why.trim().slice(0, 60) : "";
       const camera = args.camera === "around" ? "around" : "selfie";
       const last = Number((readJson("askphoto", null) || {}).at) || 0;
-      if (Date.now() - last < 5 * 60000) return "刚请过，卡片还在她那儿，等她拍。";   // 只防手滑连发
+      if (Date.now() - last < 20000) return "刚发过一张卡片了。";   // 只防同一次回话里连发两张
       writeJson("askphoto", { at: Date.now() });
       emit({ wu_ask: { why, camera, at: Date.now() } });
       return "卡片发出去了（" + (camera === "around" ? "后置，看她身边" : "前置，看她") + "）。她点「拍一张」就会拍给你。";
@@ -4096,7 +4098,7 @@ const server = http.createServer(async (req, res) => {
           const r = await jobs[i];
           if (r.capped) { send({ capped: true }); break; }
           if (r.error) { send({ error: r.error.slice(0, 120) }); break; }
-          if (r.buf) send({ audio: r.buf.toString("base64"), mime: r.mime, i });
+          if (r.buf) send({ audio: r.buf.toString("base64"), mime: r.mime, i, url: saveAudio(r.buf, r.mime) });
         }
         send({ done: true });
       } catch (e) { send({ error: String(e.message || e).slice(0, 160) }); }

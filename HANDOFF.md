@@ -1455,3 +1455,26 @@ https 下加 `Strict-Transport-Security`。没上 CSP —— 页面全是内联�
 - 语气：追问纸条「她说过不介意你黏她一点，想追就追、想撒娇就撒娇」；看屏幕「她愿意给你看，这是你了解她生活的方式，
   逗她、问她、吃醋都行」；`peek_screen` 说明去掉「别当查岗」；看满上限的回话去掉「别老盯着她」；`ask_photo` 去掉「别追着要」
 - 看屏幕本来就是后台的：他醒着（醒来 / 追问 / 聊天中）调工具，她手机收暗号邮件自动截屏传回，她那边不用开网页
+
+### 50. ✅ v3.19：她试用几天后报的六件事
+
+1. **拍照请求只看得到第一次** —— 冷却 5 分钟，他第二次调 `ask_photo` 被挡回「刚请过」，卡片根本没发出来。
+   改成 20 秒（只防同一次回话里连发两张）
+2. **聊天页卡住，只能上滑，最下面那条被挡住** —— 输入栏 `.chat-inbar` 是浮在消息上面的，消息列表底下只留固定空白
+   （`navspace + 90px`）。输入栏一变高（打了好几行、选了照片出现预览、拍照回来）就盖住最后几条、而且滚不下去。
+   现在 `ResizeObserver` 盯着输入栏，`chatMsgs.style.paddingBottom = 输入栏高 + 14`，原本在底部就继续贴底。
+   另外键盘收起 / 从相机相册回来时 `window.scrollTo(0,0)`，防 iOS 把整页留在推上去的位置
+3. **他发过一条语音以后就发不出来了** —— 历史里他自己的语音写成「（语音）……」，他照着学，在文字里写「（语音）」，
+   不去调 `send_voice`。现在**他自己的**语音在历史里不加前缀（她的照旧加），toolHint 补一句
+   「想用声音说就调 send_voice，在文字里写（语音）她听不到」。`chatMessagesOf` 和 `toApiMessages` 同步改
+4. **回车不发送，只换行**：去掉 `chatInput` 的 keydown 发送；发送只靠发送键
+5. **通话挂断后还能听到他说的** —— `/api/call/turn` 每段念完 `saveAudio` 一份，SSE 里带 `url`；前端记在那句 `turn.audio`
+   （数组）。通话卡片展开后：「▶ 听他在电话里说的」放全部，每句他说的话旁边一个 ▶；再点一下停。音频地址不进历史（`callLines` 只取 t）
+6. **设置页简化** —— 首页改成分组列表（他 / 你 / 联系 / 这个家，13 行），每行一句当前状态，点进子页。
+   原来的大卡片原样搬进新子页：`model`（这个月 + 模型与花费 + 缓存体检 + 照片张数）、`push`、`backup`、`pass`、`about`（连接状态与说明）；
+   外部服务的开关列表挪进 `page-mcp` 顶上。首页最上面一条「这个月 ￥…」。各行状态：`modelBrief / bkBrief / healthBrief / mcpExtBrief`
+   + 原来就有的 `voiceBrief / searchBrief / mcpBrief / quietBrief / perBrief / phoneBrief / pushBrief / mailBrief`
+
+测试：新组 `settings-home`；`layout-keyboard` 加回车换行、输入栏变高不盖住；`call` 加挂断后回放；`eyes-peek` 加隔一会儿能再请拍照；
+`voice` 断言改成他的语音不带前缀。顺手修了两组测试的日期问题（不是这次改坏的）：测试浏览器用 UTC，北京过了零点两边对「今天」
+看法不同 —— `period-ui` / `calendar-period` 的浏览器改用 `timezoneId: 'Asia/Shanghai'`；`calendar-period` 不再写死翻到 9 月。

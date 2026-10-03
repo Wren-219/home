@@ -2,7 +2,7 @@ const { chromiumPath } = require('../lib/env');
 const { chromium } = require('playwright-core'); const fs = require('fs');
 (async () => {
   const b = await chromium.launch({ executablePath: chromiumPath(), args: ['--no-sandbox'] });
-  const page = await (await b.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })).newPage();
+  const page = await (await b.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, timezoneId: 'Asia/Shanghai' /* 跟她的手机一样，也跟服务器的 WU_TZ_OFFSET=8 一样 —— 不然北京过了零点、UTC 还没过，两边对「今天」看法不同 */ })).newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
   const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   page.on('dialog', d => d.accept());
@@ -10,8 +10,8 @@ const { chromium } = require('playwright-core'); const fs = require('fs');
   for (const d of ['0','5','2','7']) await page.click(`#keypad .key:text-is("${d}")`);
   await page.waitForTimeout(2200);
   await page.click('.tab[data-page="settings"]'); await page.waitForTimeout(900);
-  const entry = page.locator(".set-card:has-text(\"她的身体\") button");
-  ok(await entry.isVisible(), '设置页有「她的身体」入口');
+  const entry = page.locator('#page-settings .set-row:has-text("她的身体")');
+  ok(await entry.isVisible(), '设置页有「她的身体」那一行');
   await entry.click(); await page.waitForTimeout(900);
 
   console.log('\n[她自己看到的]');
@@ -32,7 +32,7 @@ const { chromium } = require('playwright-core'); const fs = require('fs');
   await page.fill('#perDays', '7');
   await page.click('#page-period button:has-text("保存")'); await page.waitForTimeout(900);
   await page.click('#page-period .sp-back'); await page.waitForTimeout(400);
-  await page.click(".set-card:has-text(\"她的身体\") button"); await page.waitForTimeout(900);
+  await page.click('#page-settings .set-row:has-text("她的身体")'); await page.waitForTimeout(900);
   const c2 = await page.locator('#perCycle').inputValue(), d2 = await page.locator('#perDays').inputValue();
   ok(c2 === '30' && d2 === '7', '重进还是她填的 30 / 7（不是算出来的 29），实际 ' + c2 + ' / ' + d2);
   ok(/30/.test(await page.locator('#perStat').textContent()), '下次按她填的 30 天算');

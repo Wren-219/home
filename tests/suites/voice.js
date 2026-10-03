@@ -78,7 +78,8 @@ const last = () => JSON.parse(fs.readFileSync(WORK + '/last.json', 'utf8'));
   ok(!(await page.textContent('.v-text.ai')).includes('晚安') && (await page.textContent('.v-text.ai .tog')) === '转文字', '点「收起」又收回去了');
   await page.click('.v-text.ai .tog');   /* 再展开，留着这个状态，待会儿刷新看记不记得 */
   const api1 = await page.evaluate(() => toApiMessages().map(m => m.content).filter(c => c.includes('晚安')));
-  ok(api1[0] === '（语音）（小声）晚安，早点睡。', '他那边的记录里：' + api1[0]);
+  /* 他自己发的语音，历史里不加「（语音）」—— 加了他会学着在文字里写，不去真发 */
+  ok(api1[0] === '（小声）晚安，早点睡。', '他那边的记录里是原话，不带「（语音）」（免得他学着在文字里写）：' + api1[0]);
 
   console.log('\n[她按住说话]');
   fs.writeFileSync(WORK + '/stt.txt', '今天好累呀');

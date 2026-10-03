@@ -72,7 +72,7 @@ const say = async t => (await fetch(B + '/api/chat', { method: 'POST', headers: 
   console.log('\n[定预算，花到了 → 他先不主动醒]');
   b = (await j('/api/budget', 'PUT', { amount: 0.01 })).d;
   ok(b.amount === 0.01 && b.over, '预算 ￥0.01，已经花到了');
-  await j('/api/quiet', 'PUT', { classes: '', on: true });
+  await j('/api/quiet', 'PUT', { classes: '', on: true, nightStart: 0, nightEnd: 0 });   // 不管测试几点跑，都别被「夜里」先拦下
   fs.writeFileSync(WORK + '/dat/drives.json', '{}');
   fs.writeFileSync(WORK + '/dat/alarms.json', JSON.stringify([{ id: 'x1', at: Date.now() - 1000, why: '想问问她午饭吃了没', win: 'w1', made: Date.now() - 3600000 }]));
   const w = (await j('/api/wake/test', 'POST', { force: false })).d;
@@ -93,6 +93,9 @@ const say = async t => (await fetch(B + '/api/chat', { method: 'POST', headers: 
   for (const d of ['0', '5', '2', '7']) await page.click(`#keypad .key:text-is("${d}")`);
   await page.waitForTimeout(1500);
   await page.evaluate(() => document.querySelector('.tab[data-page="settings"]').click());
+  await page.waitForTimeout(800);
+  ok(/^￥/.test(await page.evaluate(() => document.getElementById('setMonth').textContent)), '设置首页最上面那条显示这个月花了多少');
+  await page.evaluate(() => openSub('model'));
   await page.waitForTimeout(1500);
   const ui = await page.evaluate(() => ({ spent: document.getElementById('budSpent').textContent, of: document.getElementById('budOf').textContent,
     over: document.getElementById('budgetCard').classList.contains('over'), bars: document.querySelectorAll('#budDays span').length,

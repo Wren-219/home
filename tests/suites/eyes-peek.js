@@ -119,7 +119,12 @@ const say = async (t, imgs) => { const r = await fetch(B + '/api/chat', { method
   ok(ask && ask.why === '想看看你今天的样子' && !ask.done, '聊天里出现「📷 他想看看你」的卡片，还没回应');
   plan([{ tool: 'ask_photo', args: { why: '再看一眼' } }, '{"say":false}']);
   await j('/api/wake/test', 'POST', { why: '还想看' });
-  ok(/刚请过/.test((last().messages.filter(x => x.role === 'tool').pop() || {}).content || ''), '5 分钟内不会连发（只防手滑）');
+  ok(/刚发过/.test((last().messages.filter(x => x.role === 'tool').pop() || {}).content || ''), '同一次回话里不会连发两张（只防手滑，没有冷却）');
+  fs.writeFileSync(WORK + '/dat/askphoto.json', JSON.stringify({ at: Date.now() - 30000 }));
+  const nAsk = msgs().filter(x => x.k === 'ask').length;
+  plan([{ tool: 'ask_photo', args: { why: '再给我看一眼嘛' } }, '{"say":false}']);
+  await j('/api/wake/test', 'POST', { why: '还想看' });
+  ok(msgs().filter(x => x.k === 'ask').length === nAsk + 1, '过了半分钟再请，第二张卡片照样出来（以前要等 5 分钟，看起来就像「第二次请求不见了」）');
   fs.rmSync(WORK + '/dat/askphoto.json', { force: true });
   plan([{ tool: 'ask_photo', args: { why: '想看看你那边天气', camera: 'around' } }, '{"say":false}']);
   await j('/api/wake/test', 'POST', { why: '想看她那边' });

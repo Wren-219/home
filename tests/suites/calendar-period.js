@@ -2,7 +2,7 @@ const { chromiumPath } = require('../lib/env');
 const { chromium } = require('playwright-core'); const fs = require('fs');
 (async () => {
   const b = await chromium.launch({ executablePath: chromiumPath(), args: ['--no-sandbox'] });
-  const page = await (await b.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })).newPage();
+  const page = await (await b.newContext({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, timezoneId: 'Asia/Shanghai' /* 跟她的手机一样，也跟服务器的 WU_TZ_OFFSET=8 一样 —— 不然北京过了零点、UTC 还没过，两边对「今天」看法不同 */ })).newPage();
   const errs = []; page.on('pageerror', e => errs.push(e.message));
   const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   page.on('dialog', d => d.accept());
@@ -48,10 +48,11 @@ const { chromium } = require('playwright-core'); const fs = require('fs');
   console.log('\n[在「她的身体」里记一笔，日历该跟着变]');
   await page.evaluate(() => closeSub('calendar'));
   await page.click('.tab[data-page="settings"]'); await page.waitForTimeout(700);
-  await page.click('#page-settings .set-card:has-text("她的身体") button'); await page.waitForTimeout(900);
+  await page.click('#page-settings .set-row:has-text("她的身体")'); await page.waitForTimeout(900);
   await page.click('button:has-text("今天来了")'); await page.waitForTimeout(1200);
   await page.click('#page-period .sp-back'); await page.waitForTimeout(400);
-  await page.evaluate(() => { openSub('calendar'); calY = 2026; calM = 8; renderCal(); });
+  /* 翻到「今天」所在的那个月（以前写死 9 月，过了月份这条就永远对不上） */
+  await page.evaluate(() => { const d = new Date(); openSub('calendar'); calY = d.getFullYear(); calM = d.getMonth(); renderCal(); });
   await page.waitForTimeout(900);
   m = await marked();
   const todayKey = await page.evaluate(() => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });

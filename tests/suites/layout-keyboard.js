@@ -75,6 +75,29 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   await page.waitForTimeout(300);
   ok((await page.evaluate(() => chatLog.filter(m => m.k === 'me').pop().t)) === '用手指点的', '触摸点击也发得出去');
 
+  console.log('\n[回车就是换行，不发送]');
+  const n0 = await page.evaluate(() => chatLog.filter(m => m.k === 'me').length);
+  await page.fill('#chatInput', '第一行');
+  await page.press('#chatInput', 'Enter');
+  await page.type('#chatInput', '第二行');
+  const v = await page.evaluate(() => chatInput.value);
+  ok(v === '第一行\n第二行' && (await page.evaluate(() => chatLog.filter(m => m.k === 'me').length)) === n0, '按回车换了行，没有发出去：' + JSON.stringify(v));
+
+  console.log('\n[输入栏变高，最下面那条不被盖住]');
+  for (let i = 0; i < 4; i++) { await page.press('#chatInput', 'Enter'); await page.type('#chatInput', '再一行'); }
+  await page.waitForTimeout(300);
+  const cover = await page.evaluate(() => {
+    const bubs = [...document.querySelectorAll('#chatMsgs .bub')];
+    const lastB = bubs[bubs.length - 1].getBoundingClientRect();
+    const bar = document.getElementById('chatIn').getBoundingClientRect();
+    const c = document.getElementById('chatMsgs');
+    return { lastBottom: Math.round(lastB.bottom), barTop: Math.round(bar.top), barH: Math.round(bar.height), atBottom: c.scrollHeight - c.scrollTop - c.clientHeight < 2 };
+  });
+  ok(cover.barH > 120 && cover.lastBottom <= cover.barTop && cover.atBottom,
+    '输入栏长到 ' + cover.barH + 'px，最后一条（底边 ' + cover.lastBottom + '）还在输入栏（顶边 ' + cover.barTop + '）上面，也滚得到底');
+  await page.fill('#chatInput', '');
+  await page.evaluate(() => { chatInput.style.height = 'auto'; });
+
   console.log('\n[收起键盘]');
   await page.evaluate(() => document.activeElement.blur());
   await page.setViewportSize({ width: 440, height: 887 });
