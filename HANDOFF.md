@@ -46,7 +46,7 @@
    - 或把输入栏定位改为跟随 `visualViewport` 计算的绝对像素。
 2. **页面底部有时出现白色空块**。疑似 `height:100%` fixed body 与 Safari 工具栏收展/键盘收起后的视口残留。可尝试 `#frame { height: 100dvh; min-height: -webkit-fill-available; }`、或监听 visualViewport 后强制 reflow。
 
-调试技巧：Settings 页最底部有版本号（**当前 v1.6**，写在 index.html 那行 `set-note` 里，改完功能记得顺手改它）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
+调试技巧：Settings 页最底部有版本号（**当前 v3.21**，写在 index.html 那行 `set-note` 里，改完功能记得顺手改它）。**每次改完必须让她在 Zeabur 手动 Redeploy 并核对版本号**，否则她看到的是旧版还以为没修好。
 
 ## 设计语言（请保持一致，她对审美很挑）
 
@@ -1494,3 +1494,33 @@ https 下加 `Strict-Transport-Security`。没上 CSP —— 页面全是内联�
 
 测试：`layout-keyboard` 改成按 vh-shell 检查（含 `?shell=old` 回退）；`settings-home` 加开关；`sweep-ui` 跳过带 `data-sweep="no"` 的按钮
 （这个开关会刷新页面）；`thinking-ui` 的思考开关搬进了「模型与花费」子页，测试先 `openSub('model')`。
+
+### 52. ✅ v3.21：新界面（液态玻璃）· 先改了聊天页
+
+她想「大改」一场：仿 iMessage 的聊天 + 液态玻璃。先在 Artifact 里做了几版效果图和一个能上手滑的样机，手感跟她一条条对过才搬进来。
+
+**开关**（跟「屏幕底部」一个路数）：`<head>` 里早跑的脚本给 `<html>` 加 `ui-glass`（默认开）；`?ui=old` / `?ui=glass` 写进 `localStorage.wu.ui`。
+设置 → 连接与说明 → 「新界面」（`uiToggle()`），**不用刷新**：切类名 + `rerenderChat()`。关掉就是原来的样子，长按菜单也回来。
+
+**只换皮，不动骨架**：所有样式都挂在 `html.ui-glass` 下；`#frame`、`.chat-inbar`、`#tabbar` 的位置和高度一个没改 —— 100vh 外壳、键盘贴底、输入栏变高往上让那几套照旧。
+输入栏的 iMessage 排法（＋ 在左、麦克风和发送在框里）是纯 CSS grid 重排（`.in-row { display: contents }` + `.chat-in::before` 当玻璃框），HTML 没动。
+
+**她定的交互**（`bindLongPress` 里一句分流到 `gBindSwipe`，新界面下右滑代替长按）：
+- 右拉过 62px 有「咔」一下的停顿（多跳 10px、之后像橡皮筋），没过就弹回去什么都不做
+- **我的话** → `gOpenEdit`：同一条消息（克隆，**宽高锁死**，不许一行变两行）弹回再飞到输入栏上方，页面变暗，时间从上面滑下来，输入框里是原句，**focus 必须在 pointerup 那一刻同步调**（不然 iOS 不弹键盘）。
+  发送 = `chatLog.splice(i)` + `appendMsg` + `aiReply()`（跟原来「改了重发」一样）；**删空再发 = 删掉**（发送键变红色垃圾桶）
+- **他的话** → `gOpenFocus`：拉出来一点、变亮，周围**只轻轻变暗**（她要看得清别的消息）；下面的消息往下让出一排；
+  一排按钮：复制 / 选字 / 重说 / 删掉（只有图标），时间在右边、比按钮小，12 小时制「10月3日 下午7:32」。重说、删掉复用 `msgRegen` / `msgDel`
+- 两种状态都是**点空白处退出**
+- 震动：iPhone 网页没有 `vibrate`，`gBuzz()` 用 iOS 18 起的 `<input type=checkbox switch>` 小办法。在 Artifact 预览里她没感觉到，**要在真的 PWA 里再试**；系统「触感反馈」关着也不会震
+
+**两个坑**：
+- **气泡尾巴**：尾巴另画一块再拼上去，半透明叠在一起会深一块、玻璃也不一样。现在整条气泡（连尾巴）是**一块**，用 `glassShape()` 按尺寸生成 SVG 当 `mask`。
+  **别换成 `clip-path`**：它剪不住 `backdrop-filter`，尾巴旁边会露出一块方的毛玻璃（Chromium 实测）。谁长尾巴由 `glassTails()` 算（一串里最后一条），`MutationObserver` + `ResizeObserver` 跟着变
+- `glassTails()` 给换人的那条加 8px 间距，会把列表撑长 —— 原来贴着底的要再贴回去，不然「停在最新一条」那两组测试会挂
+
+**顺带**：`fmt12` 从「6:05 PM」改成「下午6:05」（她习惯这样看），全 app 的聊天时间条都跟着变。
+
+**还没做的**：夜里那套（B 夜雾）、换自己的壁纸和头像、首页和设置页的新样子。键盘弹起时编辑框的位置在 Artifact 预览里看不准，`gKbMeasure()` 用 visualViewport 兜了一层，**等她真机看**。
+
+测试：新组 `glass-chat`（29 条）；只跑了相关的十一组（static-lint、static-html、layout-keyboard、settings-home、chat-open、thinking-ui、sweep-ui、voice、glass-chat、eyes-peek、call），全过，没做完整体检。

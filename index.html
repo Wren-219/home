@@ -28,6 +28,17 @@
   } catch (e) {}
   if (mode === "vh") document.documentElement.classList.add("vh-shell");
 })();
+/* 界面：glass = 新界面（液态玻璃 · 先改了聊天页，默认）；old = 原来的样子。
+   设置 → 连接与说明 里有开关；网址后面加 ?ui=old / ?ui=glass 也能切 */
+(function () {
+  var ui = "glass";
+  try {
+    var q = location.search.match(/[?&]ui=(old|glass)\b/);
+    if (q) localStorage.setItem("wu.ui", q[1]);
+    ui = localStorage.getItem("wu.ui") || "glass";
+  } catch (e) {}
+  if (ui === "glass") document.documentElement.classList.add("ui-glass");
+})();
 </script>
 <style>
   :root {
@@ -1000,6 +1011,110 @@
   .pstack-badge { position: absolute; right: 8px; bottom: 8px; z-index: 120;
     background: rgba(0,0,0,.45); color: #fff; font-size: 11px; padding: 2px 8px;
     border-radius: 10px; pointer-events: none; font-family: -apple-system, system-ui, sans-serif; }
+  /* ================= 新界面 · 液态玻璃（聊天页） =================
+     只在 html.ui-glass 下生效；开关在 设置 → 连接与说明 → 新界面，关掉就是原来的样子。
+     ⚠️ 只换「皮」：#frame / 输入栏 / 导航栏的位置和高度一概不碰 —— 100vh 外壳和键盘那一套照旧 */
+  html.ui-glass {
+    --g-glass: rgba(255,255,255,.14); --g-edge: rgba(255,255,255,.55); --g-hi: rgba(255,255,255,.95);
+    --g-him: rgba(255,255,255,.30); --g-him-ink: #172030;
+    --g-me1: rgba(38,138,255,.56); --g-me2: rgba(0,106,245,.64);
+    --g-field: rgba(255,255,255,.07); --g-dim: rgba(20,28,40,.38); --g-dim-soft: rgba(20,28,40,.22);
+  }
+  html.ui-glass #page-chat { background: #B8C9DE var(--g-wall, none) center / cover no-repeat; }
+  /* 顶上那层渐隐换成很淡的一层，让玻璃按钮压在壁纸上 */
+  html.ui-glass #page-chat::before { height: calc(var(--sat) + 64px); background: linear-gradient(180deg, rgba(235,241,248,.55), rgba(235,241,248,0)); }
+  /* 液态玻璃：白只铺一点点，模糊收小让后面透出来，靠亮边和高光撑出「玻璃」 */
+  html.ui-glass #page-chat .glasskey, html.ui-glass .chat-in::before, html.ui-glass .plus-btn, html.ui-glass #tabbar, .g-field {
+    background: var(--g-glass); border: .5px solid var(--g-edge);
+    -webkit-backdrop-filter: blur(9px) saturate(2) brightness(1.08); backdrop-filter: blur(9px) saturate(2) brightness(1.08);
+    box-shadow: inset 0 1px .5px var(--g-hi), inset 0 -1px 1px rgba(255,255,255,.18), inset 1px 0 1px rgba(255,255,255,.12), inset -1px 0 1px rgba(255,255,255,.12), 0 6px 20px rgba(0,0,0,.10);
+  }
+  html.ui-glass #page-chat .glasskey { color: #26303F; }
+  html.ui-glass .win-cap .wn { color: #1F2633; font-weight: 600; }
+
+  /* 消息：iMessage 的排法，同一个人连着说挨得紧，换人了空一点 */
+  html.ui-glass .chat-msgs { gap: 3px; }
+  html.ui-glass .chat-msgs .g-first { margin-top: 8px; }
+  html.ui-glass .m-time { color: rgba(31,38,51,.6); font-size: 11px; letter-spacing: .02em; margin: 12px 0 6px; text-shadow: 0 0 8px rgba(240,244,250,.8); }
+  html.ui-glass .think, html.ui-glass .m-wake, html.ui-glass .peek-card, html.ui-glass .call-card, html.ui-glass .msg-stack { margin-top: 8px; }
+  html.ui-glass .bub {
+    max-width: 76%; padding: 8px 13px; border-radius: 19px; border: none; font-size: 16px; line-height: 1.42; word-break: break-word;
+    touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  html.ui-glass .bub.ai { background: var(--g-him); color: var(--g-him-ink);
+    -webkit-backdrop-filter: blur(12px) saturate(1.9) brightness(1.06); backdrop-filter: blur(12px) saturate(1.9) brightness(1.06);
+    box-shadow: inset 0 1px .5px rgba(255,255,255,.75), inset 0 -.5px .5px rgba(255,255,255,.25); }
+  html.ui-glass .bub.me { background: linear-gradient(180deg, var(--g-me1), var(--g-me2)); color: #fff; text-shadow: 0 .5px 1px rgba(0,50,140,.3);
+    -webkit-backdrop-filter: blur(12px) saturate(2.2) brightness(1.05); backdrop-filter: blur(12px) saturate(2.2) brightness(1.05);
+    box-shadow: inset 0 1px .5px rgba(255,255,255,.55), inset 0 0 12px rgba(120,190,255,.25); }
+  html.ui-glass .bub.me .fs, html.ui-glass .bub.me .vd { color: rgba(255,255,255,.75); }
+  /* 带尾巴的那条：盒子往外多占 9px，气泡连尾巴由 glassShape() 用遮罩剪成一整块 —— 只有一层玻璃，透明度一定一样。
+     （不用 clip-path：它剪不住后面那层毛玻璃，尾巴旁边会露出一块方的） */
+  html.ui-glass .bub.g-tail { border-radius: 0; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; }
+  html.ui-glass .bub.me.g-tail { margin-right: -9px; padding-right: 22px; max-width: calc(76% + 9px); }
+  html.ui-glass .bub.ai.g-tail { margin-left: -9px; padding-left: 22px; max-width: calc(76% + 9px); }
+  html.ui-glass .bub.g-spring { transition: transform .5s cubic-bezier(.2,1.25,.3,1); }
+  html.ui-glass .bub.g-armed { filter: brightness(1.08); }
+  html.ui-glass .g-shove { transition: transform .42s cubic-bezier(.2,1.1,.3,1); }
+
+  /* 输入栏：iMessage 的样子 —— 左边一颗 ＋，右边一条玻璃框，麦克风和发送键在框里。
+     只用 grid 重新摆，HTML 一个没动（旧界面照旧是上下两层） */
+  html.ui-glass .chat-in { display: grid; grid-template-columns: 40px 8px minmax(0, 1fr) auto auto 4px; align-items: end;
+    background: none; border: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; border-radius: 0; gap: 0; }
+  html.ui-glass .chat-in::before { content: ""; grid-column: 3 / 7; grid-row: 1; align-self: stretch; border-radius: 20px; background-color: var(--g-field); }
+  html.ui-glass .chat-in .in-row { display: contents; }
+  html.ui-glass .chat-in .in-row .sp { display: none; }
+  html.ui-glass .plus-btn { grid-column: 1; grid-row: 1; width: 40px; height: 40px; color: #26303F; font-size: 22px; font-weight: 300; }
+  html.ui-glass #chatInput { grid-column: 3; grid-row: 1; position: relative; z-index: 1; padding: 9px 4px 9px 14px; line-height: 1.35; max-height: 132px;
+    color: #1F2633; text-shadow: 0 0 6px rgba(255,255,255,.35); }
+  html.ui-glass #chatInput::placeholder { color: rgba(31,38,51,.55); }
+  html.ui-glass #micBtn { grid-column: 4; grid-row: 1; position: relative; z-index: 1; padding: 9px 4px; color: #26303F; }
+  html.ui-glass #sendBtn { grid-column: 5; grid-row: 1; position: relative; z-index: 1; width: 32px; height: 32px; margin: 0 0 4px 2px; font-size: 16px; font-weight: 600;
+    background: linear-gradient(180deg, rgba(38,138,255,.85), rgba(0,106,245,.9)); box-shadow: inset 0 1px .5px rgba(255,255,255,.5); }
+  html.ui-glass .chat-in::before, html.ui-glass .plus-btn { -webkit-backdrop-filter: blur(5px) saturate(2.2) brightness(1.1); backdrop-filter: blur(5px) saturate(2.2) brightness(1.1); }
+  html.ui-glass .chat-in::before { background-color: var(--g-field); }
+  html.ui-glass .plus-btn { background-color: var(--g-glass); }
+
+  /* 变暗那一层 + 改我说的话 + 他的话被拉出来（三块都在 #frame 里，HTML 里事先放好） */
+  #gDim { position: absolute; inset: 0; z-index: 60; background: var(--g-dim); opacity: 0; pointer-events: none;
+    -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px); transition: opacity .32s ease, backdrop-filter .32s ease, -webkit-backdrop-filter .32s ease; }
+  #gDim.on { opacity: 1; pointer-events: auto; -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2); }
+  #gDim.on.soft { background: var(--g-dim-soft); -webkit-backdrop-filter: blur(.4px); backdrop-filter: blur(.4px); }
+  #gEdit, #gFocus { position: absolute; inset: 0; z-index: 61; pointer-events: none; display: none; }
+  #gEdit.on, #gFocus.on { display: block; pointer-events: auto; }
+  #gFocus.on { pointer-events: none; }
+  #gEdit .g-etime { position: absolute; left: 0; right: 0; text-align: center; font-size: 12px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.35);
+    transform: translateY(-60px); opacity: 0; transition: transform .45s cubic-bezier(.2,1.1,.3,1), opacity .3s; }
+  #gEdit.show .g-etime { transform: none; opacity: 1; }
+  #gEdit .g-olab { position: absolute; right: 22px; font-size: 11px; color: rgba(255,255,255,.85); opacity: 0; transition: opacity .25s .2s; }
+  #gEdit.show .g-olab { opacity: 1; }
+  #gEdit .bub, #gFocus .bub { position: absolute; margin: 0; max-width: none; animation: none; }
+  #gEdit .bub { transition: transform .55s cubic-bezier(.22,1.15,.3,1); }
+  /* 输入那一栏：跟聊天输入栏同一个位置（键盘开着贴键盘），再额外躲开键盘挡住的那截 */
+  #gEdit .g-eform { position: absolute; left: 22px; right: 22px; bottom: calc(var(--navspace) - 6px + var(--g-kb, 0px)); display: flex;
+    transform: translateY(30px); opacity: 0; transition: transform .4s cubic-bezier(.2,1.1,.3,1), opacity .25s; }
+  body.kb-open #gEdit .g-eform { bottom: calc(10px + var(--g-kb, 0px)); }
+  #gEdit.show .g-eform { transform: none; opacity: 1; }
+  .g-field { flex: 1; display: flex; align-items: flex-end; min-height: 40px; border-radius: 22px; padding: 4px 4px 4px 14px; position: relative;
+    background: rgba(255,255,255,.07); border-color: rgba(120,165,255,.75) !important; }
+  .g-field textarea { flex: 1; min-width: 0; border: none; outline: none; background: none; resize: none; font-family: var(--sans); font-size: 16px; line-height: 1.35;
+    color: #fff; padding: 6px 0; max-height: 120px; }
+  .g-send { width: 32px; height: 32px; border-radius: 50%; border: none; flex: 0 0 auto; cursor: pointer; color: #fff; font-size: 16px; font-weight: 600;
+    background: linear-gradient(180deg, rgba(38,138,255,.85), rgba(0,106,245,.9)); display: flex; align-items: center; justify-content: center; }
+  .g-send.del { background: #E5484D; }
+  .g-send svg, #gFocus svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #gFocus .bub { pointer-events: auto; transition: transform .45s cubic-bezier(.2,1.2,.3,1), filter .3s; }
+  #gFocus .bub.g-lift { transform: translateX(14px) scale(1.03); filter: brightness(1.12); }
+  #gFocus .bub.g-sel { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+  #gFocus .g-menu { position: absolute; display: flex; align-items: center; color: #fff; pointer-events: auto;
+    opacity: 0; transform: translateY(-6px); transition: opacity .25s .05s, transform .35s .05s cubic-bezier(.2,1.1,.3,1); }
+  #gFocus .g-menu.on { opacity: 1; transform: none; }
+  #gFocus .g-acts { display: flex; gap: 2px; margin-left: -9.5px; }
+  #gFocus .g-acts button { width: 40px; height: 36px; border: none; background: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 10px; }
+  #gFocus .g-acts button:active { background: rgba(255,255,255,.15); }
+  #gFocus .g-acts svg { width: 21px; height: 21px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.3)); }
+  #gFocus .g-mt { margin-left: auto; font-size: 11px; opacity: .9; white-space: nowrap; text-shadow: 0 1px 6px rgba(0,0,0,.35); }
+  @media (prefers-reduced-motion: reduce) { html.ui-glass .bub, #gDim, #gEdit *, #gFocus * { transition-duration: .01s !important; } }
 </style>
 </head>
 <body>
@@ -1263,7 +1378,7 @@
           <div class="set-row" onclick="openSub('pass')"><span class="ic">🔒</span><span class="tx"><span class="t">页面密码</span><span class="s" id="pwBrief">改四位密码</span></span><span class="ch">›</span></div>
           <div class="set-row" onclick="openSub('about')"><span class="ic">ℹ️</span><span class="tx"><span class="t">连接与说明</span><span class="s" id="healthBrief">服务器连没连上、各种小说明</span></span><span class="ch">›</span></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.20（屏幕底部换成 100vh 外壳，治白边）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.21（新界面：液态玻璃聊天页，往右拉消息）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2090,6 +2205,17 @@
       </div>
       <div class="sp-scroll">
         <div class="set-card">
+          <div class="set-card-title">新界面<span class="en">LOOK</span></div>
+          <div class="sw-row">
+            <span class="lb">液态玻璃（先改了聊天页）</span>
+            <button class="sw" id="swUi" data-sweep="no" onclick="uiToggle()"></button>
+          </div>
+          <div class="set-note" style="margin:-2px 2px 0">
+            聊天页换成 iMessage 那样的玻璃气泡；消息不用长按了，往右拉：拉你的话是改了重发，拉他的话是复制、选字、重说、删掉。
+            关掉就回到原来的样子（长按菜单也回来）。网址后面加 <b>?ui=old</b> 也能换回去。
+          </div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">屏幕底部<span class="en">SHELL</span></div>
           <div class="sw-row">
             <span class="lb">新办法（修最底下那条白边）</span>
@@ -2275,6 +2401,17 @@
     <div class="cv-btns" id="cvBtns"></div>
     <div class="cv-hint" id="cvHint"></div>
   </div>
+  <!-- 新界面：右滑消息之后的那几层（只在 html.ui-glass 下用得到） -->
+  <div id="gDim"></div>
+  <div id="gEdit">
+    <div class="g-etime" id="gEtime"></div>
+    <div class="g-olab" id="gOlab">原来发的</div>
+    <form class="g-eform" id="gEform">
+      <div class="g-field"><textarea id="gEtxt" rows="1" aria-label="改这句话"></textarea>
+        <button class="g-send" id="gEsend" type="submit" data-sweep="no" aria-label="改好了，重新发"></button></div>
+    </form>
+  </div>
+  <div id="gFocus"></div>
   <div id="toast"></div>
 </div>
 
@@ -2529,6 +2666,9 @@ var mailCur = null;                                      /* 邮箱设置 */
 var perCur = null;                                       /* 她的身体 */
 var searchCur = null;                                    /* 上网 */
 var lastSeen = 0;                                        /* 最后一次看过聊天的时刻，用来点红点 */
+var gEditI = -1, gFly = null, gFlyFrom = 0, gEditSrc = null;  /* 新界面：正在改我哪句话 */
+var gFocusI = -1, gFocusSrc = null;                      /* 新界面：拉出来的是他哪句话 */
+var gKbNow = 0, gRO = null, gTailQ = false;              /* 新界面：键盘挡住多少 / 气泡形状 */
 
 /* ================= 工具 ================= */
 function pad(n){ return String(n).padStart(2,"0"); }
@@ -2555,9 +2695,10 @@ function pushState(key, val) {
     body: JSON.stringify(val),
   }).then(r => { if (r.status === 401) relock(); }).catch(() => {});
 }
+/* 12 小时制，前面写上午 / 下午（她习惯这样看） */
 function fmt12(d) {
-  let h = d.getHours(); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
-  return h + ":" + pad(d.getMinutes()) + " " + ap;
+  const h = d.getHours();
+  return (h < 12 ? "上午" : "下午") + (h % 12 || 12) + ":" + pad(d.getMinutes());
 }
 /* 占位照片：SVG data URI（渐变 + emoji） */
 let phId = 0;
@@ -2723,7 +2864,7 @@ function openSub(name) {
   if (name === "mcp") mcpRefresh();
   if (name === "quiet") quietRefresh();
   if (name === "phone") phoneRefresh();
-  if (name === "about") shellPaint();
+  if (name === "about") { shellPaint(); uiPaint(); }
   if (name === "connect") mcpKeyRefresh();
   if (name === "mail") mailRefresh();
   if (name === "period") perRefresh();
@@ -3751,6 +3892,7 @@ let msIdx = -1;
 function bindLongPress(node, i) {
   const el = node.classList && node.classList.contains("bub") ? node : node.querySelector(".bub");
   if (!el) return;
+  if (document.documentElement.classList.contains("ui-glass")) { gBindSwipe(el, i); return; }   /* 新界面：右滑代替长按 */
   let timer = null, moved = false;
   const start = () => { moved = false; timer = setTimeout(() => { if (!moved) openMsgSheet(i, el); }, 480); };
   const stop = () => { clearTimeout(timer); };
@@ -3840,6 +3982,290 @@ function msgEdit() {
   chatInput.style.height = "auto";
   chatInput.style.height = Math.min(chatInput.scrollHeight, 132) + "px";
   toast("改完点发送，晤会重新回答");
+}
+/* ================= 新界面（液态玻璃）· 聊天页 =================
+   右滑代替长按：
+   · 我的话：拉过「咔」那一下松手 → 这条弹回、页面变暗、它自己飞到输入栏上面，输入栏里是原句、键盘弹出。
+     改完发送 = 这句换掉、后面的收走、他重新回（跟原来的「改了重发」一样）；删空再发 = 删掉这句
+   · 他的话：拉出来一点、变亮，周围轻轻变暗；底下一排：复制 / 选字 / 重说 / 删掉，右边是时间
+   点空白处退出。行为都复用原来长按菜单那几个函数（msgRegen / msgDel），只是换了进门的方式 */
+function gOn() { return document.documentElement.classList.contains("ui-glass"); }
+/* 震动：iPhone 网页没有 vibrate。iOS 18 起拨一下系统开关（<input switch>）会「嗒」一声 */
+function gBuzz() {
+  try {
+    if (navigator.vibrate && navigator.vibrate(12)) return;
+    const l = document.createElement("label"); l.setAttribute("aria-hidden", "true"); l.style.display = "none";
+    const c = document.createElement("input"); c.type = "checkbox"; c.setAttribute("switch", ""); l.appendChild(c);
+    document.head.appendChild(l); l.click(); document.head.removeChild(l);
+  } catch (e) {}
+}
+/* 「10月3日 下午7:32」—— 她习惯 12 小时制 */
+function gWhen(ts) {
+  const d = new Date(ts), h = d.getHours();
+  return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + (h < 12 ? "上午" : "下午") + (h % 12 || 12) + ":" + pad(d.getMinutes());
+}
+/* 默认壁纸：雾蓝 + 几团彩色光 + 水珠。玻璃要压在有纹理的东西上才看得出来；只画一次 */
+function gWall() {
+  try {
+    const c = document.createElement("canvas"); c.width = 600; c.height = 1300; const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 600, 1300); g.addColorStop(0, "#C6D6EA"); g.addColorStop(.55, "#AFC2DA"); g.addColorStop(1, "#D8C8D8");
+    x.fillStyle = g; x.fillRect(0, 0, 600, 1300);
+    [[480, 170, 330, "#ECD8F2"], [70, 540, 380, "#94B1DA"], [530, 1000, 400, "#F3D0BB"], [150, 1180, 300, "#B2CAE8"], [320, 760, 230, "#7696C6"]].forEach(([cx, cy, r, col]) => {
+      const rg = x.createRadialGradient(cx, cy, 0, cx, cy, r); rg.addColorStop(0, col); rg.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = rg; x.fillRect(0, 0, 600, 1300); });
+    let sd = 11; const rnd = () => (sd = (sd * 9301 + 49297) % 233280) / 233280;
+    for (let i = 0; i < 300; i++) {
+      const px = rnd() * 600, py = rnd() * 1300, rad = 2 + rnd() * 10;
+      const dg = x.createRadialGradient(px - rad * .3, py - rad * .3, 0, px, py, rad);
+      dg.addColorStop(0, "rgba(255,255,255,.8)"); dg.addColorStop(.7, "rgba(255,255,255,.12)"); dg.addColorStop(1, "rgba(50,70,100,.2)");
+      x.fillStyle = dg; x.beginPath(); x.arc(px, py, rad, 0, 7); x.fill();
+    }
+    document.getElementById("frame").style.setProperty("--g-wall", "url('" + c.toDataURL("image/jpeg", .85) + "')");
+  } catch (e) {}
+}
+/* 气泡形状：圆角矩形 + 尾巴，一笔画完，做成遮罩 */
+function glassShape(b) {
+  if (!b.classList.contains("g-tail")) { b.style.webkitMaskImage = b.style.maskImage = ""; return; }
+  const w = b.offsetWidth, h = b.offsetHeight; if (!w || !h) return;
+  const mir = b.classList.contains("ai");                    /* 他的在左边，左右翻过来 */
+  const X = x => (mir ? w - x : x).toFixed(1), sw = mir ? 0 : 1;
+  const W = w - 9, r = Math.min(19, h / 2), y0 = Math.max(r, h - 16);
+  const d = "M" + X(r) + " 0 H" + X(W - r) + " A" + r + " " + r + " 0 0 " + sw + " " + X(W) + " " + r + " V" + y0 +
+    " C" + X(W) + " " + (h - 7) + " " + X(W + 3) + " " + (h - 2) + " " + X(W + 9) + " " + h + " Q" + X(W) + " " + (h - 1.4) + " " + X(W - 8) + " " + h +
+    " H" + X(r) + " A" + r + " " + r + " 0 0 " + sw + " " + X(0) + " " + (h - r) + " V" + r + " A" + r + " " + r + " 0 0 " + sw + " " + X(r) + " 0 Z";
+  const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='" + w + "' height='" + h + "' viewBox='0 0 " + w + " " + h + "'><path d='" + d + "'/></svg>";
+  b.style.webkitMaskImage = b.style.maskImage = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
+}
+/* 谁长尾巴：同一个人连着说的那一串，只有最后一条长；换人了，下一条多空一点 */
+function glassTails() {
+  gTailQ = false;
+  if (!gOn()) return;
+  if (!gRO && window.ResizeObserver) gRO = new ResizeObserver(es => es.forEach(e => glassShape(e.target)));
+  const items = [];
+  for (const el of chatMsgs.children) {
+    if (el.style.display === "contents") items.push(...el.children); else items.push(el);
+  }
+  const side = el => el && el.classList.contains("bub") ? (el.classList.contains("me") ? "me" : "ai") : null;
+  /* 组间距会把列表撑长一点：原来贴着底的，排完还得贴着底 */
+  const stick = chatMsgs.scrollHeight - chatMsgs.scrollTop - chatMsgs.clientHeight < 80;
+  items.forEach((el, k) => {
+    const s0 = side(el); if (!s0) return;
+    const tail = side(items[k + 1]) !== s0, first = side(items[k - 1]) !== s0;
+    el.classList.toggle("g-tail", tail); el.classList.toggle("g-first", first && k > 0);
+    glassShape(el); if (gRO) gRO.observe(el);
+  });
+  if (stick) chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+function glassTailsSoon() { if (!gTailQ) { gTailQ = true; requestAnimationFrame(glassTails); } }
+/* 关掉新界面时把加上去的东西都摘掉 */
+function glassClear() {
+  chatMsgs.querySelectorAll(".g-tail, .g-first").forEach(b => { b.classList.remove("g-tail", "g-first"); b.style.webkitMaskImage = b.style.maskImage = ""; });
+}
+
+/* ---------- 右滑：跟手 → 过了门槛「咔」一下停住 → 再拉很沉 ---------- */
+function gBindSwipe(b, i) {
+  const TH = 62;
+  let sx = 0, sy = 0, axis = null, armed = false, id = null, off = 0;
+  b.addEventListener("pointerdown", e => {
+    if (e.button > 0 || gEditI >= 0 || gFocusI >= 0) return;
+    sx = e.clientX; sy = e.clientY; axis = null; armed = false; id = e.pointerId; off = 0; b.classList.remove("g-spring");
+  });
+  b.addEventListener("pointermove", e => {
+    if (e.pointerId !== id) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!axis) {
+      if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
+      axis = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+      if (axis === "x") { try { b.setPointerCapture(id); } catch (err) {} }
+    }
+    if (axis !== "x") return;
+    e.preventDefault();
+    const d = Math.max(0, dx);
+    /* 门槛前 0.72 倍跟手；一过门槛往前「咔」地多走 10px 停住，之后像拉橡皮筋 */
+    off = d < TH ? d * .72 : TH * .72 + 10 + Math.sqrt(d - TH) * 2.6;
+    if (!armed && d >= TH) { armed = true; b.classList.add("g-armed"); gBuzz(); }
+    else if (armed && d < TH - 12) { armed = false; b.classList.remove("g-armed"); }
+    b.style.transform = "translateX(" + off + "px)";
+  }, { passive: false });
+  const end = e => {
+    if (e.pointerId !== id) return; id = null;
+    if (axis !== "x") return;
+    b.classList.remove("g-armed");
+    const m = chatLog[i];
+    if (armed && m) {
+      const editable = m.k === "me" && !m.voice && !curWin().archived && typeof m.t === "string";
+      if (editable) gOpenEdit(b, i, off); else gOpenFocus(b, i, off);
+    } else { b.classList.add("g-spring"); b.style.transform = ""; }
+  };
+  b.addEventListener("pointerup", end);
+  b.addEventListener("pointercancel", end);
+}
+
+/* ---------- 键盘挡住了多少（iOS 有时只缩可视区域不缩页面，这里补一下） ---------- */
+function gKbMeasure() {
+  const vv = window.visualViewport; if (!vv) return;
+  const fr = document.getElementById("frame").getBoundingClientRect();
+  gKbNow = Math.max(0, Math.round(fr.bottom - (vv.offsetTop + vv.height)));
+  document.getElementById("gEdit").style.setProperty("--g-kb", gKbNow + "px");
+  if (gEditI >= 0) gPlaceEdit();
+}
+if (window.visualViewport) { visualViewport.addEventListener("resize", gKbMeasure); visualViewport.addEventListener("scroll", gKbMeasure); }
+
+/* ---------- 改我说的话 ---------- */
+function gOpenEdit(b, i, off) {
+  gEditI = i; gEditSrc = b;
+  const m = chatLog[i], ed = document.getElementById("gEdit"), et = document.getElementById("gEtxt");
+  et.value = m.t;
+  /* 键盘只有在手指抬起的这一刻 focus 才会弹，所以第一件事就是 focus */
+  ed.classList.add("on"); et.focus({ preventScroll: true }); gGrow();
+  try { et.setSelectionRange(et.value.length, et.value.length); } catch (err) {}
+  /* 从头到尾是同一条消息在动：在它被拉到的地方接手，宽高一点不变，先弹回再飞上去 */
+  const F = document.getElementById("frame").getBoundingClientRect(), r = b.getBoundingClientRect();
+  gFly = b.cloneNode(true); gFly.classList.remove("g-spring", "g-armed", "picked");
+  gFly.style.left = (r.left - F.left - off) + "px"; gFly.style.top = (gFlyFrom = r.top - F.top) + "px";
+  gFly.style.width = r.width + "px"; gFly.style.height = r.height + "px"; gFly.style.transform = "translateX(" + off + "px)";
+  ed.appendChild(gFly); b.style.visibility = "hidden"; b.style.transform = "";
+  document.getElementById("gDim").classList.add("on");
+  document.getElementById("gEtime").textContent = m.ts ? gWhen(m.ts) : "这条比较早，没记时间";
+  gEditBtn(); gKbMeasure();
+  requestAnimationFrame(() => { ed.classList.add("show"); gPlaceEdit(); });
+  gBuzz();
+}
+function gPlaceEdit() {
+  if (!gFly) return;
+  const fh = document.getElementById("frame").clientHeight, f = document.getElementById("gEform");
+  const formTop = fh - parseFloat(getComputedStyle(f).bottom) - f.offsetHeight;
+  const to = Math.max(document.querySelector(".chat-head").offsetHeight + 40, formTop - 30 - gFly.offsetHeight);
+  gFly.style.transform = "translate(0, " + (to - gFlyFrom) + "px)";
+  document.getElementById("gOlab").style.top = (to + gFly.offsetHeight + 4) + "px";
+  document.getElementById("gEtime").style.top = Math.max(document.querySelector(".chat-head").offsetHeight, to - 28) + "px";
+}
+function gCloseEdit(keep) {
+  const ed = document.getElementById("gEdit");
+  ed.classList.remove("show"); document.getElementById("gDim").classList.remove("on", "soft");
+  document.getElementById("gEtxt").blur(); gEditI = -1;
+  const f = gFly, src = gEditSrc; gFly = null; gEditSrc = null;
+  const done = () => { if (f) f.remove(); if (src) src.style.visibility = ""; if (gEditI < 0) ed.classList.remove("on"); };
+  if (!f || keep === true) { done(); return; }
+  f.style.transform = "translate(0, 0)";                      /* 不改了：飞回原处再落下 */
+  setTimeout(done, 480);
+}
+const G_SEND = '<svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
+const G_DEL = '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>';
+function gEditBtn() {
+  const btn = document.getElementById("gEsend"), empty = !document.getElementById("gEtxt").value.trim();
+  btn.classList.toggle("del", empty); btn.innerHTML = empty ? G_DEL : G_SEND;
+  btn.setAttribute("aria-label", empty ? "删掉这句" : "改好了，重新发");
+}
+function gGrow() { const t = document.getElementById("gEtxt"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 120) + "px"; }
+document.getElementById("gEtxt").addEventListener("input", () => { gGrow(); gEditBtn(); gPlaceEdit(); });
+document.getElementById("gEsend").addEventListener("pointerdown", e => e.preventDefault());   /* 别抢输入框的焦点 */
+document.getElementById("gEform").addEventListener("submit", e => {
+  e.preventDefault();
+  if (gEditI < 0) return;
+  const i = gEditI, v = document.getElementById("gEtxt").value.trim();
+  gCloseEdit(true);
+  if (!chatLog[i]) return;
+  if (!v) { msIdx = i; msgDel(); return; }                    /* 删空了再发 = 删掉这句 */
+  chatLog.splice(i);                                          /* 这句换掉，后面的收走，他重新回 */
+  saveChat(); rerenderChat();
+  appendMsg({ k: "me", t: v });
+  aiReply();
+});
+document.getElementById("gEdit").addEventListener("click", e => {
+  if (!e.target.closest(".g-eform") && !e.target.closest(".bub")) gCloseEdit();      /* 点空白处退出 */
+});
+
+/* ---------- 他的话：拉出来一点，周围变暗，底下一排按钮 ---------- */
+const G_ICON = {
+  copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg>',
+  sel: '<svg viewBox="0 0 24 24"><path d="M5 6h10M5 10h14M5 14h8M5 18h11"/><path d="M18 13v7M16 13h4M16 20h4"/></svg>',
+  regen: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.4-5.7"/><path d="M20 4v5h-5"/></svg>',
+  del: G_DEL
+};
+function gOpenFocus(b, i, off) {
+  gFocusI = i; gFocusSrc = b;
+  const m = chatLog[i], sealed = !!curWin().archived;
+  const F = document.getElementById("frame").getBoundingClientRect(), r = b.getBoundingClientRect();
+  const fx = document.getElementById("gFocus"); fx.innerHTML = ""; fx.classList.add("on");
+  const c = b.cloneNode(true); c.classList.remove("g-spring", "g-armed", "picked");
+  c.style.transform = "translateX(" + off + "px)"; c.style.left = (r.left - F.left - off) + "px"; c.style.width = r.width + "px";
+  const acts = [["copy", "复制"], ["sel", "选择文字"]];
+  if (!sealed && m.k === "ai") acts.push(["regen", "让他重说"]);
+  if (!sealed) acts.push(["del", "删掉这条"]);
+  const menu = document.createElement("div"); menu.className = "g-menu";
+  menu.innerHTML = '<div class="g-acts">' + acts.map(([a, n]) => '<button type="button" data-a="' + a + '" aria-label="' + n + '">' + G_ICON[a] + "</button>").join("") +
+    '</div><div class="g-mt">' + (m.ts ? gWhen(m.ts) : "") + "</div>";
+  fx.appendChild(c); fx.appendChild(menu);
+  /* 按钮那一排放在消息下面；太靠底放不下，就把整屏连这条一起往上挪（跟 iPhone 一样） */
+  const bottomLimit = document.querySelector(".chat-inbar").getBoundingClientRect().top - F.top - 8;
+  let top = r.top - F.top; const need = r.height + 4 + 40;
+  const shift = Math.min(0, bottomLimit - (top + need)); top += shift;
+  c.style.top = top + "px"; menu.style.top = (top + r.height + 4) + "px";
+  /* 按钮左边跟拉出来之后的气泡左边对齐，时间右边跟气泡最宽时的右边对齐 */
+  const tailPad = c.classList.contains("g-tail") && m.k === "ai" ? 9 : 0;
+  menu.style.left = (r.left - F.left - off + 14 + tailPad) + "px";
+  menu.style.width = Math.round((chatMsgs.clientWidth - 32) * .76) + "px";
+  b.style.visibility = "hidden"; b.style.transform = "";
+  /* 下面的消息往下让出一排给按钮 */
+  let after = false;
+  for (const el of chatMsgs.children) {
+    const holds = el === b || el.contains(b);
+    el.classList.add("g-shove");
+    el.style.transform = "translateY(" + (shift + (after ? 40 : 0)) + "px)";
+    if (holds) after = true;
+  }
+  document.getElementById("gDim").classList.add("on", "soft");
+  requestAnimationFrame(() => { c.style.transform = ""; c.classList.add("g-lift"); menu.classList.add("on"); });
+  menu.addEventListener("click", e => { const a = e.target.closest("button"); if (a) gAct(a.dataset.a, c); });
+  gBuzz();
+}
+function gCloseFocus() {
+  if (gFocusI < 0) return;
+  const fx = document.getElementById("gFocus"), c = fx.querySelector(".bub"), menu = fx.querySelector(".g-menu");
+  try { window.getSelection().removeAllRanges(); } catch (e) {}
+  if (menu) menu.classList.remove("on");
+  if (c) { c.classList.remove("g-lift", "g-sel"); c.style.transform = "translateX(0)"; }
+  document.getElementById("gDim").classList.remove("on", "soft");
+  for (const el of chatMsgs.children) el.style.transform = "";
+  const src = gFocusSrc; gFocusI = -1; gFocusSrc = null;
+  setTimeout(() => {
+    if (gFocusI < 0) { fx.innerHTML = ""; fx.classList.remove("on"); }
+    if (src) src.style.visibility = "";
+    for (const el of chatMsgs.children) el.classList.remove("g-shove");
+  }, 330);
+}
+function gAct(a, c) {
+  const i = gFocusI, m = chatLog[i]; if (!m) return;
+  if (a === "copy") {
+    const ok = () => { toast("已复制"); gCloseFocus(); };
+    try { navigator.clipboard.writeText(m.t || "").then(ok, () => { gSelAll(c); toast("长按选中的字就能复制"); }); } catch (e) { gSelAll(c); }
+  } else if (a === "sel") gSelAll(c);
+  else if (a === "regen") { gCloseFocus(); setTimeout(() => { msIdx = i; msgRegen(); }, 340); }
+  else if (a === "del") { gCloseFocus(); setTimeout(() => { msIdx = i; msgDel(); }, 340); }
+}
+function gSelAll(c) {
+  c.classList.add("g-sel");
+  const rg = document.createRange(); rg.selectNodeContents(c);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+}
+document.getElementById("gDim").addEventListener("click", () => { if (gEditI >= 0) gCloseEdit(); else gCloseFocus(); });
+
+/* 气泡一有增减就重新排尾巴（流式回复一段段长出来的也算） */
+new MutationObserver(glassTailsSoon).observe(chatMsgs, { childList: true });
+if (gOn()) gWall();
+
+/* 设置里的开关：不用刷新，换个样子重新画一遍聊天 */
+function uiPaint() {
+  const el = document.getElementById("swUi");
+  if (el) el.classList.toggle("on", gOn());
+}
+function uiToggle() {
+  const on = !gOn();
+  document.documentElement.classList.toggle("ui-glass", on);
+  try { localStorage.setItem("wu.ui", on ? "glass" : "old"); } catch {}
+  if (on) gWall(); else glassClear();
+  rerenderChat(); uiPaint();
+  toast(on ? "换成新界面了" : "换回原来的样子了");
 }
 safe("聊天渲染", rerenderChat);
 

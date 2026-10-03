@@ -35,6 +35,7 @@ const SUITE = [
   ['界面', 'layout-keyboard', '底部空带、键盘顶导航栏、键盘开着点发送', true, {}],
   ['界面', 'settings-home', '设置首页：分组列表，点进去是各自的子页', true, { apis: API_M1 }],
   ['界面', 'chat-open', '打开聊天停在最新一条；开着 app 也收得到他的话', true, { apis: API_M1 }, OPENAI],
+  ['界面', 'glass-chat', '新界面：右拉我的话改了重发、右拉他的话复制/重说/删掉、切回原来的样子', true, { apis: API_M1 }, OPENAI],
   ['界面', 'thinking-ui', '思考过程的展开 / 收起', true, { apis: API_M1, plan: THINK }, ['mock-think.js']],
   ['界面', 'vision', '看图：小图、字节不变、开关、攒 8 张砍回 4 张', true, { apis: NO_API }, ['mock-claude.js', 'mock-openai-log.js']],
   ['联动', 'eyes-peek', '他的眼睛把图读成文字 · 偷看一眼屏幕 · 醒来做了什么', true, { apis: API_EYES }, ['mock-openai.js', 'mock-vision.js', 'fake-smtp.js', 'mock-claude.js']],
