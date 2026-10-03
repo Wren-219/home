@@ -32,7 +32,7 @@ const { chromium } = require('playwright-core'); const fs = require('fs');
     const visible = await page.$eval('#page-' + s, el => el.classList.contains('open')).catch(() => false);
     /* 子页里的无害按钮（刷新、切换 tab 之类）点一遍 */
     const n = await page.evaluate(([n, re]) => {
-      const bs = [...document.querySelectorAll('#page-' + n + ' button')].filter(b => b.offsetParent && !new RegExp(re).test(b.textContent) && !b.classList.contains('sp-back'));
+      const bs = [...document.querySelectorAll('#page-' + n + ' button')].filter(b => b.offsetParent && !new RegExp(re).test(b.textContent) && !b.classList.contains('sp-back') && b.dataset.sweep !== 'no');
       bs.forEach(b => { try { b.click(); } catch {} });
       return bs.length;
     }, [s, DANGER.source]);

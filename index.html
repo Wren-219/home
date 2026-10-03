@@ -12,6 +12,23 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <title>晤 · With You</title>
+<script>
+/* 页面外壳用哪套高度：
+   vh  = 新办法（默认）：html / body / #frame 一律 100vh + overflow:hidden，安全区交给 iOS 自己处理。
+         网上的说法：主屏幕模式没有地址栏，dvh 不一定管用；别把 safe-area + dvh + fixed body 叠在一起，
+         高度链干净了，底下那条白边就没了
+   old = 老办法：100% + fixed body + 认出那条带子（ios-gap）
+   在网址后面加 ?shell=old / ?shell=vh 能直接切（万一新办法把导航栏弄坏了、点不到设置） */
+(function () {
+  var mode = "vh";
+  try {
+    var q = location.search.match(/[?&]shell=(old|vh)\b/);
+    if (q) localStorage.setItem("wu.shell", q[1]);
+    mode = localStorage.getItem("wu.shell") || "vh";
+  } catch (e) {}
+  if (mode === "vh") document.documentElement.classList.add("vh-shell");
+})();
+</script>
 <style>
   :root {
     --bg: #F4F6F9;
@@ -42,6 +59,13 @@
   html { background: #E6ECF3; overscroll-behavior: none; }
   /* 那条带子本身就在 home 条的位置上，导航栏不用再给 home 条留地方了 */
   html.ios-gap { --sab: 0px; }
+  /* 新外壳：整条高度链统一 100vh，不用 fixed body，不靠脚本去猜带子 */
+  html.vh-shell, html.vh-shell body, html.vh-shell #frame { height: 100vh; }
+  html.vh-shell { overflow: hidden; }
+  html.vh-shell body { position: relative; overflow: hidden; }
+  /* 键盘开着的时候回到「跟着窗口缩」：输入栏得贴着键盘，100vh 是不会跟着键盘变矮的 */
+  html.vh-shell.kb, html.vh-shell.kb body, html.vh-shell.kb #frame { height: 100%; }
+  html.vh-shell.kb body { position: fixed; }
   /* 固定整个页面：防止 iOS Safari 整页橡皮筋滚动 / 键盘顶飞布局 */
   body {
     font-family: var(--sans); color: var(--ink); background: #E9EDF3; -webkit-font-smoothing: antialiased;
@@ -1239,7 +1263,7 @@
           <div class="set-row" onclick="openSub('pass')"><span class="ic">🔒</span><span class="tx"><span class="t">页面密码</span><span class="s" id="pwBrief">改四位密码</span></span><span class="ch">›</span></div>
           <div class="set-row" onclick="openSub('about')"><span class="ic">ℹ️</span><span class="tx"><span class="t">连接与说明</span><span class="s" id="healthBrief">服务器连没连上、各种小说明</span></span><span class="ch">›</span></div>
         </div>
-        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.19（设置页变简单了 · 回车换行 · 通话挂断后能回放 · 修了几个卡住的地方）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
+        <div class="set-note">* 清单、日记、倒数日、信箱、照片、记忆都存在服务器上，换设备也在。<br>版本 v3.20（屏幕底部换成 100vh 外壳，治白边）· 如果看不到最新改动，请在 Zeabur 手动 Redeploy</div>
       </div>
     </section>
 
@@ -2066,6 +2090,18 @@
       </div>
       <div class="sp-scroll">
         <div class="set-card">
+          <div class="set-card-title">屏幕底部<span class="en">SHELL</span></div>
+          <div class="sw-row">
+            <span class="lb">新办法（修最底下那条白边）</span>
+            <button class="sw" id="swShell" data-sweep="no" onclick="shellToggle()"></button>
+          </div>
+          <div class="set-note" id="shellNote" style="margin:-2px 2px 0">
+            整个页面统一按 100vh 铺满，安全区交给 iPhone 自己处理。
+            要是开着以后导航栏被切掉、或者白边还在，就关掉换回老办法（页面会刷新一下）。<br>
+            万一导航栏坏得点不到这里：在网址后面加 <b>?shell=old</b> 打开一次，就换回老办法了。
+          </div>
+        </div>
+        <div class="set-card">
           <div class="set-card-title">连接状态<span class="en">CONNECTION</span></div>
           <div class="set-line" id="setHealth">检查中…</div>
           <div class="set-line" id="setCtx" style="margin-top:2px"></div>
@@ -2687,6 +2723,7 @@ function openSub(name) {
   if (name === "mcp") mcpRefresh();
   if (name === "quiet") quietRefresh();
   if (name === "phone") phoneRefresh();
+  if (name === "about") shellPaint();
   if (name === "connect") mcpKeyRefresh();
   if (name === "mail") mailRefresh();
   if (name === "period") perRefresh();
@@ -3835,6 +3872,16 @@ function checkHealth() { fetchT("api/health", {}, 12000).then(r => r.json()).the
   const btn = document.getElementById("btnRetry");
   if (btn) btn.style.display = "";
 }); }
+/* 页面外壳：新办法（100vh）/ 老办法，切了就刷新 */
+function shellPaint() {
+  const el = document.getElementById("swShell");
+  if (el) el.classList.toggle("on", document.documentElement.classList.contains("vh-shell"));
+}
+function shellToggle() {
+  const next = document.documentElement.classList.contains("vh-shell") ? "old" : "vh";
+  try { localStorage.setItem("wu.shell", next); } catch {}
+  location.replace(location.pathname);
+}
 function retryConnect() {
   const el = document.getElementById("setHealth");
   if (el) el.textContent = "重新连接中…";
@@ -6157,6 +6204,8 @@ function isTyping() {
      · 带子的颜色是 html 的底色，调成跟页面底部一样，看着是连着的
    没这个毛病的设备、Safari 里直接开的，什么都不变。 */
 function fitScreen() {
+  /* 新外壳（100vh）交给 iOS 自己处理安全区，不再去认那条带子 */
+  if (document.documentElement.classList.contains("vh-shell")) { document.documentElement.classList.remove("ios-gap"); return; }
   if (document.body.classList.contains("kb-open")) return;   /* 键盘开着时窗口本来就缩了，别误判 */
   const standalone = navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
   const portrait = window.innerHeight > window.innerWidth;
@@ -6168,6 +6217,7 @@ function kbSync() {
   const kb = isTyping();
   const was = document.body.classList.contains("kb-open");
   document.body.classList.toggle("kb-open", kb);
+  document.documentElement.classList.toggle("kb", kb);
   fitScreen();
   if (kb && !was && document.activeElement === chatInput) chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }

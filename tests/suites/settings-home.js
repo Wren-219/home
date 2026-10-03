@@ -57,6 +57,14 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   const briefs = await page.evaluate(() => Object.fromEntries(['modelBrief', 'bkBrief', 'healthBrief'].map(id => [id, document.getElementById(id).textContent])));
   console.log('      ' + JSON.stringify(briefs));
   ok(/聊天/.test(briefs.modelBrief) && /已连接/.test(briefs.healthBrief) && /下载|自动/.test(briefs.bkBrief), '模型、连接、备份那几行写着现在的状态');
+
+  console.log('\n[连接与说明里能切换屏幕底部的办法]');
+  await page.evaluate(() => openSub('about'));
+  await page.waitForTimeout(400);
+  ok(await page.evaluate(() => document.getElementById('swShell').classList.contains('on')), '开关亮着（默认新办法）');
+  await Promise.all([page.waitForNavigation(), page.evaluate(() => shellToggle())]);
+  ok(await page.evaluate(() => !document.documentElement.classList.contains('vh-shell') && localStorage.getItem('wu.shell') === 'old'), '点一下：刷新后换成老办法');
+  await page.evaluate(() => localStorage.setItem('wu.shell', 'vh'));
   ok(!errs.length, '页面没报错' + (errs.length ? '：' + errs.join(' | ') : ''));
   await br.close();
 })();

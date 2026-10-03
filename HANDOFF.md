@@ -1478,3 +1478,19 @@ https 下加 `Strict-Transport-Security`。没上 CSP —— 页面全是内联�
 测试：新组 `settings-home`；`layout-keyboard` 加回车换行、输入栏变高不盖住；`call` 加挂断后回放；`eyes-peek` 加隔一会儿能再请拍照；
 `voice` 断言改成他的语音不带前缀。顺手修了两组测试的日期问题（不是这次改坏的）：测试浏览器用 UTC，北京过了零点两边对「今天」
 看法不同 —— `period-ui` / `calendar-period` 的浏览器改用 `timezoneId: 'Asia/Shanghai'`；`calendar-period` 不再写死翻到 9 月。
+
+### 51. ✅ v3.20：底部白边换个办法 —— 100vh 外壳
+
+她在网上看到的说法：PWA 没有地址栏，不用纠结 `100dvh` 和 safe-area，`html / body / #frame` 统一 `height: 100vh` +
+`overflow: hidden`，让 iOS 自己处理底部安全区。之前一直靠 `fitScreen()` 量 `innerHeight` 再加 `ios-gap` 补，白边时有时无。
+
+- `<head>` 里一段早跑的脚本：默认给 `<html>` 加 `vh-shell`；`?shell=old` / `?shell=vh` 会写进 `localStorage.wu.shell` 并生效
+- CSS：`html.vh-shell, body, #frame { height: 100vh }`，`html` 与 `body` `overflow: hidden`；
+  键盘弹起时（`kbSync` 给 `<html>` 加 `kb`）高度退回 `100%`、`body` 固定，免得 100vh 把输入栏顶到键盘后面
+- `fitScreen()` 在 vh-shell 下直接返回（并去掉 `ios-gap`），老办法原样留着
+- 设置 → 连接与说明 → 「屏幕底部」开关：亮 = 新办法，关 = 老办法，切换后刷新页面（`shellToggle`）。
+  万一新办法把底栏弄坏、点不到设置：地址后面加 `?shell=old` 打开一次就回老办法
+- **没有真机验证**，要等她在 iPhone 上看结果；如果新办法也不行，下一步看 `viewport-fit=cover` + `env(safe-area-inset-bottom)` 的组合
+
+测试：`layout-keyboard` 改成按 vh-shell 检查（含 `?shell=old` 回退）；`settings-home` 加开关；`sweep-ui` 跳过带 `data-sweep="no"` 的按钮
+（这个开关会刷新页面）；`thinking-ui` 的思考开关搬进了「模型与花费」子页，测试先 `openSub('model')`。

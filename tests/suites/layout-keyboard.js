@@ -20,21 +20,25 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   await page.evaluate(() => document.querySelector('.tab[data-page="chat"]').click());
   await page.waitForTimeout(600);
 
-  console.log('[底下那条带子]');
-  const g = await page.evaluate(() => ({
-    body: document.body.getBoundingClientRect().height,
-    frame: document.getElementById('frame').getBoundingClientRect().bottom,
-    tab: document.getElementById('tabbar').getBoundingClientRect().bottom,
-    gap: document.documentElement.classList.contains('ios-gap'),
-    sab: getComputedStyle(document.documentElement).getPropertyValue('--sab').trim(),
-  }));
+  console.log('[新外壳（默认）：整条高度链统一 100vh]');
+  const g = await page.evaluate(() => {
+    const cs = el => getComputedStyle(el);
+    return {
+      shell: document.documentElement.classList.contains('vh-shell'),
+      gap: document.documentElement.classList.contains('ios-gap'),
+      html: Math.round(document.documentElement.getBoundingClientRect().height),
+      body: Math.round(document.body.getBoundingClientRect().height),
+      frame: Math.round(document.getElementById('frame').getBoundingClientRect().height),
+      vh: Math.round(innerHeight),
+      bodyPos: cs(document.body).position, htmlOv: cs(document.documentElement).overflow,
+      tab: Math.round(document.getElementById('tabbar').getBoundingClientRect().bottom),
+    };
+  });
   console.log('      ' + JSON.stringify(g));
-  /* v3.6 试过把页面撑到 956 —— 真 iPhone 上那一条根本画不进去，导航栏被切掉一半。
-     现在：页面待在能画的 887 里，认出这条带子，导航栏不再给 home 条留位置 */
-  ok(g.gap, '认出了底下那条带子（窗口比屏幕矮 69）');
-  ok(g.body === 887 && g.frame === 887, '页面不往带子里撑（那一条 iPhone 不让画）');
-  ok(g.tab <= 887 && 887 - g.tab <= 10, '导航栏整个都在能画的范围里，贴着底（离底 ' + (887 - g.tab) + 'px）');
-  ok(g.sab === '0px', '导航栏不再额外给 home 条留位置（带子就在 home 条那儿）');
+  ok(g.shell && !g.gap, '默认用新办法，不再靠脚本去认那条带子');
+  ok(g.html === g.vh && g.body === g.vh && g.frame === g.vh, 'html / body / 外壳一样高，都是 100vh（' + g.vh + '）');
+  ok(g.bodyPos !== 'fixed' && g.htmlOv === 'hidden', 'body 不再是 fixed，整页 overflow:hidden');
+  ok(g.tab <= g.vh && g.vh - g.tab <= 40, '导航栏在屏幕里，贴着底（离底 ' + (g.vh - g.tab) + 'px）');
 
   console.log('\n[打字的时候]');
   await page.focus('#chatInput');
@@ -51,7 +55,7 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   console.log('      ' + JSON.stringify(k));
   ok(k.kb, '窗口缩了之后，还认得出键盘开着（以前这里会被撤掉）');
   ok(k.tab === 'none', '导航栏藏起来了，不会被顶到键盘上面');
-  ok(k.body === 520, '这时候页面跟着键盘缩');
+  ok(k.body === 520, '这时候页面跟着键盘缩（键盘开着回到「跟着窗口走」，100vh 不会跟着键盘变矮）');
   ok(k.inBottom <= 520 && k.inBottom > 480, '输入框贴着键盘（底边 ' + Math.round(k.inBottom) + '）');
   await page.screenshot({ path: 'ui-键盘.png' });
 
@@ -108,7 +112,7 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
     body: document.body.getBoundingClientRect().height,
   }));
   ok(!c.kb && c.tab !== 'none', '导航栏回来了');
-  ok(c.body === 887 && await page.evaluate(() => document.documentElement.classList.contains('ios-gap')), '收起键盘后回到原样，带子照样认得出');
+  ok(c.body === 887 && await page.evaluate(() => document.documentElement.classList.contains('vh-shell') && !document.documentElement.classList.contains('kb')), '收起键盘后回到 100vh');
   await page.screenshot({ path: 'ui-底部.png' });
 
   console.log('\n[设置页里的输入框也一样]');
@@ -121,6 +125,22 @@ const ok = (c, m) => console.log((c ? '  OK  ' : '  XX  ') + m);
   ok(await page.evaluate(() => document.body.classList.contains('kb-open')), '在密码框里打字也算');
   await page.evaluate(() => { document.activeElement.blur(); closeSub('search'); });
   await page.waitForTimeout(300);
+
+  console.log('\n[老办法还留着：网址加 ?shell=old 就切回去]');
+  const ctxO = await b.newContext({ viewport: { width: 440, height: 887 }, screen: { width: 440, height: 956 }, isMobile: true });
+  await ctxO.addInitScript(() => {
+    Object.defineProperty(navigator, 'standalone', { get: () => true });
+    Object.defineProperty(Screen.prototype, 'height', { get: () => 956 });
+    Object.defineProperty(Screen.prototype, 'width', { get: () => 440 });
+  });
+  const po = await ctxO.newPage();
+  await po.goto('http://localhost:8081/?shell=old', { waitUntil: 'networkidle' });
+  const old = await po.evaluate(() => ({ shell: document.documentElement.classList.contains('vh-shell'), gap: document.documentElement.classList.contains('ios-gap'), saved: localStorage.getItem('wu.shell') }));
+  ok(!old.shell && old.gap && old.saved === 'old', '老办法：认出那条带子，而且记住了（下次打开还是老办法）');
+  await po.goto('http://localhost:8081/', { waitUntil: 'networkidle' });
+  ok(!(await po.evaluate(() => document.documentElement.classList.contains('vh-shell'))), '不带参数再打开，还是老办法');
+  await po.goto('http://localhost:8081/?shell=vh', { waitUntil: 'networkidle' });
+  ok(await po.evaluate(() => document.documentElement.classList.contains('vh-shell')), '?shell=vh 切回新办法');
 
   console.log('\n[没毛病的设备上，什么都不改]');
   const ctx2 = await b.newContext({ viewport: { width: 393, height: 852 }, screen: { width: 393, height: 852 }, isMobile: true });

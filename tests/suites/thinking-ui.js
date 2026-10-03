@@ -71,6 +71,7 @@ const { chromium } = require('playwright-core'); const fs = require('fs');
 
   console.log('\n[设置里关掉]');
   await page.evaluate(() => { SUBS.forEach(x => closeSub(x, true)); document.querySelector('.tab[data-page=\"settings\"]').click(); }); await page.waitForTimeout(600);
+  await page.evaluate(() => openSub('model')); await page.waitForTimeout(500);   // 这个开关现在在「模型与花费」子页里
   const sw = page.locator('#swThink');
   ok(await sw.evaluate(e => e.classList.contains('on')), '默认是开着的');
   await page.evaluate(() => document.getElementById('swThink').scrollIntoView({ block: 'center' }));
@@ -79,7 +80,8 @@ const { chromium } = require('playwright-core'); const fs = require('fs');
   ok(!(await sw.evaluate(e => e.classList.contains('on'))), '关掉了');
   await page.evaluate(() => document.querySelector('.tab[data-page=\"chat\"]').click()); await page.waitForTimeout(800);
   ok((await page.locator('.think').count()) === 0, '聊天里那一块彻底没了');
-  await page.evaluate(() => document.querySelector('.tab[data-page=\"settings\"]').click()); await page.waitForTimeout(700);
+  await page.evaluate(() => { SUBS.forEach(x => closeSub(x, true)); document.querySelector('.tab[data-page=\"settings\"]').click(); }); await page.waitForTimeout(700);
+  await page.evaluate(() => openSub('model')); await page.waitForTimeout(500);
   await page.evaluate(() => document.getElementById('swThink').scrollIntoView({ block: 'center' }));
   await page.waitForTimeout(400);
   await page.locator('#swThink').click(); await page.waitForTimeout(500);
